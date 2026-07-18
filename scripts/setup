@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+python_command=${PYTHON:-python3}
+
+command -v "$python_command" >/dev/null 2>&1 || {
+  printf 'Missing %s. Install Python 3 with its venv module, then rerun ./scripts/setup.\n' "$python_command" >&2
+  exit 1
+}
+if ! "$python_command" -c 'import sys; raise SystemExit(sys.version_info < (3, 12))'; then
+  printf '%s\n' 'Ansible Core 2.21 requires Python 3.12 or newer on the administrator machine.' >&2
+  printf '%s\n' 'Install a current Python, then run PYTHON=python3.13 ./scripts/setup with its command name.' >&2
+  exit 1
+fi
+
+if [[ ! -x "$root/.venv/bin/python" ]]; then
+  printf '%s\n' 'Creating the repository-local Python environment in .venv.'
+  if ! "$python_command" -m venv "$root/.venv"; then
+    printf '%s\n' 'Python could not create .venv. On Debian or Ubuntu, install python3-venv and retry.' >&2
+    exit 1
+  fi
+fi
+
+if ! "$root/.venv/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 12))'; then
+  printf '%s\n' 'The existing .venv uses Python older than 3.12 and cannot run the pinned Ansible Core.' >&2
+  printf '%s\n' 'Move or remove .venv, then rerun ./scripts/setup with a current Python.' >&2
+  exit 1
+fi
+
+printf '%s\n' 'Installing the pinned Ansible and validation tools.'
+"$root/.venv/bin/python" -m pip install --disable-pip-version-check -r "$root/requirements-dev.txt"
+printf '%s\n' 'Installing the pinned Ansible collections.'
+"$root/.venv/bin/ansible-galaxy" collection install -r "$root/requirements.yml"
+printf '%s\n' 'Setup complete. Run ./scripts/onboard to configure a Raspberry Pi.'

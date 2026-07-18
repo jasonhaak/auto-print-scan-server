@@ -1,4 +1,16 @@
 ---
+- name: Prevent password-only administrator lockout
+  ansible.builtin.assert:
+    that:
+      - >-
+        (ssh_allow_password_authentication | bool) or
+        ((managed_users | selectattr('authorized_keys', 'defined')
+        | map(attribute='authorized_keys') | flatten | length) > 0)
+    fail_msg: >-
+      ssh_allow_password_authentication can be disabled only after at least one managed
+      authorized key is declared.
+  tags: ssh
+
 - name: Ensure the SSH drop-in directory exists
   ansible.builtin.file:
     path: /etc/ssh/sshd_config.d

@@ -8,6 +8,8 @@ backups="$root/.onboard-backups"
 source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/server-discovery.sh"
 source "$root/scripts/lib/onboarding/ssh-session.sh"
+source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/technical-output.sh"
 ssh_socket=''
 ssh_socket_dir=''
 host_tmp=''
@@ -16,154 +18,78 @@ direct_ethernet_interface=''
 direct_ethernet_pi_ipv4_cidr=''
 direct_ethernet_device_ipv4=''
 temporary_direct_connection=''
+discovery_ipp_usb_restore_needed=false
+discovery_cups_restore_needed=false
+discovery_ipp_usb_was_enabled='not-found'
+discovery_ipp_usb_was_active='inactive'
+reconfigure=false
+TECHNICAL_VERBOSE=false
+
+usage() {
+  cat <<'EOF'
+Configure a Raspberry Pi print and scan server.
+
+Usage:
+  scripts/onboard                 Start first setup, or manage devices when setup already exists
+  scripts/onboard --reconfigure   Rebuild server-level settings and all device definitions
+  scripts/onboard --verbose       Show complete captured technical output
+  scripts/onboard --help          Show this help
+EOF
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --reconfigure) reconfigure=true ;;
+    --verbose) TECHNICAL_VERBOSE=true ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if [[ -d "$root/.venv/bin" ]]; then
+  PATH="$root/.venv/bin:$PATH"
+fi
+if ! command -v ansible-playbook >/dev/null 2>&1 || ! command -v ansible-galaxy >/dev/null 2>&1; then
+  printf '%s\n' 'Ansible is not ready. Running the repository setup now.'
+  "$root/scripts/setup"
+  PATH="$root/.venv/bin:$PATH"
+fi
+ONBOARD_PYTHON="$root/.venv/bin/python"
+
+saved_host_value() {
+  local key=$1 fallback=$2 value
+  value=$(awk -F': ' -v key="$key" '$1 ~ "^[[:space:]]*" key "$" {gsub(/^\"|\"$/, "", $2); print $2; exit}' "$inventory")
+  printf '%s' "${value:-$fallback}"
+}
+
+configured_host=$(saved_host_value ansible_host '')
+if [[ "$reconfigure" == false && -n "$configured_host" && "$configured_host" != 192.0.2.10 ]]; then
+  printf 'Existing production configuration detected for %s.\n' "$configured_host"
+  printf '%s\n' 'Routine additions, edits and deletions use the shorter device-management workflow.'
+  if yes_default 'Open device management now?'; then
+    if [[ "$TECHNICAL_VERBOSE" == true ]]; then
+      exec "$root/scripts/manage-devices" --verbose
+    fi
+    exec "$root/scripts/manage-devices"
+  fi
+  printf '%s\n' 'No changes made. Use ./scripts/onboard --reconfigure to rebuild server-level settings.'
+  exit 0
+fi
 
 cleanup() {
   [[ -n "$host_tmp" ]] && rm -f "$host_tmp"
   [[ -n "$vars_tmp" ]] && rm -f "$vars_tmp"
   [[ -n "$temporary_direct_connection" && -n "$ssh_socket" ]] && remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
+  [[ "$discovery_ipp_usb_restore_needed" == true ]] && restore_ipp_usb_state
+  [[ "$discovery_cups_restore_needed" == true ]] && restore_cups_state
   ssh_session_cleanup
+  technical_transcript_finish
 }
 
-discover_direct_ethernet_device() {
-  local scanner_output line scanner_identifier
-  recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
-  yes 'Temporarily configure the direct Ethernet link and search this device?' || return
-  temporary_direct_connection="raspberry-print-server-onboarding-${BASHPID}"
-  if ! remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")" >/dev/null; then
-    printf '%s\n' 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status. Continue with manual device details.' >&2
-    remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
-    temporary_direct_connection=''
-    return
-  fi
-  if remote "ipptool -tv $(printf '%q' "ipp://${direct_ethernet_device_ipv4}/ipp/print") get-printer-attributes.test" >/dev/null 2>&1; then
-    discovered_printer_connection=ipp
-    discovered_printer_uri="ipp://${direct_ethernet_device_ipv4}/ipp/print"
-    printf 'Detected an IPP printer at %s. Its connection and URI are recommended below.\n' "$direct_ethernet_device_ipv4"
-  else
-    printf 'No IPP printer responded at %s. You can still enter another printer protocol and URI manually.\n' "$direct_ethernet_device_ipv4" >&2
-  fi
-  scanner_output=$(remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true)
-  while IFS= read -r line; do
-    [[ "$line" == device* ]] || continue
-    scanner_identifier=${line#device \`}
-    scanner_identifier=${scanner_identifier%%\'*}
-    [[ -n "$scanner_identifier" ]] || continue
-    discovered_scanner=true
-    discovered_scanner_connection=ipp
-    discovered_scanner_backend=sane-airscan
-    discovered_scanner_usb_mode=''
-    discovered_scanner_device_name=$scanner_identifier
-    printf 'Detected a network scanner: %s. It will be recommended in the scanner section.\n' "$scanner_identifier"
-    break
-  done <<<"$scanner_output"
-  remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
-  temporary_direct_connection=''
-}
-
-discover_devices() {
-  local discovery_log install_log network_output usb_output usb_devices ipp_usb_output scanner_output ipp_query_output='' query_output line scanner_identifier event interface protocol name service domain device_host address port txt rp scheme uri choice temporary_ipp_usb=false
-  local -a printer_candidates=() scanner_candidates=()
-  discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
-  printf '%s\n' 'Discovery can find printers and scanners that are visible on the trusted LAN or connected by USB.'
-  recommendation 'Install the discovery tools. They are needed only on the Raspberry Pi and do not configure a device.'
-  if ! yes 'Install temporary discovery tools to find printers and scanners?'; then
-    rm -f "$discovery_log"
-    return
-  fi
-  printf '%s\n' 'Installing discovery tools. This can take a few minutes on the first run.'
-  install_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery-install.XXXXXX.log")
-  if ! remote_tty 'sudo -v && sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups-ipp-utils sane-utils sane-airscan ipp-usb && { sudo systemctl disable --now ipp-usb.service >/dev/null 2>&1 || true; }' >"$install_log" 2>&1; then
-    printf '%s\n' 'Discovery tools could not be installed. Continue with manual configuration.' >&2
-    cat "$install_log" >&2
-    rm -f "$install_log"
-    rm -f "$discovery_log"
-    return
-  fi
-  rm -f "$install_log"
-  printf '%s\n' 'Discovery tools are ready. Searching local network announcements and connected USB devices for up to 15 seconds.'
-
-  usb_output=$(remote 'lsusb' 2>&1 || true)
-  usb_devices=$(usb_device_descriptions "$usb_output")
-  if ipp_usb_output=$(remote 'sudo ipp-usb check' 2>&1); then
-    if remote_tty 'sudo systemctl start ipp-usb.service'; then
-      temporary_ipp_usb=true
-      trap 'remote "sudo systemctl disable --now ipp-usb.service" >/dev/null 2>&1 || true; exit 130' INT TERM
-    fi
-    printer_candidates+=("USB IPP-over-USB printer${usb_devices:+ — ${usb_devices//$'\n'/; }}|usb|ipp://localhost:60000/ipp/print|ipp_usb")
-  fi
-  network_output=$(remote 'timeout 15s avahi-browse -artp' 2>&1 || true)
-  scanner_output=$(remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true)
-  if [[ "$temporary_ipp_usb" == true ]]; then
-    remote_tty 'sudo systemctl disable --now ipp-usb.service' >/dev/null 2>&1 || true
-    trap 'exit 130' INT TERM
-  fi
-  while IFS=';' read -r event interface protocol name service domain device_host address port txt; do
-    [[ "$event" == '=' ]] || continue
-    case "$service" in
-      _ipp._tcp|_ipps._tcp)
-        scheme=${service#_}
-        scheme=${scheme%%._tcp}
-        rp=$(printf '%s' "$txt" | sed -nE 's/.*rp=([^" ]+).*/\1/p' | head -n 1)
-        rp=${rp:-ipp/print}
-        uri="$scheme://$address:$port/$rp"
-        if query_output=$(remote "ipptool -tv $(printf '%q' "$uri") get-printer-attributes.test" 2>&1); then
-          printer_candidates+=("$name at $address:$port ($scheme)|$scheme|$uri|")
-        else
-          ipp_query_output+="$name at $address:$port: $query_output"$'\n'
-        fi
-        ;;
-      _uscan._tcp|_scanner._tcp)
-        scanner_candidates+=("$name at $address:$port ($service, sane-airscan)|ipp|sane-airscan|")
-        ;;
-    esac
-  done <<<"$network_output"
-  while IFS= read -r line; do
-    [[ "$line" == device* ]] || continue
-    scanner_identifier=${line#device \`}
-    scanner_identifier=${scanner_identifier%%\'*}
-    if [[ "$scanner_identifier" == airscan:* ]]; then
-      scanner_candidates+=("$scanner_identifier (SANE AirScan detected)|ipp|sane-airscan|")
-    else
-      scanner_candidates+=("$scanner_identifier (SANE detected)|usb|sane-utils|legacy_usb")
-    fi
-  done <<<"$scanner_output"
-  {
-    printf '%s\n%s\n%s\n%s\n' 'Network discovery:' "$network_output" 'USB discovery:' "$usb_output"
-    printf '%s\n%s\n%s\n%s\n%s\n%s\n' 'IPP-over-USB check:' "$ipp_usb_output" 'IPP queries:' "$ipp_query_output" 'SANE discovery:' "$scanner_output"
-  } >"$discovery_log"
-
-  printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}"
-
-  if (( ${#printer_candidates[@]} == 0 )); then
-    printf '%s\n' 'No printer was found. For manual setup, find the printer IPP address in its web administration page or manual. A common example is ipp://192.168.178.50/ipp/print.'
-  fi
-  if (( ${#scanner_candidates[@]} == 0 )); then
-    printf '%s\n' 'No scanner was found. For manual setup, connect it, then run scanimage -L on the Raspberry Pi and copy the device line it reports.'
-  fi
-
-  if (( ${#printer_candidates[@]} > 0 )); then
-    candidate_count=0
-    choice=$(choose_candidate 'Discovered printers. Select the device to configure or enter details manually.' "${printer_candidates[@]}")
-    if [[ "$choice" != manual ]]; then
-      IFS='|' read -r selected_printer_label discovered_printer_connection discovered_printer_uri discovered_printer_usb_mode <<<"$choice"
-      printf 'Selected detected printer: %s. Its connection and URI will be suggested below; press Enter only when they match this printer.\n' "$selected_printer_label"
-    fi
-  fi
-  if (( ${#scanner_candidates[@]} > 0 )); then
-    candidate_count=0
-    choice=$(choose_candidate 'Discovered scanners. Select one to configure or enter details manually.' "${scanner_candidates[@]}")
-    if [[ "$choice" != manual ]]; then
-      IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode <<<"$choice"
-      discovered_scanner=true
-      printf 'Selected detected scanner: %s. Its connection and backend will be used; you will still enter its exact SANE device name before commissioning.\n' "$selected_scanner_label"
-    fi
-  fi
-  if [[ -z "${discovered_printer_connection:-}" && -z "${discovered_scanner:-}" ]]; then
-    printf 'No usable device was selected. Continue with manual configuration. Diagnostic log: %s\n' "$discovery_log" >&2
-  else
-    rm -f "$discovery_log"
-  fi
-}
+technical_transcript_start "$root" onboard
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 need ansible-playbook
 need ansible-galaxy
@@ -177,37 +103,51 @@ printf '%s\n' '' 'This guided setup has five steps:' \
   '  3. Find connected printers and scanners.' \
   '  4. Choose the devices and their settings.' \
   '  5. Review everything before the Raspberry Pi is changed.' \
-  'You can stop with Ctrl+C at any time. Nothing is configured until the final confirmation.'
+  'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Production inventory, queues and services are changed only after final confirmation.'
 
 stage '1/5' 'Connect to Your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
-host_default='print-server.local'
+host_default=$(saved_host_value ansible_host print-server.local)
+[[ "$host_default" == 192.0.2.10 ]] && host_default=print-server.local
 administrator_cidr=$(administrator_lan_cidr || true)
 if [[ -n "$administrator_cidr" ]]; then
-  printf 'Detected administrator network: %s. The optional search checks a private /24 range for SSH servers on port 22. It does not authenticate or change any device.\n' "$administrator_cidr"
+  technical_report 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' 0 "$administrator_cidr"
+  printf 'Detected local network: %s. A search checks private addresses for SSH port 22. It does not authenticate or change any device.\n' "$administrator_cidr"
 else
-  printf '%s\n' 'The administrator machine network could not be detected automatically. You can enter a private /24 range to search, or enter the Raspberry Pi address manually.'
+  technical_report 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' 1 'No private IPv4 network was detected.'
+  printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the Raspberry Pi address manually.'
 fi
-if yes 'Search a network for possible Raspberry Pi SSH servers?'; then
+if [[ -n "$administrator_cidr" ]]; then
+  input_required 'Choose the network search scope'
+  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (detected, other, skip)' 'detected' detected other skip)
+else
+  input_required 'Choose the network search scope'
+  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (other, skip)' 'other' other skip)
+fi
+if [[ "$search_choice" != skip ]]; then
   while true; do
-    if [[ -n "$administrator_cidr" ]]; then
-      search_cidr=$(ask_detected 'Private IPv4 network to search' "$administrator_cidr" 'Enter another private /24 range only when the Raspberry Pi is on a different routed VLAN.')
+    if [[ "$search_choice" == detected ]]; then
+      search_cidr=$administrator_cidr
     else
-      printf '%s\n' 'Enter the network range that contains the Raspberry Pi, for example 192.168.178.0/24. Only private /24 ranges are accepted.'
+      printf '%s\n' 'Enter the private network containing the Raspberry Pi. At most 1,024 addresses are accepted, for example 192.168.178.0/24 or 10.20.4.0/23.'
       search_cidr=$(ask 'Private IPv4 network to search' '')
     fi
-    valid_private_ipv4_24_cidr "$search_cidr" && break
-    printf '%s\n' 'Invalid network range. Use a private /24 network ending in .0/24, for example 192.168.178.0/24.' >&2
+    valid_private_ipv4_search_cidr "$search_cidr" && break
+    printf '%s\n' 'Invalid network range. Use an RFC1918 network address containing no more than 1,024 addresses.' >&2
   done
   if ! ssh_port_probe_available; then
     printf '%s\n' 'Automatic search needs netcat (nc) or timeout on this administrator machine. Enter the Raspberry Pi address manually.' >&2
   else
-    printf 'Searching %s now. This normally takes about 20 seconds.\n' "$search_cidr"
+    printf 'Searching %s now. Large ranges can take about one minute.\n' "$search_cidr"
     ssh_hosts=()
+    ssh_search_output=''
+    if ! technical_capture ssh_search_output 'Search for possible Raspberry Pi SSH servers' "TCP port 22 probe across $search_cidr" find_ssh_hosts "$search_cidr"; then
+      printf '%s\n' 'The network search failed. Enter the Raspberry Pi address manually.' >&2
+    fi
     while IFS= read -r ssh_host; do
       [[ -n "$ssh_host" ]] && ssh_hosts+=("$ssh_host")
-    done < <(find_ssh_hosts "$search_cidr")
+    done <<<"$ssh_search_output"
     if (( ${#ssh_hosts[@]} == 0 )); then
-      printf '%s\n' 'No SSH servers were detected. The Raspberry Pi may be offline, outside this /24 network or have SSH disabled. Enter its address manually.'
+      printf '%s\n' 'No SSH servers were detected. The Raspberry Pi may be offline, outside the searched network or have SSH disabled. Enter its address manually.'
     elif (( ${#ssh_hosts[@]} == 1 )); then
       host_default=${ssh_hosts[0]}
       printf 'Detected one possible Raspberry Pi SSH server: %s. Press Enter below if this is the Raspberry Pi.\n' "$host_default"
@@ -219,36 +159,50 @@ if yes 'Search a network for possible Raspberry Pi SSH servers?'; then
     fi
   fi
 fi
-host=$(ask 'Raspberry Pi hostname or IP address' "$host_default")
-if ! ssh_session_target_resolves; then
-  printf '%s\n' 'That Raspberry Pi address cannot be found on this computer.' >&2
+while true; do
+  host=$(ask 'Raspberry Pi hostname or IP address' "$host_default")
+  resolution_output=''
+  if technical_capture resolution_output 'Resolve the Raspberry Pi address' "local IPv4 name lookup for $host" ssh_session_target_resolution "$host"; then
+    break
+  fi
+  printf '%s\n' 'That Raspberry Pi address could not be resolved to an IPv4 address on this computer.' >&2
   printf '%s\n' 'Use the DHCP-reserved IPv4 address, for example 192.168.178.33, or a stable local name such as print-server.local.' >&2
-  exit 1
-fi
+done
 printf '%s\n' 'Use the administrator account created in Raspberry Pi Imager. It is the account that installs and maintains printing services.'
-admin=$(ask 'Raspberry Pi Imager bootstrap user' 'printadmin')
+while true; do
+  admin=$(ask 'Raspberry Pi Imager bootstrap user' "$(saved_host_value ansible_user printadmin)")
+  [[ "$admin" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] && break
+  printf '%s\n' 'Enter a valid Linux account name using lowercase letters, numbers, underscores or hyphens.' >&2
+done
 printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
-if ! ssh_session_open; then
+reachability_output=''
+technical_capture reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
+ssh_output=''
+if ! technical_capture ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open; then
   printf '%s\n' 'SSH authentication failed. Check the Raspberry Pi address, bootstrap user, password and that Raspberry Pi Imager enabled password SSH.' >&2
   exit 1
 fi
-trap cleanup EXIT
-trap 'exit 130' INT TERM
 if ! remote true; then
+  technical_report 'Verify the Raspberry Pi remote shell' 'ssh remote true' 1 'The remote command failed.'
   printf '%s\n' 'SSH connected but the remote session could not run a command. Check the Raspberry Pi SSH service and user shell.' >&2
   exit 1
 fi
+technical_report 'Verify the Raspberry Pi remote shell' 'ssh remote true' 0 'The remote command succeeded.'
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
 printf '%s\n' 'Next, sudo checks that this account may install packages and manage services. Enter the same Raspberry Pi password if prompted.'
 if ! remote_tty 'sudo -v'; then
+  technical_report 'Verify Raspberry Pi administrator privileges' 'sudo -v' 1 'sudo verification failed.'
   printf '%s\n' 'Sudo verification failed. Use the administrator account created in Raspberry Pi Imager or grant it sudo access before rerunning.' >&2
   exit 1
 fi
+technical_report 'Verify Raspberry Pi administrator privileges' 'sudo -v' 0 'sudo verification succeeded.'
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
 stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.'
-suggested_cidr=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"src\") print \$(i+1)}'" 2>/dev/null | awk -F. 'NF==4 {printf "%s.%s.%s.0/24", $1,$2,$3; exit}')
+suggested_cidr=$(remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' 2>/dev/null || true)
 timezone=$(remote 'cat /etc/timezone 2>/dev/null || timedatectl show --property=Timezone --value' 2>/dev/null || true)
 locale=$(remote "locale | awk -F= '/^LANG=/{print \$2; exit}'" 2>/dev/null || true)
+settings_output=$(printf 'IPv4 network: %s\nTimezone: %s\nLocale: %s' "${suggested_cidr:-not detected}" "${timezone:-not detected}" "${locale:-not detected}")
+technical_report 'Read Raspberry Pi network and regional settings' 'ip route; timedatectl; locale' 0 "$settings_output"
 timezone=${timezone:-"$(saved_scalar common_timezone Europe/Berlin)"}
 locale=${locale:-"$(saved_scalar common_locale en_US.UTF-8)"}
 printf 'Detected Raspberry Pi settings: IPv4 network %s, timezone %s, locale %s.\n' "${suggested_cidr:-not detected}" "$timezone" "$locale"
@@ -266,31 +220,64 @@ while true; do
   printf '%s\n' 'Invalid IPv6 CIDR. Use a local IPv6 prefix followed by /0 to /128, or leave it empty.' >&2
 done
 stage '3/5' 'Find Printers and Scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.'
-discover_devices
+input_required 'Choose the device discovery scope'
+discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
+discover_devices false "$discovery_scope"
 stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.'
-hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
+while true; do
+  hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
+  [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] && break
+  printf '%s\n' 'Use 1 to 63 letters, numbers or hyphens, starting with a letter or number.' >&2
+done
+authorized_key=''
+for public_key_path in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$HOME/.ssh/id_rsa.pub"; do
+  if [[ -r "$public_key_path" ]]; then
+    authorized_key=$(<"$public_key_path")
+    printf 'Detected administrator SSH public key: %s. It will be installed for passwordless future connections.\n' "$public_key_path"
+    break
+  fi
+done
+[[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
 subsection 'Printer 1'
 printf '%s\n' 'The queue name is what phones, computers and tablets will see when choosing this printer.'
-queue=$(ask 'CUPS queue name' 'printer')
+while true; do
+  queue=$(ask 'CUPS queue name' 'printer')
+  [[ "$queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
+  printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+done
 printf 'Timezone and locale are inherited from Raspberry Pi Imager: %s, %s.\n' "$timezone" "$locale"
+input_required 'Choose the device connection'
 printf '%s\n' 'Choose how this device reaches the Raspberry Pi. This controls which discovery and connection settings are used.'
 printf '%s\n' 'Connection preference, when the device supports it:' \
   '  1. network: Ethernet through the router or switch. This is the simplest path and can support standard printing and scanning.' \
   '  2. direct_ethernet: Ethernet directly to an unused Raspberry Pi port when the device cannot reach the router.' \
   '  3. usb: a fallback that often supports printing; scanning needs a usable Linux SANE backend.'
 recommendation 'Choose network for a device on the home LAN. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
-topology=$(ask_choice 'Device connection topology' 'network' network direct_ethernet usb)
+topology_default=network
+if [[ "${discovered_printer_connection:-}" == usb || "${discovered_scanner_connection:-}" == usb ]]; then
+  topology_default=usb
+fi
+topology=$(ask_choice 'How is this device connected to the Raspberry Pi?' "$topology_default" network direct_ethernet usb)
 if [[ "$topology" == direct_ethernet ]]; then
+  discovered_printer_connection=''
+  discovered_printer_uri=''
+  discovered_printer_usb_mode=''
+  discovered_scanner=false
+  discovered_scanner_connection=''
+  discovered_scanner_backend=''
+  discovered_scanner_usb_mode=''
+  discovered_scanner_device_name=''
   recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
   active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
+  detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
   while true; do
-    direct_ethernet_interface=$(ask 'Unused Raspberry Pi Ethernet interface' 'eth0')
-    [[ "$direct_ethernet_interface" != "$active_interface" ]] && break
-    printf 'Interface %s carries the Raspberry Pi default route and cannot be used for the private device link. Choose another interface.\n' "$direct_ethernet_interface" >&2
+    direct_ethernet_interface=$(ask_detected 'Unused Raspberry Pi Ethernet interface' "${detected_unused_interface:-eth0}" 'Use an Ethernet adapter that is not carrying the trusted LAN connection.')
+    [[ "$direct_ethernet_interface" =~ ^[A-Za-z0-9_.-]+$ && "$direct_ethernet_interface" != "$active_interface" ]] && break
+    printf 'Interface %s is invalid or carries the Raspberry Pi default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
   done
   while true; do
     direct_ethernet_pi_ipv4_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' '192.168.50.1/30')
-    valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" && break
+    valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" false && break
     printf '%s\n' 'Enter a valid IPv4 CIDR, for example 192.168.50.1/30.' >&2
   done
   while true; do
@@ -300,6 +287,23 @@ if [[ "$topology" == direct_ethernet ]]; then
   done
   discover_direct_ethernet_device
   printf '%s\n' 'The direct Ethernet link is recreated permanently only after final confirmation. Commissioning then verifies the declared device before creating its queue or scanner service.'
+fi
+if [[ "$topology" == usb && "${discovered_printer_connection:-}" != usb ]]; then
+  discovered_printer_connection=''
+  discovered_printer_uri=''
+  discovered_printer_usb_mode=''
+elif [[ "$topology" != usb && "${discovered_printer_connection:-}" == usb ]]; then
+  discovered_printer_connection=''
+  discovered_printer_uri=''
+  discovered_printer_usb_mode=''
+fi
+if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
+   [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; then
+  discovered_scanner=false
+  discovered_scanner_connection=''
+  discovered_scanner_backend=''
+  discovered_scanner_usb_mode=''
+  discovered_scanner_device_name=''
 fi
 if [[ "$topology" == usb ]]; then
   connection=usb
@@ -311,9 +315,12 @@ else
 fi
 printf '%s\n' 'The device URI tells CUPS where this printer is. For IPP, a common example is ipp://192.168.178.50/ipp/print. Find the exact URI in the printer web administration page or manual, then keep a discovered value unless it is wrong.'
 [[ -n "${discovered_printer_uri:-}" ]] && printf 'Detected printer URI: %s. Press Enter to keep it if it matches the intended printer.\n' "$discovered_printer_uri"
-uri_default=${discovered_printer_uri:-ipp://printer.local/ipp/print}
-[[ "$topology" == direct_ethernet ]] && uri_default="ipp://${direct_ethernet_device_ipv4}/ipp/print"
-uri=$(ask 'Printer device URI' "$uri_default")
+uri_default=$(printer_uri_default "$connection" "$topology" "${discovered_printer_uri:-}" "$direct_ethernet_device_ipv4")
+while true; do
+  uri=$(ask 'Printer device URI' "$uri_default")
+  valid_printer_uri "$connection" "$uri" && break
+  printf 'The %s connection requires a matching URI scheme. Check the example and try again.\n' "$connection" >&2
+done
 usb_mode=''
 usb_identity=''
 if [[ "$connection" == usb ]]; then
@@ -325,16 +332,31 @@ if [[ "$connection" == usb ]]; then
   elif [[ "$usb_identity" == manual ]]; then
     usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
   fi
+  while ! valid_usb_identity "$usb_identity"; do
+    printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
+    usb_identity=$(ask 'USB vendor:product identity from lsusb' "$usb_identity")
+  done
+  while [[ "$usb_mode" == legacy_usb && "$uri" != usb://* ]]; do
+    printf '%s\n' 'Legacy USB uses the usb:// device URI reported by lpinfo -v.'
+    uri=$(ask 'Printer device URI' 'usb://manufacturer/printer')
+  done
+  while [[ "$usb_mode" == ipp_usb && "$uri" == usb://* ]]; do
+    printf '%s\n' 'IPP-over-USB uses its discovered DNS-SD or IPP endpoint, not a legacy usb:// URI.'
+    uri=$(ask 'Printer device URI' 'dnssd://printer._ipp._tcp.local/')
+  done
 fi
 printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
-driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
+if [[ "$connection" == usb ]]; then
+  if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
+  printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
+else
+  driver_default=driverless
+  [[ "$connection" == socket || "$connection" == lpd ]] && driver_default=package_profile
+  driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
+fi
 profile=''
-printer_make=''
-printer_model=''
 if [[ "$driver" == package_profile ]]; then
-  printer_make=$(ask 'Printer manufacturer for advisory lookup' '')
-  printer_model=$(ask 'Printer model for advisory lookup' '')
-  profile=$(ask 'Explicit package profile' 'brlaser')
+  profile=$(choose_package_profile '')
 fi
 printer_queues=("$queue")
 printer_connections=("$connection")
@@ -347,8 +369,12 @@ subsection 'Additional Devices'
 printf '%s\n' 'Add another printer or scanner only when it should be managed separately.'
 while yes 'Add another printer manually?'; do
   printf '%s\n' 'This printer will have its own queue in the print dialog.'
-  extra_queue=$(ask 'Additional CUPS queue name' 'printer-2')
-  recommendation 'Choose network for another home-LAN device or usb for another USB-local device. A direct Ethernet /30 link is reserved for one device.'
+  while true; do
+    extra_queue=$(ask 'Additional CUPS queue name' 'printer-2')
+    [[ "$extra_queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
+    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+  done
+  recommendation 'Choose network for another home-LAN device or usb for another USB-local device. Add further direct Ethernet links later with scripts/manage-devices add link.'
   extra_topology=$(ask_choice 'Additional device connection topology' 'network' network usb)
   if [[ "$extra_topology" == usb ]]; then
     extra_connection=usb
@@ -356,7 +382,11 @@ while yes 'Add another printer manually?'; do
     extra_connection=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket lpd)
   fi
   printf '%s\n' 'For IPP, use the URI from the printer web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
-  extra_uri=$(ask 'Printer device URI' 'ipp://printer.local/ipp/print')
+  while true; do
+    extra_uri=$(ask 'Printer device URI' "$(case "$extra_connection" in ipp) printf '%s' ipp://printer.local/ipp/print;; ipps) printf '%s' ipps://printer.local/ipp/print;; socket) printf '%s' socket://printer.local:9100;; lpd) printf '%s' lpd://printer.local/queue;; usb) printf '%s' dnssd://printer._ipp._tcp.local/;; esac)")
+    valid_printer_uri "$extra_connection" "$extra_uri" && break
+    printf 'The %s connection requires a matching URI scheme. Try again.\n' "$extra_connection" >&2
+  done
   extra_usb_mode=''
   extra_usb_identity=''
   if [[ "$extra_connection" == usb ]]; then
@@ -367,12 +397,27 @@ while yes 'Add another printer manually?'; do
     elif [[ "$extra_usb_identity" == manual ]]; then
       extra_usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
     fi
+    while ! valid_usb_identity "$extra_usb_identity"; do
+      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
+      extra_usb_identity=$(ask 'USB vendor:product identity from lsusb' "$extra_usb_identity")
+    done
+    while [[ "$extra_usb_mode" == legacy_usb && "$extra_uri" != usb://* ]]; do
+      printf '%s\n' 'Legacy USB uses the usb:// device URI reported by lpinfo -v.'
+      extra_uri=$(ask 'Printer device URI' 'usb://manufacturer/printer')
+    done
+    while [[ "$extra_usb_mode" == ipp_usb && "$extra_uri" == usb://* ]]; do
+      printf '%s\n' 'IPP-over-USB uses its discovered DNS-SD or IPP endpoint, not a legacy usb:// URI.'
+      extra_uri=$(ask 'Printer device URI' 'dnssd://printer._ipp._tcp.local/')
+    done
   fi
-  extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
+  if [[ "$extra_connection" == usb ]]; then
+    if [[ "$extra_usb_mode" == legacy_usb ]]; then extra_driver=package_profile; else extra_driver=driverless; fi
+    printf 'Selected %s driver mode to match %s.\n' "$extra_driver" "$extra_usb_mode"
+  else
+    extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
+  fi
   extra_profile=''
-  [[ "$extra_driver" == package_profile ]] && extra_profile=$(ask 'Explicit package profile' 'brlaser')
-  [[ "$extra_queue" =~ ^[A-Za-z0-9_.-]+$ ]] || { printf '%s\n' 'Invalid queue name.' >&2; exit 1; }
-  [[ "$extra_connection" != usb || "$extra_usb_identity" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || { printf '%s\n' 'USB identity must use vendor:product form.' >&2; exit 1; }
+  [[ "$extra_driver" == package_profile ]] && extra_profile=$(choose_package_profile '')
   printer_queues+=("$extra_queue")
   printer_connections+=("$extra_connection")
   printer_uris+=("$extra_uri")
@@ -394,7 +439,7 @@ else
   printf '%s\n' 'Choose a scanner only when it is connected. Browser scanning is the normal cross-platform option and lets users choose from configured scanners.'
   if yes 'Configure a scanner?'; then
     scanner=true
-    scanner_connection=$(ask_choice 'Scanner connection' 'ipp' usb ipp ipps)
+    scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
     printf '%s\n' 'Use sane-airscan for most network scanners. It supports modern eSCL and WSD scanning. Use sane-utils for a legacy USB scanner, or enter its documented backend package.'
     scanner_backend=$(ask 'SANE backend package' 'sane-airscan')
     scanner_uri=$(ask 'Optional scanner device URI' '')
@@ -404,12 +449,23 @@ else
 fi
 if [[ "$scanner" == true ]]; then
   printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.'
-  scanner_device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
+  while true; do
+    scanner_device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
+    [[ -n "$scanner_device_name" ]] && break
+    printf '%s\n' 'Scanner device name cannot be empty.' >&2
+  done
   printf '%s\n' 'Choose 90 days as a starting point. Completed scans are visible to the trusted LAN until this period expires.'
-  retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
+  while true; do
+    retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
+    [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
+    printf '%s\n' 'Retention must be 1 to 900 days.' >&2
+  done
   printf '%s\n' 'OCR makes scanned PDFs searchable. Use eng for English. Add deu for German, separated with commas. More languages can make OCR slower.'
-  ocr=$(ask 'OCR language codes, comma-separated' 'eng')
-  [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) || { printf '%s\n' 'Retention must be 1 to 900 days.' >&2; exit 1; }
+  while true; do
+    ocr=$(ask 'OCR language codes, comma-separated' 'eng')
+    valid_ocr_languages "$ocr" && break
+    printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
+  done
 fi
 scanner_device_names=()
 scanner_connections=()
@@ -423,38 +479,51 @@ if [[ "$scanner" == true ]]; then
 fi
 while yes 'Add another scanner manually?'; do
   printf '%s\n' 'On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device.'
-  extra_scanner_name=$(ask 'Exact SANE device name from scanimage -L' '')
-  extra_scanner_connection=$(ask_choice 'Scanner connection' 'ipp' usb ipp ipps)
+  while true; do
+    extra_scanner_name=$(ask 'Exact SANE device name from scanimage -L' '')
+    [[ -n "$extra_scanner_name" ]] && break
+    printf '%s\n' 'Scanner device name cannot be empty.' >&2
+  done
+  extra_scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
   printf '%s\n' 'Use sane-airscan for most network scanners, sane-utils for a legacy USB scanner, or its documented backend package.'
   extra_scanner_backend=$(ask 'SANE backend package' 'sane-airscan')
   extra_scanner_usb_mode=''
   [[ "$extra_scanner_connection" == usb ]] && extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
-  [[ -n "$extra_scanner_name" ]] || { printf '%s\n' 'Scanner device name is required.' >&2; exit 1; }
   scanner_device_names+=("$extra_scanner_name")
   scanner_connections+=("$extra_scanner_connection")
   scanner_backends+=("$extra_scanner_backend")
   scanner_usb_modes+=("$extra_scanner_usb_mode")
 done
 if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
-  retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
-  ocr=$(ask 'OCR language codes, comma-separated' 'eng')
-  [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) || { printf '%s\n' 'Retention must be 1 to 900 days.' >&2; exit 1; }
+  while true; do
+    retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
+    [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
+    printf '%s\n' 'Retention must be 1 to 900 days.' >&2
+  done
+  while true; do
+    ocr=$(ask 'OCR language codes, comma-separated' 'eng')
+    valid_ocr_languages "$ocr" && break
+    printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
+  done
 fi
-[[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] || { printf '%s\n' 'Invalid hostname.' >&2; exit 1; }
-[[ "$queue" =~ ^[A-Za-z0-9_.-]+$ ]] || { printf '%s\n' 'Invalid queue name.' >&2; exit 1; }
 [[ "$connection" != usb || "$usb_mode" == ipp_usb || "$usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid printer USB mode.' >&2; exit 1; }
 [[ "$connection" != usb || "$usb_identity" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || { printf '%s\n' 'USB identity must use vendor:product form.' >&2; exit 1; }
 [[ "$scanner" != true || -n "$scanner_device_name" ]] || { printf '%s\n' 'Scanner device name is required.' >&2; exit 1; }
-declare -A queue_names=()
-for queue in "${printer_queues[@]}"; do
-  [[ -z "${queue_names[$queue]:-}" ]] || { printf 'Duplicate queue name: %s\n' "$queue" >&2; exit 1; }
-  queue_names[$queue]=true
+for index in "${!printer_queues[@]}"; do
+  for other_index in "${!printer_queues[@]}"; do
+    (( other_index >= index )) && continue
+    [[ "${printer_queues[$index]}" != "${printer_queues[$other_index]}" ]] || {
+      printf 'Duplicate queue name: %s\n' "${printer_queues[$index]}" >&2
+      exit 1
+    }
+  done
 done
 [[ "$scanner" != true || "$scanner_connection" != usb || "$scanner_usb_mode" == ipp_usb || "$scanner_usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid scanner USB mode.' >&2; exit 1; }
 
 stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.'
 printf 'Pi: %s\nTrusted LAN: %s\nPrinters: %s\n' "$host" "$cidr" "${printer_queues[*]}"
 (( ${#scanner_device_names[@]} > 0 )) && printf 'Scanners: %s, retention %s days, OCR %s\n' "${scanner_device_names[*]}" "$retention" "$ocr"
+[[ -n "$authorized_key" ]] && printf '%s\n' 'Future SSH access: install the detected administrator public key'
 printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
 printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or Raspberry Pi services.'
 yes 'Write production inventory and commission this Pi?' || exit 0
@@ -469,6 +538,9 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   printf '%s\n' '---'
   printf 'common_hostname: %s\ncommon_timezone: %s\ncommon_locale: %s\n' "$(quote "$hostname")" "$(quote "$timezone")" "$(quote "$locale")"
   printf 'managed_users:\n  - name: %s\n    groups: [sudo]\n    sudo: true\n' "$(quote "$admin")"
+  if [[ -n "$authorized_key" ]]; then
+    printf '    authorized_keys:\n      - %s\n' "$(quote "$authorized_key")"
+  fi
   printf 'ssh_allow_password_authentication: true\nfirewall_enabled: true\ntrusted_lan_cidrs:\n  - %s\n' "$(quote "$cidr")"
   [[ -n "$ipv6_cidr" ]] && printf '  - %s\n' "$(quote "$ipv6_cidr")"
   if [[ -n "$direct_ethernet_interface" ]]; then
@@ -498,28 +570,56 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   else
     printf '%s\n' 'managed_scanners: []'
   fi
-  printf '%s\n' 'enable_remote_sane: false' 'automatic_os_updates: false'
+  printf '%s\n' 'enable_remote_sane: false' 'enable_unattended_upgrades: false'
 } >"$vars_tmp"
+technical_capture validation_output 'Validate the confirmed inventory' 'device_inventory.py validate' \
+  "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" --inventory "$vars_tmp" \
+  --backup-directory "$backups" validate
 mv "$host_tmp" "$inventory"
 mv "$vars_tmp" "$variables"
 host_tmp=''
 vars_tmp=''
 subsection 'Applying Your Configuration'
 printf '%s\n' 'Your confirmed choices are now being applied. Ansible will show its normal progress while it installs services and configures the declared queues and scanners.'
-ansible-galaxy collection install -r "$root/requirements.yml"
-[[ "$driver" == package_profile ]] && { printf '%s\n' 'Running legacy-printer advisory discovery.'; ansible-playbook -i "$inventory" "$root/playbooks/discover-printer.yml"; }
-ansible-playbook -i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true
+technical_capture galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
+  ansible-galaxy collection install -r "$root/requirements.yml"
+ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true)
+if ! remote 'sudo -n true' >/dev/null 2>&1; then
+  printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for commissioning.'
+  ansible_arguments+=(--ask-become-pass)
+fi
+technical_report 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' 0 'Ansible output is streamed below and is not truncated.'
+if ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; then
+  ansible_status=0
+else
+  ansible_status=$?
+fi
+technical_report 'Complete Raspberry Pi commissioning' 'ansible-playbook playbooks/site.yml' "$ansible_status" "$([[ "$ansible_status" == 0 ]] && printf 'Ansible completed successfully.' || printf 'Ansible failed; review the streamed output above.')"
+(( ansible_status == 0 )) || exit "$ansible_status"
 printf '%s\n' 'Commissioning completed successfully.'
+for driver in "${printer_drivers[@]}"; do
+  if [[ "$driver" == package_profile ]]; then
+    printf '%s\n' 'Reporting repository package-profile matches for the commissioned legacy printer.'
+    ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" \
+      ansible-playbook -i "$inventory" "$root/playbooks/discover-printer.yml"
+    break
+  fi
+done
 if yes 'Print CUPS test pages now?'; then
   for queue in "${printer_queues[@]}"; do
     printf 'Submitting test page to %s.\n' "$queue"
-    remote "lp -d $(printf '%q' "$queue") /usr/share/cups/data/testprint"
+    technical_capture test_output "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
+      remote "lp -d $(printf '%q' "$queue") /usr/share/cups/data/testprint"
   done
 fi
 if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now?'; then
-  for scanner_device_name in "${scanner_device_names[@]}"; do
+  for index in "${!scanner_device_names[@]}"; do
+    scanner_device_name=${scanner_device_names[$index]}
+    scanner_test_pdf="/var/tmp/scanservjs-onboarding-test-$((index + 1)).pdf"
+    scanner_test_png="/var/tmp/scanservjs-onboarding-test-$((index + 1)).png"
     printf 'Creating scanner test PDF for %s.\n' "$scanner_device_name"
-    remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=pdf > /var/tmp/scanservjs-onboarding-test.pdf"
+    technical_capture test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert' \
+      remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=png > $(printf '%q' "$scanner_test_png") && convert $(printf '%q' "$scanner_test_png") $(printf '%q' "$scanner_test_pdf"); status=\$?; rm -f $(printf '%q' "$scanner_test_png"); exit \$status"
   done
-  printf 'Created scanner test PDFs on %s.\n' "$host"
+  printf 'Created %d scanner test PDF(s) under /var/tmp on %s.\n' "${#scanner_device_names[@]}" "$host"
 fi

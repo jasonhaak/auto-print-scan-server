@@ -3,6 +3,8 @@
   hosts: print_servers
   become: true
   gather_facts: true
+  vars_files:
+    - ../vars/package_profiles.yml
   roles:
     - role: printer_discovery
       tags: printer_discovery

@@ -2,11 +2,12 @@
 - name: Commission the print and scan server
   hosts: print_servers
   become: true
+  vars_files:
+    - ../vars/package_profiles.yml
   roles:
     - role: common
       tags: common
     - role: direct_ethernet
-      when: direct_ethernet_links | length > 0
       tags: direct_ethernet
     - role: device_definition
       tags: device_definition
@@ -29,8 +30,11 @@
     - role: avahi
       tags: avahi
     - role: sane
-      when: managed_scanners | length > 0
       tags: sane
     - role: scanservjs
       when: managed_scanners | length > 0
+      tags: scanservjs
+    - role: scanservjs
+      tasks_from: absent
+      when: managed_scanners | length == 0
       tags: scanservjs

@@ -2,7 +2,7 @@
 - name: Validate managed scanner configuration
   ansible.builtin.assert:
     that:
-      - item.connection in ['usb', 'ipp', 'ipps']
+      - item.connection in ['usb', 'ipp', 'ipps', 'network']
       - item.backend | default('') | length > 0
       - item.device_name | default('') | length > 0
     fail_msg: Every managed scanner requires a supported connection, SANE backend and device_name.
@@ -16,6 +16,7 @@
     name: "{{ ['sane-utils'] + device_scanner_backends }}"
     state: present
   tags: sane
+  when: managed_scanners | length > 0
 
 - name: Configure remote SANE access
   ansible.builtin.template:
@@ -29,6 +30,7 @@
 - name: Enable remote SANE socket when requested
   ansible.builtin.service:
     name: saned.socket
-    enabled: "{{ enable_remote_sane }}"
-    state: "{{ 'started' if enable_remote_sane else 'stopped' }}"
+    enabled: "{{ enable_remote_sane | bool and managed_scanners | length > 0 }}"
+    state: "{{ 'started' if enable_remote_sane | bool and managed_scanners | length > 0 else 'stopped' }}"
+  failed_when: false
   tags: sane

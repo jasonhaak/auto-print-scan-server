@@ -27,6 +27,15 @@
   when: ipp_usb_requested | bool
   tags: ipp_usb
 
+- name: Disable IPP-over-USB when no managed device selects it
+  ansible.builtin.service:
+    name: ipp-usb
+    enabled: false
+    state: stopped
+  when: not ipp_usb_requested | bool
+  failed_when: false
+  tags: ipp_usb
+
 - name: Check USB devices for IPP-over-USB capability
   ansible.builtin.command: ipp-usb check
   register: ipp_usb_check

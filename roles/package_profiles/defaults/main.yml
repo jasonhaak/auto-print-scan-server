@@ -1,6 +1,2 @@
 ---
-package_profiles:
-  brlaser:
-    packages:
-      - printer-driver-brlaser
-    cups_model: drv:///brlaser.drv/brlaser.drv
+package_profiles: {}

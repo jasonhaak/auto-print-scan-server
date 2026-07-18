@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -x "$root/.venv/bin/ansible-lint" ]]; then
+  "$root/scripts/setup"
+fi
+
+export PATH="$root/.venv/bin:$PATH"
+export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/raspberry-print-server-ansible-local"
+export ANSIBLE_REMOTE_TEMP="${TMPDIR:-/tmp}/raspberry-print-server-ansible-remote"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/raspberry-print-server-cache"
+mkdir -p "$ANSIBLE_LOCAL_TEMP" "$ANSIBLE_REMOTE_TEMP" "$XDG_CACHE_HOME"
+
+printf '%s\n' 'Checking Bash syntax and module tests.'
+bash -n "$root/scripts/onboard" "$root/scripts/manage-devices" "$root/scripts/setup" \
+  "$root/scripts/qa" "$root/scripts/lib/onboarding/"*.sh "$root/test/"*.sh
+for test_script in "$root/test/"*.sh; do
+  bash "$test_script"
+done
+python "$root/test/device_inventory_test.py"
+
+printf '%s\n' 'Checking YAML and Ansible conventions.'
+cd "$root"
+yamllint .
+ansible-lint
+
+printf '%s\n' 'Checking every playbook.'
+for playbook in playbooks/*.yml; do
+  ansible-playbook "$playbook" --syntax-check
+done
+printf '%s\n' 'All repository checks passed.'

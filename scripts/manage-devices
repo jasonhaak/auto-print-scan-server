@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+inventory="$root/inventories/production/hosts.yml"
+variables="$root/inventories/production/group_vars/print_servers.yml"
+backups="$root/.onboard-backups"
+helper="$root/scripts/lib/device_inventory.py"
+source "$root/scripts/lib/onboarding/prompts.sh"
+source "$root/scripts/lib/onboarding/ssh-session.sh"
+source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/technical-output.sh"
+
+TECHNICAL_VERBOSE=false
+filtered_arguments=()
+for argument in "$@"; do
+  if [[ "$argument" == --verbose ]]; then
+    TECHNICAL_VERBOSE=true
+  else
+    filtered_arguments+=("$argument")
+  fi
+done
+set -- "${filtered_arguments[@]}"
+
+ssh_socket=''
+ssh_socket_dir=''
+host=''
+admin=''
+discovery_ipp_usb_restore_needed=false
+discovery_cups_restore_needed=false
+discovery_ipp_usb_was_enabled='not-found'
+discovery_ipp_usb_was_active='inactive'
+temporary_direct_connection=''
+
+cleanup() {
+  [[ "$discovery_ipp_usb_restore_needed" == true ]] && restore_ipp_usb_state
+  [[ "$discovery_cups_restore_needed" == true ]] && restore_cups_state
+  ssh_session_cleanup
+  technical_transcript_finish
+}
+
+usage() {
+  cat <<'EOF'
+Manage printer, scanner and direct Ethernet link definitions without rerunning server onboarding.
+
+Usage:
+  scripts/manage-devices list
+  scripts/manage-devices add printer|scanner|link
+  scripts/manage-devices edit printer|scanner|link [IDENTITY]
+  scripts/manage-devices delete printer|scanner|link [IDENTITY]
+  scripts/manage-devices apply
+  scripts/manage-devices --verbose ACTION
+
+Printer identity is its CUPS queue name. Scanner identity is its exact SANE device name. Link identity is its Raspberry Pi interface.
+Every add, edit and delete creates a local backup before replacing the inventory atomically.
+EOF
+}
+
+inventory_python() {
+  local candidate
+  for candidate in "$root/.venv/bin/python" python3; do
+    if [[ "$candidate" == */* ]]; then
+      [[ -x "$candidate" ]] || continue
+    elif ! command -v "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+    if "$candidate" -c 'import yaml' >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+  printf '%s\n' 'PyYAML is unavailable. Run ./scripts/setup, then retry.' >&2
+  exit 1
+}
+
+host_inventory_value() {
+  local key=$1
+  awk -F': ' -v key="$key" '$1 ~ "^[[:space:]]*" key "$" {gsub(/^\"|\"$/, "", $2); print $2; exit}' "$inventory"
+}
+
+field() {
+  "$python" "$helper" --inventory "$variables" --backup-directory "$backups" \
+    field "$1" "$2" "$3"
+}
+
+select_device() {
+  local kind=$1 requested=${2:-} name choice
+  local -a candidates=()
+  if [[ -n "$requested" ]]; then
+    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" \
+      show "$kind" "$requested" >/dev/null
+    printf '%s' "$requested"
+    return
+  fi
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && candidates+=("$name|$name")
+  done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names "$kind")
+  (( ${#candidates[@]} > 0 )) || { printf 'No managed %ss exist.\n' "$kind" >&2; exit 1; }
+  candidate_count=0
+  choice=$(choose_candidate "Select the managed $kind." "${candidates[@]}")
+  [[ "$choice" != manual ]] || { printf '%s\n' 'Select a configured device.' >&2; exit 1; }
+  printf '%s' "${choice##*|}"
+}
+
+validate_queue() {
+  [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]
+}
+
+default_printer_uri() {
+  case "$1" in
+    ipp) printf '%s' 'ipp://printer.local/ipp/print' ;;
+    ipps) printf '%s' 'ipps://printer.local/ipp/print' ;;
+    socket) printf '%s' 'socket://printer.local:9100' ;;
+    lpd) printf '%s' 'lpd://printer.local/queue' ;;
+    usb) printf '%s' 'dnssd://printer._ipp._tcp.local/' ;;
+  esac
+}
+
+configure_printer() {
+  local original=${1:-} name connection uri driver shared profile usb_mode usb_identity link_interface link_device_ipv4 command_output
+  local uri_default usb_mode_default profile_default
+  local name_default=printer connection_default=${discovered_printer_connection:-ipp} driver_default=driverless shared_default=true
+  if [[ -n "$original" ]]; then
+    name_default=$(field printer "$original" name)
+    connection_default=$(field printer "$original" connection)
+    driver_default=$(field printer "$original" driver_mode)
+    shared_default=$(field printer "$original" shared)
+    [[ -n "$shared_default" ]] || shared_default=true
+  fi
+  while true; do
+    name=$(ask 'CUPS queue name' "$name_default")
+    validate_queue "$name" && break
+    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+  done
+  if [[ -z "$original" ]]; then
+    while IFS= read -r link_interface; do
+      [[ -n "$link_interface" ]] || continue
+      link_device_ipv4=$(field link "$link_interface" device_ipv4)
+      printf 'Available direct Ethernet link: %s reaches device address %s. Use ipp, ipps, socket or lpd with that address.\n' "$link_interface" "$link_device_ipv4"
+    done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names link)
+  fi
+  input_required 'Choose how the printer is connected'
+  connection=$(ask_choice 'Printer connection (LAN/direct IP protocol or USB)' "$connection_default" ipp ipps socket lpd usb)
+  if [[ -z "$original" && ( "$connection" == socket || "$connection" == lpd ) ]]; then
+    driver_default=package_profile
+  fi
+  usb_mode=''
+  usb_identity=''
+  if [[ "$connection" == usb ]]; then
+    usb_mode_default=${discovered_printer_usb_mode:-ipp_usb}
+    if [[ -n "$original" ]]; then
+      usb_mode_default=$(field printer "$original" usb_mode)
+      [[ -n "$usb_mode_default" ]] || usb_mode_default=ipp_usb
+    fi
+    usb_mode=$(ask_choice 'USB mode' "$usb_mode_default" ipp_usb legacy_usb)
+    if [[ -n "$original" ]]; then
+      usb_identity=$(field printer "$original" usb_identity)
+    elif [[ -n "$ssh_socket" ]]; then
+      if ! usb_identity=$(choose_usb_identity "$(remote 'lsusb' 2>&1 || true)") || [[ "$usb_identity" == manual ]]; then
+        usb_identity=''
+      fi
+    fi
+    while true; do
+      usb_identity=$(ask 'USB vendor:product identity' "$usb_identity")
+      valid_usb_identity "$usb_identity" && break
+      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
+    done
+  fi
+
+  uri_default=${discovered_printer_uri:-$(default_printer_uri "$connection")}
+  [[ "$connection" == usb && "$usb_mode" == legacy_usb ]] && uri_default=usb://manufacturer/printer
+  [[ -n "$original" && "$connection" == "$connection_default" ]] && uri_default=$(field printer "$original" device_uri)
+  [[ "$connection" == usb && "$usb_mode" == legacy_usb && "$uri_default" != usb://* ]] && uri_default=usb://manufacturer/printer
+  [[ "$connection" == usb && "$usb_mode" == ipp_usb && "$uri_default" == usb://* ]] && uri_default=dnssd://printer._ipp._tcp.local/
+  while true; do
+    uri=$(ask 'Printer device URI' "$uri_default")
+    if valid_printer_uri "$connection" "$uri"; then
+      [[ "$connection" != usb || "$usb_mode" != legacy_usb || "$uri" == usb://* ]] &&
+        [[ "$connection" != usb || "$usb_mode" != ipp_usb || "$uri" != usb://* ]] && break
+    fi
+    printf 'The %s connection requires a matching URI scheme. Try again.\n' "$connection" >&2
+  done
+  if [[ "$connection" == usb ]]; then
+    if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
+    printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
+  else
+    driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
+  fi
+  shared=$(ask_choice 'Share this queue on the trusted LAN' "$shared_default" true false)
+  profile=''
+  if [[ "$driver" == package_profile ]]; then
+    profile_default=''
+    if [[ -n "$original" ]]; then
+      profile_default=$(field printer "$original" package_profile)
+    fi
+    profile=$(choose_package_profile "$profile_default")
+  fi
+
+  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-printer)
+  [[ -n "$original" ]] && command+=(--original-name "$original")
+  command+=(--name "$name" --connection "$connection" --device-uri "$uri" --driver-mode "$driver" --shared "$shared")
+  [[ -n "$profile" ]] && command+=(--package-profile "$profile")
+  [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
+  [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
+  technical_capture command_output 'Save the managed printer definition' 'device_inventory.py upsert-printer' "${command[@]}"
+}
+
+configure_scanner() {
+  local original=${1:-} name connection backend usb_mode usb_identity retention ocr command_output
+  local usb_mode_default connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan}
+  if [[ -n "$original" ]]; then
+    connection_default=$(field scanner "$original" connection)
+    backend_default=$(field scanner "$original" backend)
+  fi
+  while true; do
+    name=$(ask 'Exact SANE device name from scanimage -L' "${original:-${discovered_scanner_device_name:-}}")
+    [[ -n "$name" ]] && break
+    printf '%s\n' 'Scanner device name cannot be empty.' >&2
+  done
+  input_required 'Choose how the scanner is connected'
+  connection=$(ask_choice 'Scanner connection (network or USB)' "$connection_default" network ipp ipps usb)
+  [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
+  backend=$(ask 'SANE backend package' "$backend_default")
+  usb_mode=''
+  usb_identity=''
+  if [[ "$connection" == usb ]]; then
+    usb_mode_default=${discovered_scanner_usb_mode:-ipp_usb}
+    if [[ -n "$original" && "$connection" == "$connection_default" ]]; then
+      usb_mode_default=$(field scanner "$original" usb_mode)
+      [[ -n "$usb_mode_default" ]] || usb_mode_default=ipp_usb
+    fi
+    usb_mode=$(ask_choice 'USB mode' "$usb_mode_default" ipp_usb legacy_usb)
+    usb_identity=$(ask 'Optional USB vendor:product identity' "$([[ -n "$original" ]] && field scanner "$original" usb_identity || true)")
+  fi
+
+  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)
+  [[ -n "$original" ]] && command+=(--original-device-name "$original")
+  command+=(--device-name "$name" --connection "$connection" --backend "$backend")
+  [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
+  [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
+  if [[ -z "$original" ]] && ! "$python" "$helper" --inventory "$variables" --backup-directory "$backups" names scanner | grep -q .; then
+    while true; do
+      retention=$(ask 'Scan retention days (1-900)' '90')
+      [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
+      printf '%s\n' 'Retention must be a number from 1 to 900.' >&2
+    done
+    while true; do
+      ocr=$(ask 'OCR language codes, comma-separated' 'eng')
+      valid_ocr_languages "$ocr" && break
+      printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
+    done
+    command+=(--retention-days "$retention" --ocr-languages "$ocr")
+  fi
+  technical_capture command_output 'Save the managed scanner definition' 'device_inventory.py upsert-scanner' "${command[@]}"
+}
+
+configure_link() {
+  local original=${1:-} interface pi_cidr device_ipv4 active_interface detected_interface command_output
+  local interface_default=eth1 pi_cidr_default=192.168.50.1/30 device_ipv4_default=192.168.50.2
+  if [[ -n "$original" ]]; then
+    interface_default=$(field link "$original" interface)
+    pi_cidr_default=$(field link "$original" pi_ipv4_cidr)
+    device_ipv4_default=$(field link "$original" device_ipv4)
+  else
+    open_inventory_ssh_session
+    active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") {print \$(i+1); exit}}'" 2>/dev/null || true)
+    detected_interface=$(remote "for path in /sys/class/net/*; do candidate=\${path##*/}; [[ \$candidate != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$candidate\"; break; }; done" 2>/dev/null || true)
+    [[ -n "$detected_interface" ]] && interface_default=$detected_interface
+    technical_report 'Detect an unused direct Ethernet interface' 'inspect /sys/class/net and the default route' 0 "${detected_interface:-No unused Ethernet interface detected.}"
+  fi
+  input_required 'Configure the direct Ethernet device link'
+  while true; do
+    interface=$(ask 'Raspberry Pi Ethernet interface' "$interface_default")
+    [[ "$interface" =~ ^[A-Za-z0-9_.-]+$ ]] && break
+    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+  done
+  while true; do
+    pi_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "$pi_cidr_default")
+    device_ipv4=$(ask 'Direct device IPv4 address' "$device_ipv4_default")
+    same_direct_ipv4_link "$pi_cidr" "$device_ipv4" && break
+    printf '%s\n' 'Use two host addresses in the same private /30, for example 192.168.50.1/30 and 192.168.50.2.' >&2
+  done
+  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
+  [[ -n "$original" ]] && command+=(--original-interface "$original")
+  command+=(--interface "$interface" --pi-ipv4-cidr "$pi_cidr" --device-ipv4 "$device_ipv4")
+  technical_capture command_output 'Save the direct Ethernet link definition' 'device_inventory.py upsert-link' "${command[@]}"
+  printf 'The link is independent from device definitions. Add a printer or scanner using device address %s when needed.\n' "$device_ipv4"
+}
+
+open_inventory_ssh_session() {
+  if [[ -n "$ssh_socket" ]] && remote true >/dev/null 2>&1; then
+    return
+  fi
+  host=$(host_inventory_value ansible_host)
+  admin=$(host_inventory_value ansible_user)
+  [[ -n "$host" && -n "$admin" ]] || {
+    printf '%s\n' 'Production server address or administrator is missing. Run ./scripts/onboard first.' >&2
+    exit 1
+  }
+  printf 'Connecting to %s@%s. SSH may request the Raspberry Pi password.\n' "$admin" "$host"
+  ssh_session_open
+}
+
+discover_for_add() {
+  local kind=$1 discovery_scope
+  input_required 'Choose the device discovery scope'
+  discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
+  if [[ "$discovery_scope" == skip ]]; then
+    return
+  fi
+  open_inventory_ssh_session
+  printf '%s\n' 'Discovery needs sudo to inspect USB devices and install its diagnostic packages.'
+  remote_tty 'sudo -v'
+  discovery_kind=$kind
+  discover_devices true "$discovery_scope"
+}
+
+apply_inventory() {
+  local commissioning=${1:-false} ansible_playbook command_output status
+  if [[ -x "$root/.venv/bin/ansible-playbook" ]]; then
+    ansible_playbook="$root/.venv/bin/ansible-playbook"
+  else
+    need ansible-playbook
+    ansible_playbook=ansible-playbook
+  fi
+  technical_capture command_output 'Validate managed definitions before applying' 'device_inventory.py validate' \
+    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" validate
+  open_inventory_ssh_session
+  ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
+  if ! remote 'sudo -n true' >/dev/null 2>&1; then
+    printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for this run.'
+    ansible_arguments+=(--ask-become-pass)
+  fi
+  technical_report 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' 0 'Ansible output is streamed below and is not truncated.'
+  if ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" \
+    "$ansible_playbook" "${ansible_arguments[@]}"; then status=0; else status=$?; fi
+  technical_report 'Complete the Ansible inventory application' 'ansible-playbook playbooks/site.yml' "$status" "$([[ "$status" == 0 ]] && printf 'Ansible completed successfully.' || printf 'Ansible failed; review the streamed output above.')"
+  (( status == 0 )) || return "$status"
+  printf '%s\n' 'The production inventory is now applied.'
+}
+
+offer_apply() {
+  local commissioning=$1
+  if yes_default 'Apply this inventory change to the Raspberry Pi now?'; then
+    apply_inventory "$commissioning"
+  else
+    printf '%s\n' 'Inventory is saved but not applied. Run ./scripts/manage-devices apply when ready.'
+  fi
+}
+
+python=$(inventory_python)
+ONBOARD_PYTHON=$python
+[[ -f "$variables" ]] || { printf '%s\n' 'Production inventory is missing. Run ./scripts/onboard first.' >&2; exit 1; }
+technical_transcript_start "$root" manage-devices
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+action=${1:-}
+if [[ -z "$action" ]]; then
+  printf '%s\n' 'Current managed definitions:'
+  "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+  action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
+  if [[ "$action" == add || "$action" == edit || "$action" == delete ]]; then
+    set -- "$action" "$(ask_choice 'Definition type' 'printer' printer scanner link)"
+  else
+    set -- "$action"
+  fi
+fi
+case "$action" in
+  -h|--help) usage; exit 0 ;;
+  list)
+    technical_capture command_output 'List managed definitions' 'device_inventory.py list' \
+      "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+    ;;
+  apply) apply_inventory false ;;
+  add)
+    kind=${2:-}
+    [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
+    [[ "$kind" != link ]] && discover_for_add "$kind"
+    "configure_$kind"
+    [[ "$kind" == link ]] && offer_apply false || offer_apply true
+    ;;
+  edit)
+    kind=${2:-}
+    [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
+    identity=$(select_device "$kind" "${3:-}")
+    "configure_$kind" "$identity"
+    offer_apply true
+    ;;
+  delete)
+    kind=${2:-}
+    [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
+    identity=$(select_device "$kind" "${3:-}")
+    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" show "$kind" "$identity"
+    yes "Delete this managed $kind from inventory?" || exit 0
+    technical_capture command_output "Delete the managed $kind definition" "device_inventory.py delete $kind" \
+      "$python" "$helper" --inventory "$variables" --backup-directory "$backups" delete "$kind" "$identity"
+    offer_apply false
+    ;;
+  *) usage >&2; exit 2 ;;
+esac

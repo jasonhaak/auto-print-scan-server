@@ -16,6 +16,35 @@ valid_private_ipv4_24_cidr() {
   [[ "$(private_ipv4_24 "$address")" == "$cidr" ]]
 }
 
+valid_private_ipv4_search_cidr() {
+  local cidr=$1 checker=${ONBOARD_PYTHON:-python3}
+  "$checker" -c '
+import ipaddress
+import sys
+
+try:
+    network = ipaddress.ip_network(sys.argv[1], strict=True)
+except ValueError:
+    raise SystemExit(1)
+
+private_blocks = tuple(ipaddress.ip_network(item) for item in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+valid = network.version == 4 and network.num_addresses <= 1024 and any(network.subnet_of(block) for block in private_blocks)
+raise SystemExit(0 if valid else 1)
+' "$cidr" >/dev/null 2>&1
+}
+
+private_ipv4_search_addresses() {
+  local cidr=$1 checker=${ONBOARD_PYTHON:-python3}
+  valid_private_ipv4_search_cidr "$cidr" || return 1
+  "$checker" -c '
+import ipaddress
+import sys
+
+for address in ipaddress.ip_network(sys.argv[1], strict=True).hosts():
+    print(address)
+' "$cidr"
+}
+
 administrator_lan_cidr() {
   local address interface
   if command -v ip >/dev/null; then
@@ -43,19 +72,17 @@ ssh_port_open() {
 }
 
 find_ssh_hosts() {
-  local cidr=$1 base number address pid
+  local cidr=$1 address pid
   local -a pids=()
-  [[ "$cidr" =~ ^([0-9]{1,3}\.){3}0/24$ ]] || return 1
+  valid_private_ipv4_search_cidr "$cidr" || return 1
   ssh_port_probe_available || return 2
-  base=${cidr%0/24}
-  for number in {1..254}; do
-    address="${base}${number}"
+  while IFS= read -r address; do
     (ssh_port_open "$address" && printf '%s\n' "$address") &
     pids+=("$!")
     if (( ${#pids[@]} == 16 )); then
       for pid in "${pids[@]}"; do wait "$pid" || true; done
       pids=()
     fi
-  done
+  done < <(private_ipv4_search_addresses "$cidr")
   for pid in "${pids[@]}"; do wait "$pid" || true; done
 }

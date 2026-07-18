@@ -1,11 +1,24 @@
 ---
+- name: Detect Raspberry Pi OS
+  ansible.builtin.stat:
+    path: /etc/rpi-issue
+  register: common_raspberry_pi_os
+  tags: common
+
 - name: Assert the supported operating system and architecture
   ansible.builtin.assert:
     that:
-      - ansible_facts.distribution_major_version == '13'
-      - ansible_facts.architecture == 'aarch64'
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version in common_supported_debian_major_versions
+      - ansible_facts.architecture in common_supported_architectures
+      - common_raspberry_pi_os.stat.exists
     fail_msg: >-
-      This project supports Raspberry Pi OS Lite 64-bit based on Debian Trixie only.
+      Unsupported platform: {{ ansible_facts.distribution }}
+      {{ ansible_facts.distribution_major_version }} on {{ ansible_facts.architecture }}.
+      This release supports Raspberry Pi OS with Debian major version(s)
+      {{ common_supported_debian_major_versions | join(', ') }} on
+      {{ common_supported_architectures | join(', ') }}. Extend the compatibility policy only
+      after repository QA and hardware acceptance for the new platform.
   tags: common
 
 - name: Refresh the APT package cache

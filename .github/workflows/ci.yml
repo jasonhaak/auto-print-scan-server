@@ -30,10 +30,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Use Python 3.11
-        uses: actions/setup-python@v5
+      - name: Use Python 3.13
+        uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -48,7 +48,12 @@ jobs:
         run: ansible-lint
 
       - name: Check onboarding syntax
-        run: bash -n scripts/onboard
+        run: bash -n scripts/onboard scripts/manage-devices scripts/setup scripts/qa scripts/lib/onboarding/*.sh
+
+      - name: Test onboarding and inventory modules
+        run: |
+          for test_script in test/*.sh; do bash "$test_script"; done
+          python test/device_inventory_test.py
 
       - name: Check playbook syntax
         run: |

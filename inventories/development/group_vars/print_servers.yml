@@ -10,7 +10,6 @@ managed_users:
     sudo: true
 
 ssh_allow_password_authentication: true
-ssh_authorized_key_path: null
 
 firewall_enabled: false
 trusted_lan_cidrs:
@@ -30,4 +29,4 @@ managed_scanners: []
 scanservjs_min_free_space_mb: 1024
 scanservjs_retention_days: null
 enable_remote_sane: false
-automatic_os_updates: false
+enable_unattended_upgrades: false

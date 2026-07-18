@@ -28,6 +28,14 @@
   loop: "{{ managed_users }}"
   tags: users
 
+- name: Revoke managed sudo access when not requested
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/90-{{ item.name }}"
+    state: absent
+  when: not (item.sudo | default(false) | bool)
+  loop: "{{ managed_users }}"
+  tags: users
+
 - name: Install managed user authorized keys
   ansible.posix.authorized_key:
     user: "{{ item.0.name }}"

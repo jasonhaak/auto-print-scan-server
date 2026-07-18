@@ -3,7 +3,7 @@
   ansible.builtin.assert:
     that:
       - trusted_lan_cidrs | length > 0
-      - trusted_lan_cidrs | select('match', '.+/.+') | list | length == trusted_lan_cidrs | length
+      - trusted_lan_cidrs | select('match', '^[0-9A-Fa-f:.]+/[0-9]{1,3}$') | list | length == trusted_lan_cidrs | length
       - firewall_ssh_port | int > 0
       - firewall_ssh_port | int < 65536
       - firewall_ipp_port | int > 0
@@ -16,10 +16,26 @@
   when: firewall_enabled | bool
   tags: firewall
 
-- name: Install UFW
-  ansible.builtin.apt:
-    name: ufw
-    state: present
+- name: Validate custom firewall ports
+  ansible.builtin.assert:
+    that:
+      - item | string is match('^[0-9]+$')
+      - item | int > 0
+      - item | int < 65536
+    fail_msg: "Invalid custom firewall port: {{ item }}"
+  loop: "{{ firewall_custom_ports }}"
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Validate trusted LAN networks precisely
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts.python.executable }}"
+      - -c
+      - "import ipaddress, sys; ipaddress.ip_network(sys.argv[1], strict=True)"
+      - "{{ item }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  changed_when: false
   when: firewall_enabled | bool
   tags: firewall
 
@@ -27,7 +43,111 @@
   ansible.builtin.set_fact:
     firewall_active_lan_interface: >-
       {{ firewall_lan_interface | default(ansible_facts.default_ipv4.interface, true) }}
+  tags: firewall
+
+- name: Initialise desired managed firewall rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: []
+  tags: firewall
+
+- name: Add desired SSH rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': firewall_ssh_port | string, 'proto': 'tcp', 'from_ip': item}] }}
+  loop: "{{ trusted_lan_cidrs }}"
   when: firewall_enabled | bool
+  tags: firewall
+
+- name: Add desired IPP rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': firewall_ipp_port | string, 'proto': 'tcp', 'from_ip': item}] }}
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_shared_printer | bool
+  tags: firewall
+
+- name: Add desired mDNS rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': firewall_mdns_port | string, 'proto': 'udp', 'from_ip': item,
+         'direction': 'in', 'interface': firewall_active_lan_interface}] }}
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_shared_printer | bool
+  tags: firewall
+
+- name: Add desired ScanservJS rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': firewall_scanservjs_port | string, 'proto': 'tcp', 'from_ip': item}] }}
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_scanner | bool
+  tags: firewall
+
+- name: Add desired remote SANE rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': firewall_saned_port | string, 'proto': 'tcp', 'from_ip': item}] }}
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_scanner | bool
+    - enable_remote_sane | bool
+  tags: firewall
+
+- name: Add desired custom service rules
+  ansible.builtin.set_fact:
+    firewall_desired_rules: >-
+      {{ firewall_desired_rules + [{'port': item.1 | string, 'proto': 'tcp', 'from_ip': item.0}] }}
+  loop: "{{ trusted_lan_cidrs | product(firewall_custom_ports) | list }}"
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Create firewall ownership state directory
+  ansible.builtin.file:
+    path: /var/lib/raspberry-print-server
+    state: directory
+    mode: '0755'
+  tags: firewall
+
+- name: Read previously managed firewall rules
+  ansible.builtin.slurp:
+    src: /var/lib/raspberry-print-server/ufw-rules.json
+  register: firewall_rule_state
+  failed_when: false
+  changed_when: false
+  tags: firewall
+
+- name: Decode previously managed firewall rules
+  ansible.builtin.set_fact:
+    firewall_previous_rules: >-
+      {{ (firewall_rule_state.content | default('W10=')) | b64decode | from_json }}
+  tags: firewall
+
+- name: Install UFW when enabled or previously managed
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: firewall_enabled | bool or firewall_previous_rules | length > 0
+  tags: firewall
+
+- name: Remove stale managed firewall rules
+  community.general.ufw:
+    rule: allow
+    delete: true
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    from_ip: "{{ item.from_ip }}"
+    direction: "{{ item.direction | default(omit) }}"
+    interface: "{{ item.interface | default(omit) }}"
+  loop: "{{ firewall_previous_rules | reject('in', firewall_desired_rules) | list }}"
+  loop_control:
+    label: "{{ item.proto }}/{{ item.port }} from {{ item.from_ip }}"
   tags: firewall
 
 - name: Set UFW default incoming policy
@@ -44,73 +164,18 @@
   when: firewall_enabled | bool
   tags: firewall
 
-- name: Allow SSH from trusted networks
+- name: Add current managed firewall rules
   community.general.ufw:
     rule: allow
-    port: "{{ firewall_ssh_port }}"
-    proto: tcp
-    from_ip: "{{ item }}"
-  loop: "{{ trusted_lan_cidrs }}"
-  when: firewall_enabled | bool
-  tags: firewall
-
-- name: Allow IPP from trusted networks when the printer is shared
-  community.general.ufw:
-    rule: allow
-    port: "{{ firewall_ipp_port }}"
-    proto: tcp
-    from_ip: "{{ item }}"
-  loop: "{{ trusted_lan_cidrs }}"
-  when:
-    - firewall_enabled | bool
-    - device_has_shared_printer | bool
-  tags: firewall
-
-- name: Allow mDNS on the normal LAN interface when the printer is shared
-  community.general.ufw:
-    rule: allow
-    direction: in
-    port: "{{ firewall_mdns_port }}"
-    proto: udp
-    from_ip: "{{ item }}"
-    interface: "{{ firewall_active_lan_interface }}"
-  loop: "{{ trusted_lan_cidrs }}"
-  when:
-    - firewall_enabled | bool
-    - device_has_shared_printer | bool
-  tags: firewall
-
-- name: Allow ScanservJS from trusted networks when a scanner is configured
-  community.general.ufw:
-    rule: allow
-    port: "{{ firewall_scanservjs_port }}"
-    proto: tcp
-    from_ip: "{{ item }}"
-  loop: "{{ trusted_lan_cidrs }}"
-  when:
-    - firewall_enabled | bool
-    - device_has_scanner | bool
-  tags: firewall
-
-- name: Allow remote SANE from trusted networks when enabled
-  community.general.ufw:
-    rule: allow
-    port: "{{ firewall_saned_port }}"
-    proto: tcp
-    from_ip: "{{ item }}"
-  loop: "{{ trusted_lan_cidrs }}"
-  when:
-    - firewall_enabled | bool
-    - enable_remote_sane | bool
-  tags: firewall
-
-- name: Allow explicitly declared custom service ports from trusted networks
-  community.general.ufw:
-    rule: allow
-    port: "{{ item.1 }}"
-    proto: tcp
-    from_ip: "{{ item.0 }}"
-  loop: "{{ trusted_lan_cidrs | product(firewall_custom_ports) | list }}"
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    from_ip: "{{ item.from_ip }}"
+    direction: "{{ item.direction | default(omit) }}"
+    interface: "{{ item.interface | default(omit) }}"
+    comment: raspberry-print-server
+  loop: "{{ firewall_desired_rules }}"
+  loop_control:
+    label: "{{ item.proto }}/{{ item.port }} from {{ item.from_ip }}"
   when: firewall_enabled | bool
   tags: firewall
 
@@ -124,4 +189,11 @@
   community.general.ufw:
     state: disabled
   when: not firewall_enabled | bool
+  tags: firewall
+
+- name: Save managed firewall rule state
+  ansible.builtin.copy:
+    content: "{{ firewall_desired_rules | to_nice_json }}\n"
+    dest: /var/lib/raspberry-print-server/ufw-rules.json
+    mode: '0644'
   tags: firewall

@@ -1,6 +1,11 @@
 ---
 - name: Query declared legacy printers without changing them
-  ansible.builtin.command: "ipptool -tv {{ item.device_uri }} get-printer-attributes.test"
+  ansible.builtin.command:
+    argv:
+      - ipptool
+      - -tv
+      - "{{ item.device_uri }}"
+      - get-printer-attributes.test
   register: printer_discovery_result
   changed_when: false
   failed_when: false
@@ -15,4 +20,26 @@
       Printer {{ item.item.name }} query {{ 'succeeded' if item.rc == 0 else 'was unavailable' }}.
       Package-profile selection remains operator-approved.
   loop: "{{ printer_discovery_result.results | default([]) }}"
+  tags: printer_discovery
+
+- name: Report matching repository package profiles
+  ansible.builtin.debug:
+    msg: >-
+      Repository profile {{ item.1.key }} matches {{ item.0.item.name }}:
+      {{ item.1.value.description }}. The operator must still select it explicitly.
+  loop: >-
+    {{ printer_discovery_result.results | default([])
+       | product(package_profiles | dict2items) | list }}
+  loop_control:
+    label: "{{ item.0.item.name }} -> {{ item.1.key }}"
+  when:
+    - item.0.rc == 0
+    - item.0.stdout is search(item.1.value.make_model_pattern | default('a^'))
+  tags: printer_discovery
+
+- name: Report the optional driverless compatibility reference
+  ansible.builtin.debug:
+    msg: >-
+      OpenPrinting's driverless printer reference is available at {{ openprinting_reference_url }}.
+      No device details were sent by this playbook.
   tags: printer_discovery

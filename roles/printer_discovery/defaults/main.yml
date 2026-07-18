@@ -1,3 +1,2 @@
 ---
-openprinting_lookup_enabled: true
-openprinting_query_url: https://www.openprinting.org/printers/query.cgi
+openprinting_reference_url: https://openprinting.github.io/printers

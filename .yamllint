@@ -1,6 +1,12 @@
 ---
 extends: default
 
+ignore: |
+  .ansible/
+  .onboard-backups/
+  .venv/
+  collections/
+
 rules:
   braces:
     max-spaces-inside: 1

@@ -1,5 +1,6 @@
 .ansible/
 .onboard-backups/
+.onboard-logs/
 collections/
 *.retry
 inventories/*/group_vars/local.yml

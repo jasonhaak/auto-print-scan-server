@@ -1,0 +1,8 @@
+---
+package_profiles:
+  brlaser:
+    description: Brother laser printers supported by Debian's brlaser package
+    packages:
+      - printer-driver-brlaser
+    cups_model: drv:///brlaser.drv/brlaser.drv
+    make_model_pattern: '(?i)Brother.*MFC-7360'

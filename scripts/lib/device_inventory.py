@@ -1,0 +1,428 @@
+#!/usr/bin/env python3
+"""Validate and atomically update managed device and direct-link definitions."""
+
+from __future__ import annotations
+
+import argparse
+import ipaddress
+import os
+import re
+import shutil
+import sys
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+import yaml
+
+
+PRINTER_CONNECTIONS = {"ipp", "ipps", "socket", "lpd", "usb"}
+SCANNER_CONNECTIONS = {"ipp", "ipps", "network", "usb"}
+USB_MODES = {"ipp_usb", "legacy_usb"}
+QUEUE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+USB_IDENTITY_PATTERN = re.compile(r"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$")
+OCR_LANGUAGE_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+PACKAGE_PROFILES_PATH = Path(__file__).resolve().parents[2] / "vars/package_profiles.yml"
+
+
+class InventoryError(ValueError):
+    pass
+
+
+def known_package_profiles() -> set[str]:
+    try:
+        data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise InventoryError(f"package profile registry is unavailable: {error}") from error
+    profiles = data.get("package_profiles") if isinstance(data, dict) else None
+    if not isinstance(profiles, dict):
+        raise InventoryError("package profile registry must contain package_profiles")
+    return set(profiles)
+
+
+def load_inventory(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise InventoryError(f"inventory file does not exist: {path}")
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise InventoryError(f"inventory YAML is invalid: {error}") from error
+    if not isinstance(data, dict):
+        raise InventoryError("inventory must contain a YAML mapping")
+    data.setdefault("managed_printers", [])
+    data.setdefault("managed_scanners", [])
+    data.setdefault("direct_ethernet_links", [])
+    validate_inventory(data)
+    return data
+
+
+def require_text(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip() or "\n" in value or "\r" in value:
+        raise InventoryError(f"{label} must be a non-empty single-line value")
+    return value
+
+
+def validate_printer(printer: Any) -> None:
+    if not isinstance(printer, dict):
+        raise InventoryError("every managed printer must be a mapping")
+    name = require_text(printer.get("name"), "printer name")
+    if not QUEUE_PATTERN.fullmatch(name):
+        raise InventoryError(f"printer name {name!r} is not a safe CUPS queue name")
+
+    connection = printer.get("connection")
+    if connection not in PRINTER_CONNECTIONS:
+        raise InventoryError(f"printer {name!r} has unsupported connection {connection!r}")
+    uri = require_text(printer.get("device_uri"), f"printer {name!r} device URI")
+    scheme = urlsplit(uri).scheme.lower()
+    expected_schemes = {
+        "ipp": {"ipp"},
+        "ipps": {"ipps"},
+        "socket": {"socket"},
+        "lpd": {"lpd"},
+        "usb": {"dnssd", "ipp", "ipps", "usb"},
+    }[connection]
+    if scheme not in expected_schemes:
+        expected = " or ".join(f"{item}://" for item in sorted(expected_schemes))
+        raise InventoryError(f"printer {name!r} with connection {connection!r} requires {expected}")
+
+    driver_mode = printer.get("driver_mode")
+    if driver_mode not in {"driverless", "package_profile"}:
+        raise InventoryError(f"printer {name!r} has unsupported driver mode {driver_mode!r}")
+    if driver_mode == "package_profile":
+        profile = require_text(printer.get("package_profile"), f"printer {name!r} package profile")
+        if profile not in known_package_profiles():
+            raise InventoryError(f"printer {name!r} has unknown package profile {profile!r}")
+
+    shared = printer.get("shared", True)
+    if not isinstance(shared, bool):
+        raise InventoryError(f"printer {name!r} shared must be true or false")
+    if connection == "usb":
+        usb_mode = printer.get("usb_mode")
+        if usb_mode not in USB_MODES:
+            raise InventoryError(f"USB printer {name!r} must select ipp_usb or legacy_usb")
+        identity = require_text(printer.get("usb_identity"), f"USB printer {name!r} identity")
+        if not USB_IDENTITY_PATTERN.fullmatch(identity):
+            raise InventoryError(f"USB printer {name!r} identity must use vendor:product form")
+        if usb_mode == "ipp_usb" and (driver_mode != "driverless" or scheme == "usb"):
+            raise InventoryError(f"IPP-over-USB printer {name!r} requires a driverless IPP or DNS-SD URI")
+        if usb_mode == "legacy_usb" and (driver_mode != "package_profile" or scheme != "usb"):
+            raise InventoryError(f"legacy USB printer {name!r} requires a usb:// URI and package profile")
+
+
+def validate_scanner(scanner: Any) -> None:
+    if not isinstance(scanner, dict):
+        raise InventoryError("every managed scanner must be a mapping")
+    name = require_text(scanner.get("device_name"), "scanner device name")
+    connection = scanner.get("connection")
+    if connection not in SCANNER_CONNECTIONS:
+        raise InventoryError(f"scanner {name!r} has unsupported connection {connection!r}")
+    require_text(scanner.get("backend"), f"scanner {name!r} backend")
+    if connection == "usb" and scanner.get("usb_mode") not in USB_MODES:
+        raise InventoryError(f"USB scanner {name!r} must select ipp_usb or legacy_usb")
+    identity = scanner.get("usb_identity")
+    if identity is not None and not USB_IDENTITY_PATTERN.fullmatch(str(identity)):
+        raise InventoryError(f"scanner {name!r} identity must use vendor:product form")
+
+
+def validate_direct_link(link: Any) -> None:
+    if not isinstance(link, dict):
+        raise InventoryError("every direct Ethernet link must be a mapping")
+    interface = require_text(link.get("interface"), "direct Ethernet interface")
+    if not QUEUE_PATTERN.fullmatch(interface):
+        raise InventoryError(f"direct Ethernet interface {interface!r} is invalid")
+    try:
+        pi = ipaddress.ip_interface(require_text(link.get("pi_ipv4_cidr"), f"link {interface!r} Pi IPv4 CIDR"))
+        device = ipaddress.ip_address(require_text(link.get("device_ipv4"), f"link {interface!r} device IPv4"))
+    except ValueError as error:
+        raise InventoryError(f"direct Ethernet link {interface!r} has an invalid IPv4 value: {error}") from error
+    valid = (
+        pi.version == 4
+        and pi.network.prefixlen == 30
+        and device.version == 4
+        and device in pi.network
+        and device not in {pi.ip, pi.network.network_address, pi.network.broadcast_address}
+    )
+    if not valid:
+        raise InventoryError(f"direct Ethernet link {interface!r} requires two host addresses in the same IPv4 /30")
+
+
+def validate_inventory(data: dict[str, Any]) -> None:
+    printers = data.get("managed_printers")
+    scanners = data.get("managed_scanners")
+    if not isinstance(printers, list) or not isinstance(scanners, list):
+        raise InventoryError("managed_printers and managed_scanners must be lists")
+    if not printers:
+        raise InventoryError("inventory must contain at least one managed printer")
+    for printer in printers:
+        validate_printer(printer)
+    for scanner in scanners:
+        validate_scanner(scanner)
+    printer_names = [printer["name"] for printer in printers]
+    scanner_names = [scanner["device_name"] for scanner in scanners]
+    if len(set(printer_names)) != len(printer_names):
+        raise InventoryError("managed printer names must be unique")
+    if len(set(scanner_names)) != len(scanner_names):
+        raise InventoryError("managed scanner device names must be unique")
+    links = data.get("direct_ethernet_links")
+    if not isinstance(links, list):
+        raise InventoryError("direct_ethernet_links must be a list")
+    for link in links:
+        validate_direct_link(link)
+    link_interfaces = [link["interface"] for link in links]
+    if len(set(link_interfaces)) != len(link_interfaces):
+        raise InventoryError("direct Ethernet link interfaces must be unique")
+    trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for cidr in data.get("trusted_lan_cidrs", []):
+        try:
+            trusted_networks.append(ipaddress.ip_network(cidr, strict=True))
+        except ValueError as error:
+            raise InventoryError(f"trusted LAN CIDR {cidr!r} is invalid: {error}") from error
+    for link in links:
+        link_network = ipaddress.ip_interface(link["pi_ipv4_cidr"]).network
+        if any(network.version == 4 and link_network.overlaps(network) for network in trusted_networks):
+            raise InventoryError(f"direct Ethernet link {link['interface']!r} overlaps trusted LAN")
+    if scanners:
+        retention = data.get("scanservjs_retention_days")
+        if not isinstance(retention, int) or not 1 <= retention <= 900:
+            raise InventoryError("scanner inventory requires scanservjs_retention_days from 1 to 900")
+        languages = data.get("scanservjs_ocr_languages")
+        if not isinstance(languages, list) or not languages:
+            raise InventoryError("scanner inventory requires at least one OCR language")
+        if any(not isinstance(item, str) or not OCR_LANGUAGE_PATTERN.fullmatch(item) for item in languages):
+            raise InventoryError("OCR languages must contain only letters, numbers and underscores")
+
+
+def devices(data: dict[str, Any], kind: str) -> list[dict[str, Any]]:
+    collection = {"printer": "managed_printers", "scanner": "managed_scanners", "link": "direct_ethernet_links"}[kind]
+    return data[collection]
+
+
+def identity_key(kind: str) -> str:
+    return {"printer": "name", "scanner": "device_name", "link": "interface"}[kind]
+
+
+def find_device(data: dict[str, Any], kind: str, identity: str) -> dict[str, Any]:
+    key = identity_key(kind)
+    for device in devices(data, kind):
+        if device.get(key) == identity:
+            return device
+    raise InventoryError(f"managed {kind} not found: {identity}")
+
+
+def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any]) -> Path:
+    validate_inventory(data)
+    backup_directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backup = backup_directory / f"{path.name}.{stamp}"
+    shutil.copy2(path, backup)
+
+    header = "---\n# Maintained by scripts/onboard and scripts/manage-devices. Do not store passwords here.\n"
+    rendered = header + yaml.safe_dump(data, sort_keys=False, default_flow_style=False, width=1000)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
+            temporary.write(rendered)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.chmod(temporary_name, path.stat().st_mode & 0o777)
+        os.replace(temporary_name, path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+    return backup
+
+
+def parse_bool(value: str) -> bool:
+    if value not in {"true", "false"}:
+        raise argparse.ArgumentTypeError("expected true or false")
+    return value == "true"
+
+
+def upsert(data: dict[str, Any], kind: str, original: str | None, replacement: dict[str, Any]) -> str:
+    collection = devices(data, kind)
+    key = identity_key(kind)
+    target = original or replacement[key]
+    existing_index = next((index for index, item in enumerate(collection) if item.get(key) == target), None)
+    if original and existing_index is None:
+        raise InventoryError(f"managed {kind} not found: {original}")
+    duplicate = next((item for item in collection if item.get(key) == replacement[key] and item.get(key) != target), None)
+    if duplicate:
+        raise InventoryError(f"managed {kind} already exists: {replacement[key]}")
+    if existing_index is None:
+        collection.append(replacement)
+        return "added"
+    merged = dict(collection[existing_index])
+    merged.update(replacement)
+    collection[existing_index] = merged
+    return "updated"
+
+
+def command_list(data: dict[str, Any]) -> None:
+    printers = data["managed_printers"]
+    scanners = data["managed_scanners"]
+    print("Managed printers:")
+    for printer in printers:
+        sharing = "shared" if printer.get("shared", True) else "not shared"
+        print(f"  {printer['name']}: {printer['connection']} -> {printer['device_uri']} ({sharing})")
+    if scanners:
+        print("Managed scanners:")
+        for scanner in scanners:
+            print(f"  {scanner['device_name']}: {scanner['connection']} via {scanner['backend']}")
+    else:
+        print("No managed scanners.")
+    links = data["direct_ethernet_links"]
+    if links:
+        print("Direct Ethernet links:")
+        for link in links:
+            print(f"  {link['interface']}: {link['pi_ipv4_cidr']} -> {link['device_ipv4']}")
+    else:
+        print("No direct Ethernet links.")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--inventory", required=True, type=Path)
+    parser.add_argument("--backup-directory", required=True, type=Path)
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("list")
+
+    names = commands.add_parser("names")
+    names.add_argument("kind", choices=["printer", "scanner", "link"])
+    field = commands.add_parser("field")
+    field.add_argument("kind", choices=["printer", "scanner", "link"])
+    field.add_argument("identity")
+    field.add_argument("field")
+    show = commands.add_parser("show")
+    show.add_argument("kind", choices=["printer", "scanner", "link"])
+    show.add_argument("identity")
+
+    printer = commands.add_parser("upsert-printer")
+    printer.add_argument("--original-name")
+    printer.add_argument("--name", required=True)
+    printer.add_argument("--connection", required=True, choices=sorted(PRINTER_CONNECTIONS))
+    printer.add_argument("--device-uri", required=True)
+    printer.add_argument("--driver-mode", required=True, choices=["driverless", "package_profile"])
+    printer.add_argument("--shared", required=True, type=parse_bool)
+    printer.add_argument("--package-profile")
+    printer.add_argument("--usb-mode", choices=sorted(USB_MODES))
+    printer.add_argument("--usb-identity")
+
+    scanner = commands.add_parser("upsert-scanner")
+    scanner.add_argument("--original-device-name")
+    scanner.add_argument("--device-name", required=True)
+    scanner.add_argument("--connection", required=True, choices=sorted(SCANNER_CONNECTIONS))
+    scanner.add_argument("--backend", required=True)
+    scanner.add_argument("--usb-mode", choices=sorted(USB_MODES))
+    scanner.add_argument("--usb-identity")
+    scanner.add_argument("--retention-days", type=int)
+    scanner.add_argument("--ocr-languages")
+
+    link = commands.add_parser("upsert-link")
+    link.add_argument("--original-interface")
+    link.add_argument("--interface", required=True)
+    link.add_argument("--pi-ipv4-cidr", required=True)
+    link.add_argument("--device-ipv4", required=True)
+
+    delete = commands.add_parser("delete")
+    delete.add_argument("kind", choices=["printer", "scanner", "link"])
+    delete.add_argument("identity")
+    commands.add_parser("validate")
+    return parser
+
+
+def main() -> int:
+    arguments = build_parser().parse_args()
+    try:
+        data = load_inventory(arguments.inventory)
+        if arguments.command == "list":
+            command_list(data)
+            return 0
+        if arguments.command == "names":
+            key = identity_key(arguments.kind)
+            sys.stdout.write("".join(f"{item[key]}\n" for item in devices(data, arguments.kind)))
+            return 0
+        if arguments.command == "field":
+            value = find_device(data, arguments.kind, arguments.identity).get(arguments.field, "")
+            if isinstance(value, bool):
+                value = str(value).lower()
+            sys.stdout.write(str(value))
+            return 0
+        if arguments.command == "show":
+            sys.stdout.write(yaml.safe_dump(find_device(data, arguments.kind, arguments.identity), sort_keys=False))
+            return 0
+        if arguments.command == "validate":
+            print("Device inventory is valid.")
+            return 0
+
+        if arguments.command == "upsert-printer":
+            replacement: dict[str, Any] = {
+                "name": arguments.name,
+                "connection": arguments.connection,
+                "device_uri": arguments.device_uri,
+                "driver_mode": arguments.driver_mode,
+                "shared": arguments.shared,
+            }
+            if arguments.package_profile:
+                replacement["package_profile"] = arguments.package_profile
+            if arguments.usb_mode:
+                replacement["usb_mode"] = arguments.usb_mode
+            if arguments.usb_identity:
+                replacement["usb_identity"] = arguments.usb_identity
+            action = upsert(data, "printer", arguments.original_name, replacement)
+            selected = find_device(data, "printer", arguments.name)
+            if selected["driver_mode"] == "driverless":
+                selected.pop("package_profile", None)
+            if selected["connection"] != "usb":
+                selected.pop("usb_mode", None)
+                selected.pop("usb_identity", None)
+            label = arguments.name
+        elif arguments.command == "upsert-scanner":
+            replacement = {
+                "device_name": arguments.device_name,
+                "connection": arguments.connection,
+                "backend": arguments.backend,
+            }
+            if arguments.usb_mode:
+                replacement["usb_mode"] = arguments.usb_mode
+            if arguments.usb_identity:
+                replacement["usb_identity"] = arguments.usb_identity
+            action = upsert(data, "scanner", arguments.original_device_name, replacement)
+            selected = find_device(data, "scanner", arguments.device_name)
+            if selected["connection"] != "usb":
+                selected.pop("usb_mode", None)
+                selected.pop("usb_identity", None)
+            if arguments.retention_days is not None:
+                data["scanservjs_retention_days"] = arguments.retention_days
+            if arguments.ocr_languages is not None:
+                data["scanservjs_ocr_languages"] = [
+                    item.strip() for item in arguments.ocr_languages.split(",") if item.strip()
+                ]
+            label = arguments.device_name
+        elif arguments.command == "upsert-link":
+            replacement = {
+                "interface": arguments.interface,
+                "pi_ipv4_cidr": arguments.pi_ipv4_cidr,
+                "device_ipv4": arguments.device_ipv4,
+            }
+            action = upsert(data, "link", arguments.original_interface, replacement)
+            label = arguments.interface
+        else:
+            collection = devices(data, arguments.kind)
+            key = identity_key(arguments.kind)
+            find_device(data, arguments.kind, arguments.identity)
+            collection[:] = [item for item in collection if item[key] != arguments.identity]
+            action = "deleted"
+            label = arguments.identity
+
+        backup = backup_and_write(arguments.inventory, arguments.backup_directory, data)
+        print(f"{action.capitalize()} {label}. Backup: {backup}")
+        return 0
+    except InventoryError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

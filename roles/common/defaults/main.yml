@@ -1,6 +1,10 @@
 ---
 common_package_upgrade: false
 common_reboot_when_required: false
+common_supported_debian_major_versions:
+  - '13'
+common_supported_architectures:
+  - aarch64
 common_packages:
   - ca-certificates
   - locales

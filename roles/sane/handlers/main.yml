@@ -1,5 +1,6 @@
 ---
 - name: Restart saned
-  ansible.builtin.service:
-    name: saned
+  ansible.builtin.systemd:
+    name: saned.socket
     state: restarted
+  when: enable_remote_sane | bool and managed_scanners | length > 0

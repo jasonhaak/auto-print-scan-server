@@ -1,0 +1,32 @@
+---
+- name: Stop scanner-specific services when no scanner is managed
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop:
+    - scanservjs.service
+    - scanservjs-retention.timer
+    - scanservjs-storage-check.timer
+  failed_when: false
+  tags: scanservjs
+
+- name: Remove scanner-specific timer and warning definitions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/scanservjs-retention.service
+    - /etc/systemd/system/scanservjs-retention.timer
+    - /etc/systemd/system/scanservjs-storage-check.service
+    - /etc/systemd/system/scanservjs-storage-check.timer
+    - /usr/local/libexec/scanservjs-storage-check
+    - /etc/profile.d/scanservjs-low-space-warning.sh
+  notify: Reload systemd
+  tags: scanservjs
+
+- name: Preserve scan files after scanner removal
+  ansible.builtin.debug:
+    msg: >-
+      Scanner services are disabled. Existing files under {{ scanservjs_data_directory }} are preserved.
+  tags: scanservjs

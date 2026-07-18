@@ -3,5 +3,6 @@ exclude_paths:
   - .ansible/
   - collections/
   - .onboard-backups/
+  - .venv/
 skip_list:
   - var-naming[no-role-prefix]

@@ -1,4 +1,4 @@
-# Commissioning acceptance
+# Commissioning Acceptance
 
 Commission a fresh Raspberry Pi OS Lite 64-bit host based on Debian Trixie by running the
 onboarding wizard from Linux, macOS or WSL2:
@@ -24,6 +24,17 @@ ansible-playbook -i inventories/production/hosts.yml playbooks/site.yml
 The last run should report no changes apart from refreshed package metadata. A commissioning run
 fails when a declared printer or scanner is unavailable. Routine maintenance preserves the
 managed queue and reports unavailable hardware instead of deleting it.
+
+## Device lifecycle checks
+
+Use `scripts/manage-devices` to add a second printer, edit its endpoint and delete it again. Confirm
+that every change creates `.onboard-backups/`, preserves the other device definitions and applies
+through Ansible. Repeat the sequence with a scanner. Deleting the last scanner must stop ScanservJS,
+`saned.socket` and both scanner timers without removing existing scan files.
+
+Change one trusted CIDR and remove one direct Ethernet link in a test inventory. Confirm that the
+previous project-owned UFW rule and NetworkManager connection disappear while unrelated rules,
+connections and manually created CUPS queues remain.
 
 ## Functional checks
 

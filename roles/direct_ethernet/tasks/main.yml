@@ -14,6 +14,30 @@
     label: "{{ item.interface | default('unnamed interface') }}"
   tags: direct_ethernet
 
+- name: Validate direct Ethernet network membership
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_facts.python.executable }}"
+      - -c
+      - >-
+        import ipaddress, json, sys;
+        pi = ipaddress.ip_interface(sys.argv[1]);
+        device = ipaddress.ip_address(sys.argv[2]);
+        trusted = [ipaddress.ip_network(item) for item in json.loads(sys.argv[3])];
+        valid = pi.version == 4 and pi.network.prefixlen == 30 and
+        device.version == 4 and device in pi.network and
+        device not in (pi.ip, pi.network.network_address, pi.network.broadcast_address) and
+        not any(network.version == 4 and pi.network.overlaps(network) for network in trusted);
+        raise SystemExit(0 if valid else 'direct link must use a distinct IPv4 /30 outside the trusted LAN')
+      - "{{ item.pi_ipv4_cidr }}"
+      - "{{ item.device_ipv4 }}"
+      - "{{ trusted_lan_cidrs | to_json }}"
+  loop: "{{ direct_ethernet_links }}"
+  loop_control:
+    label: "{{ item.interface }}"
+  changed_when: false
+  tags: direct_ethernet
+
 - name: Configure private direct Ethernet links
   community.general.nmcli:
     conn_name: "raspberry-print-server-{{ item.interface }}"
@@ -21,9 +45,52 @@
     type: ethernet
     method4: manual
     ip4: "{{ item.pi_ipv4_cidr }}"
+    never_default4: true
+    method6: disabled
     autoconnect: true
     state: present
   loop: "{{ direct_ethernet_links }}"
   loop_control:
     label: "{{ item.interface }}"
+  tags: direct_ethernet
+
+- name: Create direct Ethernet ownership state directory
+  ansible.builtin.file:
+    path: /var/lib/raspberry-print-server
+    state: directory
+    mode: '0755'
+  tags: direct_ethernet
+
+- name: Read previously managed direct Ethernet interfaces
+  ansible.builtin.slurp:
+    src: /var/lib/raspberry-print-server/direct-ethernet-interfaces
+  register: direct_ethernet_state
+  failed_when: false
+  changed_when: false
+  tags: direct_ethernet
+
+- name: Remove direct Ethernet links no longer declared
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - delete
+      - "raspberry-print-server-{{ item }}"
+  loop: >-
+    {{ (direct_ethernet_state.content | default('') | b64decode).splitlines()
+       | difference(direct_ethernet_links | map(attribute='interface') | list) }}
+  register: direct_ethernet_removed
+  changed_when: direct_ethernet_removed.rc == 0
+  failed_when:
+    - direct_ethernet_removed.rc != 0
+    - "'unknown connection' not in direct_ethernet_removed.stderr | lower"
+  tags: direct_ethernet
+
+- name: Save managed direct Ethernet interface state
+  ansible.builtin.copy:
+    content: >-
+      {{ direct_ethernet_links | map(attribute='interface') | join('\n')
+         }}{{ '\n' if direct_ethernet_links | length > 0 else '' }}
+    dest: /var/lib/raspberry-print-server/direct-ethernet-interfaces
+    mode: '0644'
   tags: direct_ethernet
