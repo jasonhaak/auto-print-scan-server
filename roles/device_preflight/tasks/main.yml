@@ -1,0 +1,16 @@
+---
+- name: Check each declared printer
+  ansible.builtin.include_tasks: printer.yml
+  loop: "{{ managed_printers }}"
+  loop_control:
+    loop_var: managed_device
+    label: "{{ managed_device.name }}"
+  tags: device_preflight
+
+- name: Check each declared scanner
+  ansible.builtin.include_tasks: scanner.yml
+  loop: "{{ managed_scanners }}"
+  loop_control:
+    loop_var: managed_device
+    label: "{{ managed_device.device_name }}"
+  tags: device_preflight

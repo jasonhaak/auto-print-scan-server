@@ -1,0 +1,54 @@
+---
+- name: Determine whether IPP-over-USB is explicitly selected
+  ansible.builtin.set_fact:
+    ipp_usb_requested: "{{ device_uses_ipp_usb }}"
+  tags: ipp_usb
+
+- name: Validate USB mode declarations
+  ansible.builtin.assert:
+    that:
+      - item.connection != 'usb' or item.usb_mode | default('') in ['ipp_usb', 'legacy_usb']
+    fail_msg: USB devices must explicitly select ipp_usb or legacy_usb.
+  loop: "{{ managed_printers + managed_scanners }}"
+  tags: ipp_usb
+
+- name: Install IPP-over-USB when selected
+  ansible.builtin.apt:
+    name: ipp-usb
+    state: present
+  when: ipp_usb_requested | bool
+  tags: ipp_usb
+
+- name: Enable IPP-over-USB when selected
+  ansible.builtin.service:
+    name: ipp-usb
+    enabled: true
+    state: started
+  when: ipp_usb_requested | bool
+  tags: ipp_usb
+
+- name: Check USB devices for IPP-over-USB capability
+  ansible.builtin.command: ipp-usb check
+  register: ipp_usb_check
+  changed_when: false
+  failed_when: false
+  when: ipp_usb_requested | bool
+  tags: ipp_usb
+
+- name: Require an IPP-over-USB capable device during commissioning
+  ansible.builtin.assert:
+    that: ipp_usb_check.rc == 0
+    fail_msg: No IPP-over-USB capable device was detected. Select legacy_usb or correct the device configuration.
+  when:
+    - ipp_usb_requested | bool
+    - print_server_commissioning | default(false) | bool
+  tags: ipp_usb
+
+- name: Warn when no IPP-over-USB capable device is detected during maintenance
+  ansible.builtin.debug:
+    msg: No IPP-over-USB capable device was detected. The configured device remains unchanged.
+  when:
+    - ipp_usb_requested | bool
+    - not print_server_commissioning | default(false) | bool
+    - ipp_usb_check.rc != 0
+  tags: ipp_usb

@@ -1,0 +1,44 @@
+---
+- name: Assert the supported operating system and architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution_major_version == '13'
+      - ansible_facts.architecture == 'aarch64'
+    fail_msg: >-
+      This project supports Raspberry Pi OS Lite 64-bit based on Debian Trixie only.
+  tags: common
+
+- name: Refresh the APT package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  tags: common
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  tags: common
+
+- name: Upgrade packages when explicitly requested
+  ansible.builtin.apt:
+    upgrade: dist
+  when: common_package_upgrade | bool
+  notify: Check whether a reboot is required
+  tags: common
+
+- name: Set the system timezone
+  community.general.timezone:
+    name: "{{ common_timezone }}"
+  tags: common
+
+- name: Configure the system locale
+  community.general.locale_gen:
+    name: "{{ common_locale }}"
+    state: present
+  tags: common
+
+- name: Set the system hostname
+  ansible.builtin.hostname:
+    name: "{{ common_hostname }}"
+  tags: common

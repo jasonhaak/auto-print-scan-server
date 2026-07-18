@@ -1,0 +1,7 @@
+.ansible/
+.onboard-backups/
+collections/
+*.retry
+inventories/*/group_vars/local.yml
+inventories/*/host_vars/local.yml
+.idea/

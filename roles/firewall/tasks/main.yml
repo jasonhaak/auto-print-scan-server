@@ -1,0 +1,127 @@
+---
+- name: Validate firewall configuration
+  ansible.builtin.assert:
+    that:
+      - trusted_lan_cidrs | length > 0
+      - trusted_lan_cidrs | select('match', '.+/.+') | list | length == trusted_lan_cidrs | length
+      - firewall_ssh_port | int > 0
+      - firewall_ssh_port | int < 65536
+      - firewall_ipp_port | int > 0
+      - firewall_ipp_port | int < 65536
+      - firewall_scanservjs_port | int > 0
+      - firewall_scanservjs_port | int < 65536
+      - firewall_saned_port | int > 0
+      - firewall_saned_port | int < 65536
+    fail_msg: Configure at least one CIDR and valid TCP service ports before enabling the firewall.
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Install UFW
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Select the normal LAN interface for mDNS
+  ansible.builtin.set_fact:
+    firewall_active_lan_interface: >-
+      {{ firewall_lan_interface | default(ansible_facts.default_ipv4.interface, true) }}
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Set UFW default incoming policy
+  community.general.ufw:
+    default: deny
+    direction: incoming
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Set UFW default outgoing policy
+  community.general.ufw:
+    default: allow
+    direction: outgoing
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Allow SSH from trusted networks
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_ssh_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Allow IPP from trusted networks when the printer is shared
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_ipp_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_shared_printer | bool
+  tags: firewall
+
+- name: Allow mDNS on the normal LAN interface when the printer is shared
+  community.general.ufw:
+    rule: allow
+    direction: in
+    port: "{{ firewall_mdns_port }}"
+    proto: udp
+    from_ip: "{{ item }}"
+    interface: "{{ firewall_active_lan_interface }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_shared_printer | bool
+  tags: firewall
+
+- name: Allow ScanservJS from trusted networks when a scanner is configured
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_scanservjs_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - device_has_scanner | bool
+  tags: firewall
+
+- name: Allow remote SANE from trusted networks when enabled
+  community.general.ufw:
+    rule: allow
+    port: "{{ firewall_saned_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ trusted_lan_cidrs }}"
+  when:
+    - firewall_enabled | bool
+    - enable_remote_sane | bool
+  tags: firewall
+
+- name: Allow explicitly declared custom service ports from trusted networks
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.1 }}"
+    proto: tcp
+    from_ip: "{{ item.0 }}"
+  loop: "{{ trusted_lan_cidrs | product(firewall_custom_ports) | list }}"
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Enable UFW
+  community.general.ufw:
+    state: enabled
+  when: firewall_enabled | bool
+  tags: firewall
+
+- name: Disable UFW for local development only
+  community.general.ufw:
+    state: disabled
+  when: not firewall_enabled | bool
+  tags: firewall

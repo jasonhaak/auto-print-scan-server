@@ -1,0 +1,5 @@
+---
+- name: Restart saned
+  ansible.builtin.service:
+    name: saned
+    state: restarted

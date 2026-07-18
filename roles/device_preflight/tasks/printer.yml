@@ -1,0 +1,37 @@
+---
+- name: Query declared IPP printer
+  ansible.builtin.command: "ipptool -tv {{ managed_device.device_uri }} get-printer-attributes.test"
+  register: device_preflight_result
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection in ['ipp', 'ipps']
+
+- name: Check declared socket or LPD printer port
+  ansible.builtin.wait_for:
+    host: "{{ managed_device.device_uri | regex_replace('^[a-z]+://([^/:]+).*$', '\\1') }}"
+    port: "{{ 9100 if managed_device.connection == 'socket' else 515 }}"
+    timeout: 5
+  register: device_preflight_result
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection in ['socket', 'lpd']
+
+- name: Check declared USB printer identity
+  ansible.builtin.command: "lsusb -d {{ managed_device.usb_identity }}"
+  register: device_preflight_result
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection == 'usb'
+
+- name: Require available declared printer during commissioning
+  ansible.builtin.assert:
+    that: device_preflight_result.rc == 0
+    fail_msg: "Declared printer {{ managed_device.name }} is unavailable."
+  when: print_server_commissioning | default(false) | bool
+
+- name: Warn about unavailable declared printer during maintenance
+  ansible.builtin.debug:
+    msg: "Declared printer {{ managed_device.name }} is unavailable. The managed queue is preserved."
+  when:
+    - not print_server_commissioning | default(false) | bool
+    - device_preflight_result.rc != 0

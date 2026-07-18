@@ -1,0 +1,15 @@
+---
+- name: Configure scan services
+  hosts: print_servers
+  become: true
+  roles:
+    - role: device_definition
+      tags: device_definition
+    - role: package_profiles
+      tags: package_profiles
+    - role: sane
+      when: managed_scanners | length > 0
+      tags: sane
+    - role: scanservjs
+      when: managed_scanners | length > 0
+      tags: scanservjs

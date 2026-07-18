@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+available_mb=$(df -Pm --output=avail '{{ scanservjs_data_directory }}' | awk 'NR == 2 { gsub(/M/, ""); print }')
+
+if [ "$available_mb" -lt '{{ scanservjs_min_free_space_mb }}' ]; then
+  echo "Scan storage low: ${available_mb} MB free, threshold {{ scanservjs_min_free_space_mb }} MB."
+fi

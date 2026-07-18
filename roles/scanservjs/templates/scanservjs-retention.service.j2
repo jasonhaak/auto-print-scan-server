@@ -1,0 +1,6 @@
+[Unit]
+Description=Delete expired ScanservJS output files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find {{ scanservjs_data_directory }}/output -type f -mtime +{{ scanservjs_retention_days }} -delete

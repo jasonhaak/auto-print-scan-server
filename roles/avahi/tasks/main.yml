@@ -1,0 +1,15 @@
+---
+- name: Install Avahi for CUPS DNS-SD advertisement
+  ansible.builtin.apt:
+    name: avahi-daemon
+    state: present
+  when: device_has_shared_printer | bool
+  tags: avahi
+
+- name: Enable Avahi for CUPS DNS-SD advertisement
+  ansible.builtin.service:
+    name: avahi-daemon
+    enabled: true
+    state: started
+  when: device_has_shared_printer | bool
+  tags: avahi

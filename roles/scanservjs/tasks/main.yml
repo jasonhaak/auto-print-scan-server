@@ -1,0 +1,179 @@
+---
+- name: Validate ScanservJS configuration
+  ansible.builtin.assert:
+    that:
+      - scanservjs_package_sha256 is match('^[a-fA-F0-9]{64}$')
+      - scanservjs_port | int > 0
+      - scanservjs_port | int < 65536
+      - scanservjs_retention_days | int >= 1
+      - scanservjs_retention_days | int <= 900
+      - scanservjs_ocr_languages | length > 0
+    fail_msg: Configure a valid package checksum, port, retention period and at least one OCR language.
+  tags: scanservjs
+
+- name: Install ScanservJS runtime dependencies
+  ansible.builtin.apt:
+    name:
+      - imagemagick
+      - sane-utils
+      - tesseract-ocr
+      - "tesseract-ocr-{{ item }}"
+    state: present
+  loop: "{{ scanservjs_ocr_languages }}"
+  tags: scanservjs
+
+- name: Download the pinned ScanservJS package
+  ansible.builtin.get_url:
+    url: "{{ scanservjs_package_url }}"
+    dest: "/var/tmp/scanservjs_{{ scanservjs_version }}.deb"
+    checksum: "sha256:{{ scanservjs_package_sha256 }}"
+    mode: '0644'
+  tags: scanservjs
+
+- name: Install the verified ScanservJS package
+  ansible.builtin.apt:
+    deb: "/var/tmp/scanservjs_{{ scanservjs_version }}.deb"
+    state: present
+  tags: scanservjs
+
+- name: Find ImageMagick policy files changed by the upstream package
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/ImageMagick-6/policy.xml
+    - /etc/ImageMagick-7/policy.xml
+  register: scanservjs_imagemagick_policy_files
+  tags: scanservjs
+
+- name: Restore conservative ImageMagick PDF policy
+  ansible.builtin.replace:
+    path: "{{ item.item }}"
+    regexp: '(<policy domain="coder" rights=")[^"]+(" pattern="PDF"/>)'
+    replace: '\1write\2'
+  loop: "{{ scanservjs_imagemagick_policy_files.results }}"
+  when: item.stat.exists
+  tags: scanservjs
+
+- name: Restore conservative ImageMagick indirect-read policy
+  ansible.builtin.replace:
+    path: "{{ item.item }}"
+    regexp: '(<policy domain="path" rights=")[^"]+(" pattern="@"/>)'
+    replace: '\1none\2'
+  loop: "{{ scanservjs_imagemagick_policy_files.results }}"
+  when: item.stat.exists
+  tags: scanservjs
+
+- name: Set the managed ImageMagick disk-cache limit
+  ansible.builtin.replace:
+    path: "{{ item.item }}"
+    regexp: '(<policy domain="resource" name="disk" value=")[^"]+("/>)'
+    replace: '\1{{ scanservjs_imagemagick_disk_limit }}\2'
+  loop: "{{ scanservjs_imagemagick_policy_files.results }}"
+  when: item.stat.exists
+  tags: scanservjs
+
+- name: Create ScanservJS data directories
+  ansible.builtin.file:
+    path: "{{ scanservjs_data_directory }}/{{ item }}"
+    state: directory
+    owner: scanservjs
+    group: users
+    mode: '0750'
+  loop:
+    - output
+    - preview
+    - thumbnail
+    - temp
+  tags: scanservjs
+
+- name: Configure ScanservJS
+  ansible.builtin.template:
+    src: config.local.js.j2
+    dest: /etc/scanservjs/config.local.js
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart ScanservJS
+  tags: scanservjs
+
+- name: Configure scan-file retention service
+  ansible.builtin.template:
+    src: scanservjs-retention.service.j2
+    dest: /etc/systemd/system/scanservjs-retention.service
+    mode: '0644'
+  notify: Reload systemd
+  tags: scanservjs
+
+- name: Configure scan-file retention timer
+  ansible.builtin.template:
+    src: scanservjs-retention.timer.j2
+    dest: /etc/systemd/system/scanservjs-retention.timer
+    mode: '0644'
+  notify: Reload systemd
+  tags: scanservjs
+
+- name: Install the scan-storage check command
+  ansible.builtin.template:
+    src: scanservjs-storage-check.sh.j2
+    dest: /usr/local/libexec/scanservjs-storage-check
+    owner: root
+    group: root
+    mode: '0755'
+  tags: scanservjs
+
+- name: Configure scan-storage check service
+  ansible.builtin.template:
+    src: scanservjs-storage-check.service.j2
+    dest: /etc/systemd/system/scanservjs-storage-check.service
+    mode: '0644'
+  notify: Reload systemd
+  tags: scanservjs
+
+- name: Configure scan-storage check timer
+  ansible.builtin.template:
+    src: scanservjs-storage-check.timer.j2
+    dest: /etc/systemd/system/scanservjs-storage-check.timer
+    mode: '0644'
+  notify: Reload systemd
+  tags: scanservjs
+
+- name: Configure SSH low-space warning
+  ansible.builtin.template:
+    src: scanservjs-low-space-warning.sh.j2
+    dest: /etc/profile.d/scanservjs-low-space-warning.sh
+    owner: root
+    group: root
+    mode: '0644'
+  tags: scanservjs
+
+- name: Check available scan storage during maintenance
+  ansible.builtin.command:
+    argv:
+      - df
+      - -Pm
+      - --output=avail
+      - "{{ scanservjs_data_directory }}"
+  register: scanservjs_free_space
+  changed_when: false
+  tags: scanservjs
+
+- name: Warn when scan storage is low during maintenance
+  ansible.builtin.debug:
+    msg: >-
+      Scan storage has {{ scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim }} MB
+      free, below the configured {{ scanservjs_min_free_space_mb }} MB threshold.
+  when: >-
+    scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim | int
+    < scanservjs_min_free_space_mb | int
+  tags: scanservjs
+
+- name: Enable ScanservJS and scan-file retention
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - scanservjs.service
+    - scanservjs-retention.timer
+    - scanservjs-storage-check.timer
+  tags: scanservjs

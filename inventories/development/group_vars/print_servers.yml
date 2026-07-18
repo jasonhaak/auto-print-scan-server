@@ -1,0 +1,33 @@
+---
+common_hostname: print-server
+common_timezone: Europe/Berlin
+common_locale: en_US.UTF-8
+
+managed_users:
+  - name: printadmin
+    groups:
+      - sudo
+    sudo: true
+
+ssh_allow_password_authentication: true
+ssh_authorized_key_path: null
+
+firewall_enabled: false
+trusted_lan_cidrs:
+  - 192.168.178.0/24
+
+direct_ethernet_links: []
+
+managed_printers:
+  - name: printer
+    connection: ipp
+    device_uri: ipp://printer.example.invalid/ipp/print
+    driver_mode: driverless
+    shared: true
+
+managed_scanners: []
+
+scanservjs_min_free_space_mb: 1024
+scanservjs_retention_days: null
+enable_remote_sane: false
+automatic_os_updates: false

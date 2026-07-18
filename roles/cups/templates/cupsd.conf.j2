@@ -1,0 +1,22 @@
+LogLevel warn
+Listen localhost:631
+{% if device_has_shared_printer %}Port 631
+Browsing Yes
+BrowseLocalProtocols dnssd
+{% endif %}DefaultAuthType Basic
+WebInterface Yes
+PreserveJobFiles No
+PreserveJobHistory Yes
+JobHistoryTimeout {{ cups_completed_job_history_seconds }}
+<Location />
+  Order allow,deny
+{% for cidr in trusted_lan_cidrs %}  Allow {{ cidr }}
+{% endfor %}</Location>
+<Location /admin>
+  Order allow,deny
+  Allow localhost
+</Location>
+<Location /admin/conf>
+  Order allow,deny
+  Allow localhost
+</Location>

@@ -1,0 +1,77 @@
+---
+- name: Validate managed printer configuration
+  ansible.builtin.assert:
+    that:
+      - managed_printers | length > 0
+      - managed_printers | map(attribute='name') | unique | list | length == managed_printers | length
+      - item.name is match('^[A-Za-z0-9_.-]+$')
+      - item.connection in ['usb', 'ipp', 'ipps', 'socket', 'lpd']
+      - item.driver_mode in ['driverless', 'package_profile']
+      - item.device_uri | length > 0
+      - item.connection != 'usb' or item.usb_identity | default('') is match('^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$')
+    fail_msg: >-
+      Every managed printer requires a unique safe queue name, supported connection, driver mode
+      and URI. USB printers also require usb_identity.
+  loop: "{{ managed_printers }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed printer') }}"
+  tags: cups
+
+- name: Install CUPS and filters
+  ansible.builtin.apt:
+    name: [cups, cups-filters]
+    state: present
+  tags: cups
+
+- name: Configure CUPS access and job retention
+  ansible.builtin.template:
+    src: cupsd.conf.j2
+    dest: /etc/cups/cupsd.conf
+    mode: '0644'
+    validate: /usr/sbin/cupsd -t -c %s
+  notify: Restart CUPS
+  tags: cups
+
+- name: Create CUPS ownership state directory
+  ansible.builtin.file:
+    path: /var/lib/raspberry-print-server
+    state: directory
+    mode: '0755'
+  tags: cups
+
+- name: Read previously managed CUPS queues
+  ansible.builtin.slurp:
+    src: /var/lib/raspberry-print-server/cups-queues
+  register: cups_managed_queue_state
+  failed_when: false
+  changed_when: false
+  tags: cups
+
+- name: Remove queues no longer managed by Ansible
+  ansible.builtin.command: "lpadmin -x {{ item }}"
+  loop: >-
+    {{ (cups_managed_queue_state.content | default('') | b64decode).splitlines()
+       | difference(managed_printers | map(attribute='name') | list) }}
+  changed_when: true
+  notify: Restart CUPS
+  tags: cups
+
+- name: Reconcile managed CUPS queues
+  ansible.builtin.command: >-
+    lpadmin -p {{ item.name }} -E -v {{ item.device_uri }}
+    -m {{ 'everywhere' if item.driver_mode == 'driverless' else package_profiles[item.package_profile].cups_model }}
+    -D Ansible-managed print server queue -o printer-is-shared={{ item.shared | default(true) | lower }}
+    -o printer-error-policy=retry-current-job
+  loop: "{{ managed_printers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+  notify: Restart CUPS
+  tags: cups
+
+- name: Save managed CUPS queue ownership state
+  ansible.builtin.copy:
+    content: "{{ managed_printers | map(attribute='name') | join('\n') }}\n"
+    dest: /var/lib/raspberry-print-server/cups-queues
+    mode: '0644'
+  tags: cups

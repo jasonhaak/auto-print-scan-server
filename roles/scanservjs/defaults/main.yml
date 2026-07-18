@@ -1,0 +1,12 @@
+---
+scanservjs_version: 3.2.0
+scanservjs_package_url: >-
+  https://github.com/sbs20/scanservjs/releases/download/v3.2.0/scanservjs_3.2.0-1_all.deb
+scanservjs_package_sha256: 794eb7c7e49b7f3511af29114bb5316da7dd99378aaf587a989c2cfd63c839c8
+scanservjs_data_directory: /var/lib/scanservjs/data
+scanservjs_port: 8080
+scanservjs_min_free_space_mb: 1024
+scanservjs_ocr_languages:
+  - eng
+scanservjs_retention_days: null
+scanservjs_imagemagick_disk_limit: 2GiB

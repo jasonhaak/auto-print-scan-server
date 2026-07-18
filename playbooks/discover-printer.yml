@@ -1,0 +1,8 @@
+---
+- name: Discover a legacy printer without changing the host
+  hosts: print_servers
+  become: true
+  gather_facts: true
+  roles:
+    - role: printer_discovery
+      tags: printer_discovery

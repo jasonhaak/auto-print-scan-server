@@ -1,0 +1,15 @@
+---
+- name: Configure print services
+  hosts: print_servers
+  become: true
+  roles:
+    - role: device_definition
+      tags: device_definition
+    - role: package_profiles
+      tags: package_profiles
+    - role: ipp_usb
+      tags: ipp_usb
+    - role: cups
+      tags: cups
+    - role: avahi
+      tags: avahi

@@ -1,0 +1,4 @@
+PermitRootLogin no
+PasswordAuthentication {{ 'yes' if ssh_allow_password_authentication | bool else 'no' }}
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes

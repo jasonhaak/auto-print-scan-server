@@ -1,0 +1,37 @@
+---
+- name: Validate managed user definitions
+  ansible.builtin.assert:
+    that:
+      - managed_users | map(attribute='name') | list | unique | length == managed_users | length
+      - >-
+        managed_users | map(attribute='name') | select('match', '^[a-z_][a-z0-9_-]*[$]?$')
+        | list | length == managed_users | length
+    fail_msg: managed_users must use unique, valid Linux account names.
+  tags: users
+
+- name: Create managed users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    groups: "{{ item.groups | default([]) }}"
+    append: true
+    state: present
+  loop: "{{ managed_users }}"
+  tags: users
+
+- name: Grant requested sudo access
+  ansible.builtin.copy:
+    content: "{{ item.name }} ALL=(ALL) NOPASSWD:ALL\n"
+    dest: "/etc/sudoers.d/90-{{ item.name }}"
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+  when: item.sudo | default(false) | bool
+  loop: "{{ managed_users }}"
+  tags: users
+
+- name: Install managed user authorized keys
+  ansible.posix.authorized_key:
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+    state: present
+  loop: "{{ managed_users | subelements('authorized_keys', skip_missing=True) }}"
+  tags: users

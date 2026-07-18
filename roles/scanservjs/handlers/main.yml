@@ -1,0 +1,9 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart ScanservJS
+  ansible.builtin.service:
+    name: scanservjs
+    state: restarted

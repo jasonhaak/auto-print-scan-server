@@ -1,0 +1,36 @@
+---
+- name: Commission the print and scan server
+  hosts: print_servers
+  become: true
+  roles:
+    - role: common
+      tags: common
+    - role: direct_ethernet
+      when: direct_ethernet_links | length > 0
+      tags: direct_ethernet
+    - role: device_definition
+      tags: device_definition
+    - role: users
+      tags: users
+    - role: ssh
+      tags: ssh
+    - role: firewall
+      tags: firewall
+    - role: updates
+      tags: updates
+    - role: package_profiles
+      tags: package_profiles
+    - role: ipp_usb
+      tags: ipp_usb
+    - role: device_preflight
+      tags: device_preflight
+    - role: cups
+      tags: cups
+    - role: avahi
+      tags: avahi
+    - role: sane
+      when: managed_scanners | length > 0
+      tags: sane
+    - role: scanservjs
+      when: managed_scanners | length > 0
+      tags: scanservjs

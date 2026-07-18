@@ -1,0 +1,3 @@
+---
+openprinting_lookup_enabled: true
+openprinting_query_url: https://www.openprinting.org/printers/query.cgi

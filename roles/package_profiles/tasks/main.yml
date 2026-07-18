@@ -1,0 +1,19 @@
+---
+- name: Select explicitly configured device package profiles
+  ansible.builtin.set_fact:
+    selected_package_profiles: "{{ device_package_profiles }}"
+  tags: package_profiles
+
+- name: Validate selected package profiles
+  ansible.builtin.assert:
+    that: item in package_profiles
+    fail_msg: "Unknown package profile: {{ item }}"
+  loop: "{{ selected_package_profiles }}"
+  tags: package_profiles
+
+- name: Install packages from selected profiles
+  ansible.builtin.apt:
+    name: "{{ package_profiles[item].packages }}"
+    state: present
+  loop: "{{ selected_package_profiles }}"
+  tags: package_profiles

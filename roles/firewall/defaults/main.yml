@@ -1,0 +1,10 @@
+---
+firewall_enabled: true
+firewall_ssh_port: 22
+firewall_ipp_port: 631
+firewall_scanservjs_port: 8080
+firewall_saned_port: 6566
+firewall_mdns_port: 5353
+firewall_lan_interface: null
+firewall_custom_ports: []
+enable_remote_sane: false

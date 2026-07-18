@@ -1,0 +1,8 @@
+---
+common_package_upgrade: false
+common_reboot_when_required: false
+common_packages:
+  - ca-certificates
+  - locales
+  - sudo
+  - tzdata

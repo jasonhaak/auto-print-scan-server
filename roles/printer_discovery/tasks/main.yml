@@ -1,0 +1,18 @@
+---
+- name: Query declared legacy printers without changing them
+  ansible.builtin.command: "ipptool -tv {{ item.device_uri }} get-printer-attributes.test"
+  register: printer_discovery_result
+  changed_when: false
+  failed_when: false
+  loop: "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  tags: printer_discovery
+
+- name: Report legacy printer discovery results
+  ansible.builtin.debug:
+    msg: >-
+      Printer {{ item.item.name }} query {{ 'succeeded' if item.rc == 0 else 'was unavailable' }}.
+      Package-profile selection remains operator-approved.
+  loop: "{{ printer_discovery_result.results | default([]) }}"
+  tags: printer_discovery

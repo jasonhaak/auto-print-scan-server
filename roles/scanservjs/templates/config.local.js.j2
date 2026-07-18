@@ -1,0 +1,11 @@
+module.exports = {
+  afterConfig(config) {
+    config.host = '::';
+    config.port = {{ scanservjs_port }};
+    config.outputDirectory = '{{ scanservjs_data_directory }}/output';
+    config.previewDirectory = '{{ scanservjs_data_directory }}/preview';
+    config.thumbnailDirectory = '{{ scanservjs_data_directory }}/thumbnail';
+    config.tempDirectory = '{{ scanservjs_data_directory }}/temp';
+    config.ocrLanguage = '{{ scanservjs_ocr_languages | join('+') }}';
+  }
+};

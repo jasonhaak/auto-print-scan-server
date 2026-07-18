@@ -1,0 +1,26 @@
+---
+- name: Validate device-definition lists
+  ansible.builtin.assert:
+    that:
+      - managed_printers | length > 0
+      - managed_printers | map(attribute='name') | unique | list | length == managed_printers | length
+      - managed_scanners | map(attribute='device_name') | unique | list | length == managed_scanners | length
+    fail_msg: Printer queue names and scanner device names must be unique.
+  tags: device_definition
+
+- name: Derive shared device-definition facts
+  ansible.builtin.set_fact:
+    device_has_shared_printer: >-
+      {{ managed_printers | selectattr('shared', 'undefined') | list | length > 0
+         or managed_printers | selectattr('shared', 'defined') | selectattr('shared') | list | length > 0 }}
+    device_has_scanner: "{{ managed_scanners | length > 0 }}"
+    device_uses_ipp_usb: >-
+      {{ (managed_printers + managed_scanners) | selectattr('connection', 'equalto', 'usb')
+         | selectattr('usb_mode', 'defined') | selectattr('usb_mode', 'equalto', 'ipp_usb')
+         | list | length > 0 }}
+    device_package_profiles: >-
+      {{ ((managed_printers | map(attribute='package_profile') | reject('undefined') | list)
+         + (managed_scanners | map(attribute='package_profile') | reject('undefined') | list))
+         | unique | list }}
+    device_scanner_backends: "{{ managed_scanners | map(attribute='backend') | unique | list }}"
+  tags: device_definition

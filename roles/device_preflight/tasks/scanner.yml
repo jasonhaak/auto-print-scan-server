@@ -1,0 +1,17 @@
+---
+- name: Query declared scanner
+  ansible.builtin.command: "scanimage -L"
+  register: device_preflight_scanner
+  changed_when: false
+  failed_when: false
+
+- name: Require declared scanner during commissioning
+  ansible.builtin.assert:
+    that: device_preflight_scanner.rc == 0 and managed_device.device_name in device_preflight_scanner.stdout
+    fail_msg: "Declared scanner {{ managed_device.device_name }} is unavailable."
+  when: print_server_commissioning | default(false) | bool
+
+- name: Warn about unavailable declared scanner during maintenance
+  ansible.builtin.debug:
+    msg: "Declared scanner {{ managed_device.device_name }} is unavailable."
+  when: device_preflight_scanner.rc != 0 or managed_device.device_name not in device_preflight_scanner.stdout
