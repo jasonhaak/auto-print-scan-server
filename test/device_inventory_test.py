@@ -88,19 +88,32 @@ scanservjs_ocr_languages: [eng]
         self.run_helper(
             "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
             "--connection", "ipp", "--backend", "sane-airscan",
-            "--retention-days", "90", "--ocr-languages", "eng,deu",
+            "--retention-days", "90", "--ocr-languages", "eng,deu", "--port", "8080",
         )
 
         data = self.load()
         self.assertEqual(data["managed_scanners"][0]["device_name"], "airscan:e0:Office Scanner")
         self.assertEqual(data["scanservjs_retention_days"], 90)
         self.assertEqual(data["scanservjs_ocr_languages"], ["eng", "deu"])
+        self.assertEqual(data["scanservjs_port"], 8080)
+
+    def test_rejects_a_scanner_with_an_out_of_range_port_without_writing(self):
+        before = self.inventory.read_text(encoding="utf-8")
+        result = self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "70000",
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("scanservjs_port", result.stderr)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
 
     def test_adds_a_generic_network_scanner_without_usb_fields(self):
         self.run_helper(
             "upsert-scanner", "--device-name", "net:192.0.2.40:vendor:dev0",
             "--connection", "network", "--backend", "sane-utils",
-            "--retention-days", "90", "--ocr-languages", "eng",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "8080",
         )
 
         scanner = self.load()["managed_scanners"][0]
@@ -112,7 +125,7 @@ scanservjs_ocr_languages: [eng]
         self.run_helper(
             "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
             "--connection", "ipp", "--backend", "sane-airscan",
-            "--retention-days", "90", "--ocr-languages", "eng",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "8080",
         )
         self.run_helper("delete", "scanner", "airscan:e0:Office Scanner")
 

@@ -217,6 +217,9 @@ def validate_inventory(data: dict[str, Any]) -> None:
         if any(network.version == 4 and link_network.overlaps(network) for network in trusted_networks):
             raise InventoryError(f"direct Ethernet link {link['interface']!r} overlaps trusted LAN")
     if scanners:
+        port = data.get("scanservjs_port")
+        if not isinstance(port, int) or not 1 <= port <= 65535:
+            raise InventoryError("scanner inventory requires scanservjs_port from 1 to 65535")
         retention = data.get("scanservjs_retention_days")
         if not isinstance(retention, int) or not 1 <= retention <= 900:
             raise InventoryError("scanner inventory requires scanservjs_retention_days from 1 to 900")
@@ -362,6 +365,7 @@ def build_parser() -> argparse.ArgumentParser:
     scanner.add_argument("--usb-identity")
     scanner.add_argument("--retention-days", type=int)
     scanner.add_argument("--ocr-languages")
+    scanner.add_argument("--port", type=int)
 
     link = commands.add_parser("upsert-link")
     link.add_argument("--original-interface")
@@ -456,6 +460,8 @@ def main() -> int:
                 data["scanservjs_ocr_languages"] = [
                     item.strip() for item in arguments.ocr_languages.split(",") if item.strip()
                 ]
+            if arguments.port is not None:
+                data["scanservjs_port"] = arguments.port
             label = arguments.device_name
         elif arguments.command == "upsert-link":
             replacement = {

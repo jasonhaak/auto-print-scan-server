@@ -66,7 +66,8 @@ candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' all
 rg -q 'recommend_legacy_profile' "$root/scripts/onboard"
 rg -q 'verify_cups_job' "$root/scripts/onboard"
 rg -q 'verify_scanservjs_ready' "$root/scripts/onboard"
-rg -q 'test -s' "$root/scripts/onboard"
+rg -q 'create_scanner_test_pdf' "$root/scripts/onboard"
+rg -q 'test -s' "$root/scripts/lib/onboarding/device-discovery.sh"
 
 step_action() {
   local output_var=$1
@@ -112,6 +113,63 @@ mock_listener_status=1
 if verify_scanservjs_ready 8080 >/dev/null 2>&1; then
   exit 1
 fi
+
+# Ticket 017: create_scanner_test_pdf drives scanimage and convert through
+# remote(), enforces test -s on the resulting PDF, and always cleans up its
+# temporary PNG. Mock remote() to actually evaluate the generated command
+# locally, with fake scanimage/convert standing in for the real tools, so the
+# three real outcomes (success, SANE failure, empty output) can be observed.
+step_action() {
+  local output_variable=$1
+  shift 3
+  local output status
+  output=$("$@" 2>&1) && status=0 || status=$?
+  printf -v "$output_variable" '%s' "$output"
+  return "$status"
+}
+remote() { eval "$1"; }
+
+scan_index="test-$$"
+scan_pdf="/var/tmp/scanservjs-onboarding-test-$scan_index.pdf"
+scan_png="/var/tmp/scanservjs-onboarding-test-$scan_index.png"
+rm -f "$scan_pdf" "$scan_png"
+
+# Successful scan: scanimage and convert both succeed, the PDF is non-empty
+# and the intermediate PNG is removed.
+scanimage() { printf 'PNGDATA'; return "$mock_scanimage_status"; }
+convert() { [[ "$mock_convert_writes_content" == true ]] && printf 'PDFDATA' >"$2"; return "$mock_convert_status"; }
+mock_scanimage_status=0
+mock_convert_status=0
+mock_convert_writes_content=true
+if create_scanner_test_pdf 'airscan:e0:Office Scanner' "$scan_index" >/dev/null 2>&1; then success_status=0; else success_status=$?; fi
+[[ "$success_status" -eq 0 ]]
+[[ -s "$scan_pdf" ]]
+[[ ! -e "$scan_png" ]]
+rm -f "$scan_pdf"
+
+# SANE failure: scanimage itself fails, so convert never runs and no PDF is
+# ever claimed as created.
+mock_scanimage_status=1
+mock_convert_status=0
+mock_convert_writes_content=true
+if sane_failure=$(create_scanner_test_pdf 'airscan:e0:Office Scanner' "$scan_index" 2>&1); then sane_failure_status=0; else sane_failure_status=$?; fi
+[[ "$sane_failure_status" -ne 0 ]]
+[[ "$sane_failure" == *'did not produce a usable PDF'* ]]
+[[ ! -e "$scan_pdf" ]]
+[[ ! -e "$scan_png" ]]
+
+# Empty output: scanimage exits 0 but convert produces no usable PDF, so the
+# test -s guard on the final PDF catches it.
+mock_scanimage_status=0
+mock_convert_status=0
+mock_convert_writes_content=false
+if empty_output=$(create_scanner_test_pdf 'airscan:e0:Office Scanner' "$scan_index" 2>&1); then empty_output_status=0; else empty_output_status=$?; fi
+[[ "$empty_output_status" -ne 0 ]]
+[[ "$empty_output" == *'did not produce a usable PDF'* ]]
+[[ ! -e "$scan_pdf" ]]
+[[ ! -e "$scan_png" ]]
+
+unset -f scanimage convert
 
 source "$root/scripts/lib/onboarding/prompts.sh"
 

@@ -207,7 +207,7 @@ configure_printer() {
 }
 
 configure_scanner() {
-  local original=${1:-} name connection backend usb_mode usb_identity retention ocr command_output
+  local original=${1:-} name connection backend usb_mode usb_identity retention ocr scanservjs_port command_output
   local usb_mode_default connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan}
   if [[ -n "$original" ]]; then
     connection_default=$(field scanner "$original" connection)
@@ -250,7 +250,12 @@ configure_scanner() {
       valid_ocr_languages "$ocr" && break
       printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
     done
-    command+=(--retention-days "$retention" --ocr-languages "$ocr")
+    while true; do
+      scanservjs_port=$(ask 'ScanservJS port (1-65535, recommended 8080)' "$(saved_scalar scanservjs_port 8080)")
+      [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
+      printf '%s\n' 'Port must be 1 to 65535.' >&2
+    done
+    command+=(--retention-days "$retention" --ocr-languages "$ocr" --port "$scanservjs_port")
   fi
   step_action command_output 'Save the managed scanner definition' 'device_inventory.py upsert-scanner' "${command[@]}"
 }

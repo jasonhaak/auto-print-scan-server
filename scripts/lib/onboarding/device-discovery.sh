@@ -222,6 +222,18 @@ verify_scanservjs_ready() {
   printf 'ScanservJS is ready on its configured local TCP port %s.\n' "$port"
 }
 
+create_scanner_test_pdf() {
+  local scanner_device_name=$1 file_index=${2:-1} scanner_test_pdf scanner_test_png test_output
+  scanner_test_pdf="/var/tmp/scanservjs-onboarding-test-${file_index}.pdf"
+  scanner_test_png="/var/tmp/scanservjs-onboarding-test-${file_index}.png"
+  printf 'Creating scanner test PDF for %s.\n' "$scanner_device_name"
+  if ! step_action test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert; verify non-empty; clean temporary PNG' \
+    remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=png > $(printf '%q' "$scanner_test_png") && convert $(printf '%q' "$scanner_test_png") $(printf '%q' "$scanner_test_pdf") && test -s $(printf '%q' "$scanner_test_pdf"); status=\$?; rm -f $(printf '%q' "$scanner_test_png"); exit \$status"; then
+    printf 'Scanner test for %s did not produce a usable PDF. Check the scanner and retry from the onboarding command.\n' "$scanner_device_name" >&2
+    return 1
+  fi
+}
+
 discover_direct_ethernet_device() {
   local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
