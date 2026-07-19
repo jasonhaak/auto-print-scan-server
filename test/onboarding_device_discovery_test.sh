@@ -112,3 +112,51 @@ mock_listener_status=1
 if verify_scanservjs_ready 8080 >/dev/null 2>&1; then
   exit 1
 fi
+
+source "$root/scripts/lib/onboarding/prompts.sh"
+
+variables="$root/inventories/production/group_vars/print_servers.yml"
+backups="$root/.onboard-backups"
+ONBOARD_PYTHON="$root/.venv/bin/python"
+
+# socket:// and lpd:// URIs must never trigger an IPP identity probe.
+probe_calls=0
+step_check() { probe_calls=$((probe_calls + 1)); return 1; }
+remote() { probe_calls=$((probe_calls + 1)); return 1; }
+
+socket_output=$(recommend_legacy_profile 'socket://192.0.2.20:9100' 2>&1)
+[[ "$probe_calls" -eq 0 ]]
+[[ "$socket_output" == *'No IPP identity probe is available'* ]]
+[[ "$socket_output" != *'Recommended profile'* ]]
+
+probe_calls=0
+lpd_output=$(recommend_legacy_profile 'lpd://192.0.2.21/queue' 2>&1)
+[[ "$probe_calls" -eq 0 ]]
+[[ "$lpd_output" == *'No IPP identity probe is available'* ]]
+[[ "$lpd_output" != *'Recommended profile'* ]]
+
+# An ipp:// URI with matching IPP identity evidence yields a recommendation
+# alongside its "recommendation only, not proof" disclaimer.
+step_check() {
+  local output_var=$1
+  printf -v "$output_var" '%s' 'make-and-model: Brother MFC-7360N'
+  return 0
+}
+matched=$(recommend_legacy_profile 'ipp://printer.local/ipp/print')
+[[ "$matched" == *'recommendations only'* && "$matched" == *'do not prove support or select a profile'* ]]
+[[ "$matched" == *'Recommended profile brlaser'* ]]
+
+# When the probe fails (no usable evidence), no profile is recommended and the
+# manual-selection path via choose_package_profile is still reachable and
+# still requires an explicit operator choice.
+step_check() {
+  local output_var=$1
+  printf -v "$output_var" ''
+  return 1
+}
+unmatched=$(recommend_legacy_profile 'ipps://printer.local/ipp/print' 2>&1)
+[[ "$unmatched" == *'Choose a package profile manually'* ]]
+[[ "$unmatched" != *'Recommended profile'* ]]
+
+manual_choice=$(choose_package_profile '' <<< 'brlaser')
+[[ "$manual_choice" == brlaser ]]
