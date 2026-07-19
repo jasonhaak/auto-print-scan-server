@@ -140,6 +140,13 @@ sane_scanner_candidates() {
   done <<<"$output"
 }
 
+direct_scanner_candidate() {
+  local output=$1 address=$2 candidate
+  while IFS= read -r candidate; do
+    [[ "$candidate" == *"$address"* ]] && { printf '%s' "$candidate"; return; }
+  done < <(sane_scanner_candidates "$output")
+}
+
 first_sane_scanner_identifier() {
   local output=$1 line scanner_identifier
   while IFS= read -r line; do
@@ -222,11 +229,13 @@ discover_direct_ethernet_device() {
   fi
   step_check scanner_output 'Probe the direct device for scanning' 'airscan-discover; scanimage -L' \
     remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
-  candidate=$(sane_scanner_candidates "$scanner_output" | awk -F'|' '$2 != "usb" { print; exit }')
+  candidate=$(direct_scanner_candidate "$scanner_output" "$direct_ethernet_device_ipv4")
   if [[ -n "$candidate" ]]; then
     IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$candidate"
     discovered_scanner=true
     printf 'Detected a scanner: %s. Its SANE identifier will be recommended in the scanner section.\n' "$discovered_scanner_device_name"
+  else
+    printf 'No scanner identifier was bound to direct device address %s. Enter scanner details manually if this device supports scanning.\n' "$direct_ethernet_device_ipv4" >&2
   fi
   remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
   temporary_direct_connection=''

@@ -34,6 +34,11 @@ ipp_usb_scanners=$(ipp_usb_scanner_candidates \
 [[ "$ipp_usb_scanners" == 'airscan:e1:USB MFD (SANE through ipp-usb)|usb|sane-airscan|ipp_usb|airscan:e1:USB MFD' ]]
 
 [[ "$(first_sane_scanner_identifier $'device `vendor:net:192.0.2.30\' is a scanner')" == 'vendor:net:192.0.2.30' ]]
+direct_scanner=$(direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner\ndevice `airscan:e1:192.168.50.2\' is a scanner' '192.168.50.2')
+[[ "$direct_scanner" == *'192.168.50.2'* ]]
+if direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner' '192.168.50.2'; then
+  exit 1
+fi
 sane_hardware_detected 'found USB scanner at libusb:001:004'
 if sane_hardware_detected 'sane-find-scanner: command not found'; then
   exit 1
