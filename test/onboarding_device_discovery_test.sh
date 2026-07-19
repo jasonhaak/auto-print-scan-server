@@ -266,3 +266,232 @@ unscoped_output=$(discover_devices true all)
 [[ "$unscoped_output" == *'Select a discovered scanner or choose manual entry'* ]]
 
 rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
+
+# Ticket 013: discover_direct_ethernet_device must offer a recovery menu
+# (retry, change settings, continue manually, stop) on every failure branch,
+# and must run direct_ethernet_discovery_cleanup (restore_ipp_usb_state,
+# restore_cups_state, and any temporary nmcli connection delete) before every
+# retry attempt so each attempt starts from a clean state.
+direct_ethernet_interface=eth1
+direct_ethernet_pi_ipv4_cidr=192.168.50.1/30
+direct_ethernet_device_ipv4=192.168.50.2
+yes() { return 0; }
+recommendation() { :; }
+technical_report() { :; }
+tcp_port_is_open() { return 1; }
+
+mock_interface_ok=true
+mock_carrier_ok=true
+mock_nmcli_ok=true
+mock_ping_ok=true
+recovery_choice_sequence=()
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+
+# recovery_choice is invoked as `choice=$(recovery_choice ...)`, which forks a
+# subshell; a plain shell-variable call counter would reset to zero on every
+# invocation and the mock would return the same choice forever (infinite
+# retry recursion). Persist the counter in a file instead, since filesystem
+# state survives across subshells.
+recovery_choice_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-recovery-choice.XXXXXX")
+
+step_check() {
+  local output_variable=$1 label=$2
+  case "$label" in
+    'Verify the direct Ethernet interface')
+      printf -v "$output_variable" ''
+      [[ "$mock_interface_ok" == true ]]
+      return
+      ;;
+    'Check the direct Ethernet cable carrier')
+      printf -v "$output_variable" '%s' "$([[ "$mock_carrier_ok" == true ]] && printf 1 || printf 0)"
+      return 0
+      ;;
+    'Reach the directly connected device')
+      printf -v "$output_variable" ''
+      [[ "$mock_ping_ok" == true ]]
+      return
+      ;;
+    *)
+      printf -v "$output_variable" ''
+      return 1
+      ;;
+  esac
+}
+step_action() {
+  local output_variable=$1
+  printf -v "$output_variable" ''
+  [[ "$mock_nmcli_ok" == true ]]
+}
+remote_tty() {
+  [[ "$*" == *'nmcli connection delete'* ]] && delete_calls=$((delete_calls + 1))
+  return 0
+}
+restore_ipp_usb_state() { cleanup_ipp_calls=$((cleanup_ipp_calls + 1)); }
+restore_cups_state() { cleanup_cups_calls=$((cleanup_cups_calls + 1)); }
+recovery_choice() {
+  local n choice
+  n=$(<"$recovery_choice_counter_file")
+  choice=${recovery_choice_sequence[$n]}
+  printf '%s' "$((n + 1))" >"$recovery_choice_counter_file"
+  printf '%s' "$choice"
+}
+
+# Missing-interface retry: the interface check fails on every attempt. The
+# operator retries once, then stops. Cleanup must run before both the retry
+# and the stop, but no nmcli connection was ever created, so no delete is
+# expected.
+mock_interface_ok=false
+printf '0' >"$recovery_choice_counter_file"
+recovery_choice_sequence=(retry stop)
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+missing_interface_status=0
+discover_direct_ethernet_device >/dev/null 2>&1 || missing_interface_status=$?
+[[ "$missing_interface_status" -eq 1 ]]
+recovery_choice_calls=$(<"$recovery_choice_counter_file")
+[[ "$recovery_choice_calls" -eq 2 ]]
+[[ "$cleanup_ipp_calls" -eq 2 ]]
+[[ "$cleanup_cups_calls" -eq 2 ]]
+[[ "$delete_calls" -eq 0 ]]
+mock_interface_ok=true
+
+# No-carrier retry: the interface exists but the cable carrier check fails on
+# every attempt. Same expectations: two recovery prompts, cleanup runs before
+# each, and no nmcli connection was created.
+mock_carrier_ok=false
+printf '0' >"$recovery_choice_counter_file"
+recovery_choice_sequence=(retry stop)
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+no_carrier_status=0
+discover_direct_ethernet_device >/dev/null 2>&1 || no_carrier_status=$?
+[[ "$no_carrier_status" -eq 1 ]]
+recovery_choice_calls=$(<"$recovery_choice_counter_file")
+[[ "$recovery_choice_calls" -eq 2 ]]
+[[ "$cleanup_ipp_calls" -eq 2 ]]
+[[ "$cleanup_cups_calls" -eq 2 ]]
+[[ "$delete_calls" -eq 0 ]]
+mock_carrier_ok=true
+
+# nmcli-configuration-failure retry: the interface and carrier checks pass but
+# the temporary link configuration fails on every attempt. A temporary
+# connection is created and must be deleted before each retry and again
+# before stopping.
+mock_nmcli_ok=false
+printf '0' >"$recovery_choice_counter_file"
+recovery_choice_sequence=(retry stop)
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+nmcli_failure_status=0
+discover_direct_ethernet_device >/dev/null 2>&1 || nmcli_failure_status=$?
+[[ "$nmcli_failure_status" -eq 1 ]]
+recovery_choice_calls=$(<"$recovery_choice_counter_file")
+[[ "$recovery_choice_calls" -eq 2 ]]
+[[ "$cleanup_ipp_calls" -eq 2 ]]
+[[ "$cleanup_cups_calls" -eq 2 ]]
+[[ "$delete_calls" -eq 2 ]]
+[[ -z "$temporary_direct_connection" ]]
+mock_nmcli_ok=true
+
+# Ping-failure retry: the temporary link configures successfully but the
+# device never answers. Same expectations as the nmcli failure: two deletes
+# of the temporary connection, one per attempt.
+mock_ping_ok=false
+printf '0' >"$recovery_choice_counter_file"
+recovery_choice_sequence=(retry stop)
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+ping_failure_status=0
+discover_direct_ethernet_device >/dev/null 2>&1 || ping_failure_status=$?
+[[ "$ping_failure_status" -eq 1 ]]
+recovery_choice_calls=$(<"$recovery_choice_counter_file")
+[[ "$recovery_choice_calls" -eq 2 ]]
+[[ "$cleanup_ipp_calls" -eq 2 ]]
+[[ "$cleanup_cups_calls" -eq 2 ]]
+[[ "$delete_calls" -eq 2 ]]
+[[ -z "$temporary_direct_connection" ]]
+mock_ping_ok=true
+
+# Change-settings must return status 2 without recursing, so scripts/onboard
+# can re-prompt the interface, CIDR and device address before calling again.
+mock_interface_ok=false
+printf '0' >"$recovery_choice_counter_file"
+recovery_choice_sequence=(change)
+change_status=0
+discover_direct_ethernet_device >/dev/null 2>&1 || change_status=$?
+[[ "$change_status" -eq 2 ]]
+recovery_choice_calls=$(<"$recovery_choice_counter_file")
+[[ "$recovery_choice_calls" -eq 1 ]]
+mock_interface_ok=true
+
+# Ticket 013: discover_devices' recovery menu gains a "change scope" option
+# that re-prompts the discovery scope (all/lan/usb/skip) and passes the new
+# value into the retried recursive call. Wrap the real discover_devices to
+# record the scope argument on every entry, including recursive re-entries
+# triggered from inside the original function body.
+eval "$(declare -f discover_devices | sed '1s/^discover_devices/discover_devices_original/')"
+scope_calls=()
+discover_devices() {
+  scope_calls+=("${2:-all}")
+  discover_devices_original "$@"
+}
+
+remote() {
+  case "$*" in
+    *'timeout 10s lpinfo -v'*) return 1 ;;
+    *'sudo ipp-usb check'*) printf 'no IPP over USB devices found'; return 1 ;;
+    *'scanimage -L'*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+remote_tty() { return 0; }
+avahi_browse_scan() { return 0; }
+choose_candidate() { printf 'manual'; }
+technical_report() { :; }
+step_check() {
+  local output_variable=$1 output status
+  shift 3
+  output=$("$@" 2>&1) && status=0 || status=$?
+  printf -v "$output_variable" '%s' "$output"
+  return "$status"
+}
+step_action() { step_check "$@"; }
+step_stream() { step_check "$@"; }
+
+# recovery_choice runs as `choice=$(recovery_choice ...)`, forking a subshell,
+# so (as above) its call count must be tracked through a file rather than a
+# plain shell variable.
+scope_recovery_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-scope-recovery.XXXXXX")
+printf '0' >"$scope_recovery_counter_file"
+recovery_choice() {
+  local n
+  n=$(<"$scope_recovery_counter_file")
+  printf '%s' "$((n + 1))" >"$scope_recovery_counter_file"
+  if (( n == 0 )); then
+    printf 'scope'
+  else
+    printf 'manual'
+  fi
+}
+ask_choice() { printf 'usb'; }
+
+# Call discover_devices as a plain statement rather than through $(...): a
+# command substitution would fork a subshell too, and scope_calls (appended
+# inside the discover_devices wrapper above) would never be visible here once
+# that subshell exited.
+discover_devices true all >/dev/null 2>&1
+scope_recovery_calls=$(<"$scope_recovery_counter_file")
+[[ "$scope_recovery_calls" -eq 2 ]]
+[[ "${#scope_calls[@]}" -eq 2 ]]
+[[ "${scope_calls[0]}" == all ]]
+[[ "${scope_calls[1]}" == usb ]]
+
+unset -f discover_devices discover_devices_original recovery_choice ask_choice remote remote_tty avahi_browse_scan choose_candidate technical_report step_check step_action step_stream
+
+rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log

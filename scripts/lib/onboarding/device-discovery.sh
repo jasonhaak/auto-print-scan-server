@@ -234,36 +234,54 @@ create_scanner_test_pdf() {
   fi
 }
 
+direct_ethernet_discovery_cleanup() {
+  restore_ipp_usb_state
+  restore_cups_state
+  if [[ -n "${temporary_direct_connection:-}" ]]; then
+    remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
+    temporary_direct_connection=''
+  fi
+}
+
+direct_ethernet_recovery() {
+  local failure_message=$1 choice
+  printf '%s\n' "$failure_message" >&2
+  direct_ethernet_discovery_cleanup
+  choice=$(recovery_choice 'Direct link recovery (retry, change, manual, stop)' retry retry change manual stop) || return 1
+  case "$choice" in
+    retry) discover_direct_ethernet_device; return $? ;;
+    change) return 2 ;;
+    manual) return 0 ;;
+    stop) return 1 ;;
+  esac
+}
+
 discover_direct_ethernet_device() {
   local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
   yes 'Temporarily configure the direct Ethernet link and search this device?' || return
   if ! step_check command_output 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" \
     remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")"; then
-    printf 'Interface %s does not exist on the Raspberry Pi. Continue with another topology or correct the interface.\n' "$direct_ethernet_interface" >&2
-    return
+    direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the Raspberry Pi. Continue with another topology or correct the interface."
+    return $?
   fi
   carrier_status=0
   step_check carrier 'Check the direct Ethernet cable carrier' "cat /sys/class/net/$direct_ethernet_interface/carrier" \
     remote "cat /sys/class/net/$(printf '%q' "$direct_ethernet_interface")/carrier" || carrier_status=$?
   if [[ "$carrier_status" != 0 || "$carrier" != 1 ]]; then
-    printf 'Interface %s has no Ethernet carrier. Connect the device cable before discovery.\n' "$direct_ethernet_interface" >&2
-    return
+    direct_ethernet_recovery "Interface $direct_ethernet_interface has no Ethernet carrier. Connect the device cable before discovery."
+    return $?
   fi
   temporary_direct_connection="raspberry-print-server-onboarding-$$"
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
     remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
-    printf '%s\n' 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status. Continue with manual device details.' >&2
-    remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
-    temporary_direct_connection=''
-    return
+    direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status. Continue with manual device details.'
+    return $?
   fi
   if ! step_check command_output 'Reach the directly connected device' "ping -c 1 -W 2 $direct_ethernet_device_ipv4" \
     remote "ping -c 1 -W 2 $(printf '%q' "$direct_ethernet_device_ipv4")"; then
-    printf 'The device at %s did not answer on the private link. Check its static address and cable.\n' "$direct_ethernet_device_ipv4" >&2
-    remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
-    temporary_direct_connection=''
-    return
+    direct_ethernet_recovery "The device at $direct_ethernet_device_ipv4 did not answer on the private link. Check its static address and cable."
+    return $?
   fi
   if step_check command_output 'Probe the direct device for IPP printing' "ipptool ipp://$direct_ethernet_device_ipv4/ipp/print get-printer-attributes.test" \
     remote "ipptool -tv $(printf '%q' "ipp://${direct_ethernet_device_ipv4}/ipp/print") get-printer-attributes.test"; then
@@ -305,8 +323,7 @@ discover_direct_ethernet_device() {
   else
     printf 'No scanner identifier was bound to direct device address %s. Enter scanner details manually if this device supports scanning.\n' "$direct_ethernet_device_ipv4" >&2
   fi
-  remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
-  temporary_direct_connection=''
+  direct_ethernet_discovery_cleanup
 }
 
 discover_devices() {
@@ -341,9 +358,14 @@ discover_devices() {
     restore_ipp_usb_state
     restore_cups_state
     rm -f "$discovery_log"
-    choice=$(recovery_choice 'Discovery recovery (retry, manual, stop)' retry retry manual stop) || return 1
+    choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
     case "$choice" in
       retry) discover_devices true "$discovery_scope"; return $? ;;
+      scope)
+        discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+        discover_devices true "$discovery_scope"
+        return $?
+        ;;
       manual) printf '%s\n' 'Continue with manual configuration.'; return 0 ;;
       stop) return 1 ;;
     esac
@@ -490,9 +512,15 @@ discover_devices() {
   fi
   if [[ -z "${discovered_printer_connection:-}" && "${discovered_scanner:-false}" != true ]]; then
     printf 'No usable device was selected. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
-    choice=$(recovery_choice 'Discovery recovery (retry, manual, stop)' retry retry manual stop) || return 1
+    choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
     case "$choice" in
       retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope"; return $? ;;
+      scope)
+        discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+        rm -f "$discovery_log"
+        discover_devices true "$discovery_scope"
+        return $?
+        ;;
       manual) return 0 ;;
       stop) return 1 ;;
     esac
