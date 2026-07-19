@@ -82,3 +82,20 @@ fi
 if recovery_choice 'Recovery' retry retry stop <<< 'retry'; then
   exit 1
 fi
+
+# The guard above rejects recovery_choice whenever stdin/stdout are not a terminal, which is
+# always true under <<<. Override interactive_terminal to exercise the actual retry/correct/stop
+# selection logic that ask_choice performs once the guard passes.
+interactive_terminal() { return 0; }
+
+retry_selection=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop <<< 'retry')
+[[ "$retry_selection" == retry ]]
+
+correct_selection=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop <<< 'correct')
+[[ "$correct_selection" == correct ]]
+
+stop_selection=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop <<< 'stop')
+[[ "$stop_selection" == stop ]]
+
+manage_selection=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop <<< 'manage')
+[[ "$manage_selection" == manage ]]

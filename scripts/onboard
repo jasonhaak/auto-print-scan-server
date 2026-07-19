@@ -599,7 +599,11 @@ while ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-
   ansible-galaxy collection install -r "$root/requirements.yml"; do
   printf 'Collection installation failed. Technical transcript: %s\n' "$technical_transcript" >&2
   recovery=$(recovery_choice 'Collection recovery (retry, manage, stop)' retry retry manage stop) || exit 1
-  [[ "$recovery" == retry ]] && continue
+  if [[ "$recovery" == retry ]]; then
+    ssh_session_cleanup
+    ssh_session_open
+    continue
+  fi
   [[ "$recovery" == manage ]] && exec "$root/scripts/manage-devices"
   exit 1
 done
@@ -613,7 +617,11 @@ while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'a
   env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; do
   printf 'Commissioning failed. Technical transcript: %s\n' "$technical_transcript" >&2
   recovery=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop) || exit 1
-  [[ "$recovery" == retry ]] && continue
+  if [[ "$recovery" == retry ]]; then
+    ssh_session_cleanup
+    ssh_session_open
+    continue
+  fi
   [[ "$recovery" == manage ]] && exec "$root/scripts/manage-devices"
   exit 1
 done
