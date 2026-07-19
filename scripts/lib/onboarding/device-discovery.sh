@@ -140,11 +140,39 @@ sane_scanner_candidates() {
   done <<<"$output"
 }
 
+direct_scanner_candidate_host() {
+  local identifier=$1 host
+  case "$identifier" in
+    airscan:*:*) host=${identifier#airscan:*:} ;;
+    escl:*) host=${identifier#escl:} ;;
+    net:*) host=${identifier#net:}; host=${host%%:*} ;;
+    *) return ;;
+  esac
+  host=${host%% *}
+  [[ -n "$host" ]] || return
+  [[ "$host" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && return
+  printf '%s' "$host"
+}
+
+direct_scanner_hostname_resolves_exclusively() {
+  local hostname=$1 address=$2 addresses status=0
+  addresses=$(remote "getent ahostsv4 $(printf '%q' "$hostname") 2>/dev/null | awk '{print \$1}' | sort -u") || status=$?
+  [[ "$status" -eq 0 && -n "$addresses" ]] || return 1
+  [[ "$(grep -c . <<<"$addresses")" -eq 1 && "$addresses" == "$address" ]]
+}
+
 direct_scanner_candidate() {
-  local output=$1 address=$2 candidate
+  local output=$1 address=$2 candidate identifier host
   while IFS= read -r candidate; do
     [[ "$candidate" == *"$address"* ]] && { printf '%s' "$candidate"; return; }
   done < <(sane_scanner_candidates "$output")
+  while IFS= read -r candidate; do
+    IFS='|' read -r _ _ _ _ identifier <<<"$candidate"
+    host=$(direct_scanner_candidate_host "$identifier")
+    [[ -n "$host" ]] || continue
+    direct_scanner_hostname_resolves_exclusively "$host" "$address" && { printf '%s' "$candidate"; return; }
+  done < <(sane_scanner_candidates "$output")
+  return 1
 }
 
 first_sane_scanner_identifier() {
@@ -315,7 +343,7 @@ discover_direct_ethernet_device() {
   fi
   step_check scanner_output 'Probe the direct device for scanning' 'airscan-discover; scanimage -L' \
     remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
-  candidate=$(direct_scanner_candidate "$scanner_output" "$direct_ethernet_device_ipv4")
+  candidate=$(direct_scanner_candidate "$scanner_output" "$direct_ethernet_device_ipv4") || true
   if [[ -n "$candidate" ]]; then
     IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$candidate"
     discovered_scanner=true

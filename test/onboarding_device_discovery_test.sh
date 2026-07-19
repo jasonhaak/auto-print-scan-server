@@ -39,6 +39,43 @@ direct_scanner=$(direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is
 if direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner' '192.168.50.2'; then
   exit 1
 fi
+
+# Ticket 014: a scanner identified only by hostname is accepted when that
+# hostname resolves exclusively (via the Raspberry Pi, not locally) to the
+# configured direct device address.
+[[ "$(direct_scanner_candidate_host 'airscan:e0:printer.local')" == printer.local ]]
+[[ "$(direct_scanner_candidate_host 'escl:printer.local')" == printer.local ]]
+[[ "$(direct_scanner_candidate_host 'net:printer.local:vendor:dev0')" == printer.local ]]
+# A literal IPv4 host is not treated as a hostname (it is already covered by
+# the literal-containment path and must not trigger a remote resolution call).
+[[ -z "$(direct_scanner_candidate_host 'airscan:e0:192.168.50.9')" ]]
+
+remote() {
+  case "$*" in
+    *"getent ahostsv4 printer.local"*) printf '192.168.50.2\n'; return 0 ;;
+    *"getent ahostsv4 ambiguous.local"*) printf '192.168.50.2\n192.168.50.3\n'; return 0 ;;
+    *"getent ahostsv4 missing.local"*) return 2 ;;
+    *) return 1 ;;
+  esac
+}
+direct_scanner_hostname_resolves_exclusively printer.local 192.168.50.2
+if direct_scanner_hostname_resolves_exclusively ambiguous.local 192.168.50.2; then
+  exit 1
+fi
+if direct_scanner_hostname_resolves_exclusively missing.local 192.168.50.2; then
+  exit 1
+fi
+
+hostname_scanner=$(direct_scanner_candidate $'device `airscan:e0:printer.local\' is a scanner' '192.168.50.2')
+[[ "$hostname_scanner" == *'airscan:e0:printer.local'* ]]
+if direct_scanner_candidate $'device `airscan:e0:ambiguous.local\' is a scanner' '192.168.50.2'; then
+  exit 1
+fi
+if direct_scanner_candidate $'device `airscan:e0:missing.local\' is a scanner' '192.168.50.2'; then
+  exit 1
+fi
+unset -f remote
+
 sane_hardware_detected 'found USB scanner at libusb:001:004'
 if sane_hardware_detected 'sane-find-scanner: command not found'; then
   exit 1
@@ -429,6 +466,81 @@ discover_direct_ethernet_device >/dev/null 2>&1 || change_status=$?
 recovery_choice_calls=$(<"$recovery_choice_counter_file")
 [[ "$recovery_choice_calls" -eq 1 ]]
 mock_interface_ok=true
+
+# Ticket 014: discover_direct_ethernet_device's scanner-probe step must accept
+# a scanner candidate identified only by hostname when that hostname resolves
+# exclusively, via the Raspberry Pi over the temporary link, to the configured
+# direct device address. Drive the full temporary-link setup through cleanup,
+# not just the isolated direct_scanner_candidate helper.
+step_action() {
+  local output_variable=$1
+  printf -v "$output_variable" ''
+  return 0
+}
+step_check() {
+  local output_variable=$1 label=$2
+  case "$label" in
+    'Verify the direct Ethernet interface') printf -v "$output_variable" ''; return 0 ;;
+    'Check the direct Ethernet cable carrier') printf -v "$output_variable" '1'; return 0 ;;
+    'Reach the directly connected device') printf -v "$output_variable" ''; return 0 ;;
+    'Probe the direct device for scanning') printf -v "$output_variable" '%s' "$mock_scanner_output"; return 0 ;;
+    *) printf -v "$output_variable" ''; return 1 ;;
+  esac
+}
+delete_calls=0
+cleanup_ipp_calls=0
+cleanup_cups_calls=0
+
+# Exclusive resolution: the hostname resolves to exactly the configured
+# direct device address, so the hostname-only candidate is accepted.
+remote() {
+  case "$*" in
+    *'getent ahostsv4 printer.local'*) printf '192.168.50.2\n'; return 0 ;;
+    *) return 0 ;;
+  esac
+}
+mock_scanner_output=$'device `airscan:e0:printer.local\' is a scanner'
+unset discovered_scanner discovered_scanner_device_name
+direct_ethernet_output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-direct-ethernet.XXXXXX")
+# Redirect rather than use $(...): command substitution forks a subshell, and
+# discovered_scanner/discovered_scanner_device_name are set as globals inside
+# discover_direct_ethernet_device, so they must be observed in this shell, not
+# a discarded subshell copy (same pitfall noted above for scope_calls).
+discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
+hostname_bound_output=$(<"$direct_ethernet_output_file")
+[[ "$discovered_scanner" == true ]]
+[[ "$discovered_scanner_device_name" == 'airscan:e0:printer.local' ]]
+[[ "$hostname_bound_output" == *'Detected a scanner: airscan:e0:printer.local'* ]]
+[[ "$delete_calls" -ge 1 ]]
+
+# Ambiguous resolution: the hostname resolves to the configured address plus
+# another, so it must never be treated as address-bound.
+remote() {
+  case "$*" in
+    *'getent ahostsv4 printer.local'*) printf '192.168.50.2\n192.168.50.3\n'; return 0 ;;
+    *) return 0 ;;
+  esac
+}
+unset discovered_scanner discovered_scanner_device_name
+discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
+ambiguous_output=$(<"$direct_ethernet_output_file")
+[[ -z "${discovered_scanner:-}" ]]
+[[ "$ambiguous_output" == *'No scanner identifier was bound'* ]]
+
+# Failed resolution: the hostname does not resolve at all, so the candidate
+# is rejected rather than assumed to be the direct device.
+remote() {
+  case "$*" in
+    *'getent ahostsv4 printer.local'*) return 2 ;;
+    *) return 0 ;;
+  esac
+}
+unset discovered_scanner discovered_scanner_device_name
+discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
+unresolved_output=$(<"$direct_ethernet_output_file")
+[[ -z "${discovered_scanner:-}" ]]
+[[ "$unresolved_output" == *'No scanner identifier was bound'* ]]
+rm -f "$direct_ethernet_output_file"
 
 # Ticket 013: discover_devices' recovery menu gains a "change scope" option
 # that re-prompts the discovery scope (all/lan/usb/skip) and passes the new
