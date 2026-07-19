@@ -260,11 +260,16 @@ discover_devices() {
   discovery_cups_restore_needed=true
   if ! step_stream install_output 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' \
     remote_tty 'sudo -v && sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
-    printf '%s\n' 'Discovery tools could not be installed. Continue with manual configuration.' >&2
+    printf '%s\n' 'Discovery tools could not be installed.' >&2
     restore_ipp_usb_state
     restore_cups_state
     rm -f "$discovery_log"
-    return
+    choice=$(recovery_choice 'Discovery recovery (retry, manual, stop)' retry retry manual stop) || return 1
+    case "$choice" in
+      retry) discover_devices true "$discovery_scope"; return $? ;;
+      manual) printf '%s\n' 'Continue with manual configuration.'; return 0 ;;
+      stop) return 1 ;;
+    esac
   fi
   printf '%s\n' 'Discovery tools are ready. Searching local network announcements and connected USB devices for up to 15 seconds.'
 
@@ -408,6 +413,12 @@ discover_devices() {
   fi
   if [[ -z "${discovered_printer_connection:-}" && "${discovered_scanner:-false}" != true ]]; then
     printf 'No usable device was selected. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
+    choice=$(recovery_choice 'Discovery recovery (retry, manual, stop)' retry retry manual stop) || return 1
+    case "$choice" in
+      retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope"; return $? ;;
+      manual) return 0 ;;
+      stop) return 1 ;;
+    esac
   else
     rm -f "$discovery_log"
   fi
