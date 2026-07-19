@@ -33,7 +33,7 @@ Usage:
   scripts/onboard                 Start first setup, or manage devices when setup already exists
   scripts/onboard --reconfigure   Rebuild server-level settings and all device definitions
   scripts/onboard --verbose       Show complete captured technical output
-  scripts/onboard --help          Show this help
+  scripts/onboard -h, --help      Show this help
 EOF
 }
 
@@ -312,7 +312,7 @@ if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
 fi
 if [[ "$topology" == usb ]]; then
   connection=usb
-  printf '%s\n' 'USB was selected. The wizard will use the local USB identity and only configures scanning when a usable SANE device is detected.'
+  printf '%s\n' 'USB was selected for this printer. Its USB identity below identifies the exact device to CUPS. Scanning is configured separately in the Optional Scanner section and is not limited by this choice.'
 else
   printf '%s\n' 'Choose ipp for most modern network printers. Use ipps for encrypted IPP, socket for JetDirect printers (usually port 9100) or lpd for older LPD printers.'
   [[ -n "${discovered_printer_connection:-}" && "$topology" == network ]] && recommendation "Keep the detected ${discovered_printer_connection} connection if it matches the intended printer."
@@ -618,6 +618,7 @@ printf '%s\n' 'Your confirmed choices are now being applied. Ansible will show i
 while ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
   ansible-galaxy collection install -r "$root/requirements.yml"; do
   printf 'Collection installation failed. Technical transcript: %s\n' "$technical_transcript" >&2
+  printf 'Choose manage to exit this wizard and fix device definitions with scripts/manage-devices instead of finishing this setup run.\n' >&2
   recovery=$(recovery_choice 'Collection recovery (retry, manage, stop)' retry retry manage stop) || exit 1
   if [[ "$recovery" == retry ]]; then
     ssh_session_cleanup
@@ -636,6 +637,7 @@ ansible_output=''
 while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
   env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; do
   printf 'Commissioning failed. Technical transcript: %s\n' "$technical_transcript" >&2
+  printf 'Choose manage to exit this wizard and fix device definitions with scripts/manage-devices instead of finishing this setup run.\n' >&2
   recovery=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop) || exit 1
   if [[ "$recovery" == retry ]]; then
     ssh_session_cleanup
@@ -648,7 +650,7 @@ done
 printf '%s\n' 'Commissioning completed successfully.'
 for driver in "${printer_drivers[@]}"; do
   if [[ "$driver" == package_profile ]]; then
-    printf '%s\n' 'Reporting repository package-profile matches for the commissioned legacy printer.'
+    printf '%s\n' 'Reporting repository package-profile matches for each commissioned legacy (package-profile) printer.'
     ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" \
       ansible-playbook -i "$inventory" "$root/playbooks/discover-printer.yml"
     break
@@ -663,8 +665,9 @@ if (( ${#scanner_device_names[@]} > 0 )); then
   verify_scanservjs_ready "$scanservjs_port" || true
 fi
 if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now? This can use paper or move a scanner.'; then
+  scanner_test_pdfs_created=0
   for index in "${!scanner_device_names[@]}"; do
-    create_scanner_test_pdf "${scanner_device_names[$index]}" "$((index + 1))" || true
+    create_scanner_test_pdf "${scanner_device_names[$index]}" "$((index + 1))" && ((++scanner_test_pdfs_created)) || true
   done
-  printf 'Created %d scanner test PDF(s) under /var/tmp on %s.\n' "${#scanner_device_names[@]}" "$host"
+  printf 'Created %d of %d scanner test PDF(s) under /var/tmp on %s.\n' "$scanner_test_pdfs_created" "${#scanner_device_names[@]}" "$host"
 fi

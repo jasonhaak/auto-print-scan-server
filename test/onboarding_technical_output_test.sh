@@ -16,7 +16,7 @@ TECHNICAL_VERBOSE=false
 technical_transcript_start "$workspace" test
 short_display=$(technical_report 'Find printers' 'lpinfo -v' 0 $'direct usb://printer\nnetwork ipp')
 [[ "$short_display" == *'Check: Find printers'* ]]
-[[ "$short_display" == *'[OK] success'* ]]
+[[ "$short_display" == *'[  OK  ] success'* ]]
 [[ "$short_display" == *'direct usb://printer'* ]]
 [[ -f "$technical_transcript" ]]
 [[ "$(stat -c '%a' "$technical_transcript")" == 600 ]]

@@ -208,6 +208,27 @@ if empty_output=$(create_scanner_test_pdf 'airscan:e0:Office Scanner' "$scan_ind
 
 unset -f scanimage convert
 
+# Ticket 010: the scanner-test-PDF summary in scripts/onboard previously reported
+# the total scanner count as the number created even when some failed. Extract
+# the exact loop (same technique as test/onboarding_retry_inventory_safety_test.sh)
+# and drive it with a mocked create_scanner_test_pdf that fails for one of two
+# scanners, asserting the printed count reflects actual successes.
+onboard_scan_loop=$(awk '
+  /Create scanner test PDFs now/ { capturing = 1 }
+  capturing { print }
+  capturing && /^fi$/ { exit }
+' "$root/scripts/onboard")
+[[ -n "$onboard_scan_loop" ]]
+[[ "$onboard_scan_loop" == *'scanner_test_pdfs_created'* ]]
+
+yes() { return 0; }
+create_scanner_test_pdf() { [[ "$1" == 'good-scanner' ]]; }
+scanner_device_names=(good-scanner bad-scanner)
+host=print-server.local
+partial_success_output=$(eval "$onboard_scan_loop")
+[[ "$partial_success_output" == 'Created 1 of 2 scanner test PDF(s) under /var/tmp on print-server.local.' ]]
+unset -f yes create_scanner_test_pdf
+
 source "$root/scripts/lib/onboarding/prompts.sh"
 
 variables="$root/inventories/production/group_vars/print_servers.yml"

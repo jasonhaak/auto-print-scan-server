@@ -18,9 +18,9 @@ cli_color() {
 cli_status() {
   local status=$1
   if [[ "$status" == 0 ]]; then
-    cli_color '32' '[OK]'
+    cli_color '32' '[  OK  ]'
   else
-    cli_color '31' '[ERROR]'
+    cli_color '31' '[FAILED]'
   fi
 }
 

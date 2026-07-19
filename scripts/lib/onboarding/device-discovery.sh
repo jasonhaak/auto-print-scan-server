@@ -290,7 +290,7 @@ discover_direct_ethernet_device() {
   yes 'Temporarily configure the direct Ethernet link and search this device?' || return
   if ! step_check command_output 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" \
     remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")"; then
-    direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the Raspberry Pi. Continue with another topology or correct the interface."
+    direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the Raspberry Pi."
     return $?
   fi
   carrier_status=0
@@ -303,7 +303,7 @@ discover_direct_ethernet_device() {
   temporary_direct_connection="raspberry-print-server-onboarding-$$"
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
     remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
-    direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status. Continue with manual device details.'
+    direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status.'
     return $?
   fi
   if ! step_check command_output 'Reach the directly connected device' "ping -c 1 -W 2 $direct_ethernet_device_ipv4" \

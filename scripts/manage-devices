@@ -44,6 +44,7 @@ usage() {
 Manage printer, scanner and direct Ethernet link definitions without rerunning server onboarding.
 
 Usage:
+  scripts/manage-devices                Show current definitions and choose an action interactively
   scripts/manage-devices list
   scripts/manage-devices add printer|scanner|link
   scripts/manage-devices edit printer|scanner|link [IDENTITY]
@@ -97,8 +98,7 @@ select_device() {
   done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names "$kind")
   (( ${#candidates[@]} > 0 )) || { printf 'No managed %ss exist.\n' "$kind" >&2; exit 1; }
   candidate_count=0
-  choice=$(choose_candidate "Select the managed $kind." "${candidates[@]}")
-  [[ "$choice" != manual ]] || { printf '%s\n' 'Select a configured device.' >&2; exit 1; }
+  choice=$(choose_existing_candidate "Select the managed $kind." "${candidates[@]}")
   printf '%s' "${choice##*|}"
 }
 
@@ -219,7 +219,8 @@ configure_scanner() {
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   input_required 'Choose how the scanner is connected'
-  connection=$(ask_choice 'Scanner connection (network or USB)' "$connection_default" network ipp ipps usb)
+  printf '%s\n' 'Use sane-airscan for most network scanners (eSCL/WSD), sane-utils for a legacy USB scanner, or its documented backend package.'
+  connection=$(ask_choice 'Scanner connection (network, ipp, ipps or USB)' "$connection_default" network ipp ipps usb)
   [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
   backend=$(ask 'SANE backend package' "$backend_default")
   usb_mode=''

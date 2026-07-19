@@ -100,3 +100,16 @@ stop_selection=$(recovery_choice 'Connection recovery (retry, correct, stop)' re
 
 manage_selection=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop <<< 'manage')
 [[ "$manage_selection" == manage ]]
+
+# Ticket 010: select_device (manage-devices edit/delete) selects among existing
+# managed devices, where "manual" entry is meaningless and previously exited
+# with an error if picked. choose_existing_candidate must never offer it.
+candidate_count=0
+existing_menu=$(choose_existing_candidate 'Select the managed printer.' 'office-printer|office-printer' 'label-printer|label-printer' <<< '2' 2>&1)
+[[ "$existing_menu" != *'Enter details manually'* ]]
+selected=$(printf '%s' "$existing_menu" | tail -n 1)
+[[ "$selected" == 'label-printer|label-printer' ]]
+
+candidate_count=0
+invalid_then_valid=$(choose_existing_candidate 'Select the managed printer.' 'office-printer|office-printer' <<< $'9\n1' 2>&1)
+[[ "$invalid_then_valid" == *'Enter a listed number.'* ]]

@@ -155,6 +155,22 @@ choose_candidate() {
     printf '%s\n' 'Enter a listed number.' >&2
   done
 }
+choose_existing_candidate() {
+  local title=$1 selection index
+  shift
+  printf '\n%s\n' "$title" >&2
+  for index in "$@"; do
+    printf '  %d) %s\n' "$((++candidate_count))" "${index%%|*}" >&2
+  done
+  while true; do
+    selection=$(ask 'Choose a number' 1)
+    if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= candidate_count )); then
+      printf '%s' "${@:selection:1}"
+      return
+    fi
+    printf '%s\n' 'Enter a listed number.' >&2
+  done
+}
 choose_usb_identity() {
   local lsusb_output=$1 line identity description choice
   local -a candidates=()
