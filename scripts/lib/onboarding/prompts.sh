@@ -83,16 +83,9 @@ valid_ipv6_cidr() {
   "$checker" -c 'import ipaddress, sys; network = ipaddress.ip_network(sys.argv[1], strict=True); raise SystemExit(network.version != 6)' "$1" >/dev/null 2>&1
 }
 valid_printer_uri() {
-  local connection=$1 uri=$2
-  [[ "$uri" != *[[:space:]]* ]] || return 1
-  case "$connection" in
-    ipp) [[ "$uri" == ipp://* ]] ;;
-    ipps) [[ "$uri" == ipps://* ]] ;;
-    socket) [[ "$uri" == socket://* ]] ;;
-    lpd) [[ "$uri" == lpd://* ]] ;;
-    usb) [[ "$uri" == dnssd://* || "$uri" == ipp://* || "$uri" == ipps://* || "$uri" == usb://* ]] ;;
-    *) return 1 ;;
-  esac
+  local connection=$1 uri=$2 checker=${ONBOARD_PYTHON:-python3}
+  command -v "$checker" >/dev/null 2>&1 || [[ -x "$checker" ]] || return 1
+  "$checker" "$root/scripts/lib/device_inventory.py" validate-uri "$connection" "$uri" >/dev/null 2>&1
 }
 printer_uri_default() {
   local connection=$1 topology=$2 discovered_uri=${3:-} direct_device_ipv4=${4:-}
@@ -123,7 +116,11 @@ same_direct_ipv4_link() {
   command -v "$checker" >/dev/null 2>&1 || [[ -x "$checker" ]] || return 1
   "$checker" -c 'import ipaddress, sys; pi = ipaddress.ip_interface(sys.argv[1]); device = ipaddress.ip_address(sys.argv[2]); network = pi.network; valid = pi.version == 4 and network.prefixlen == 30 and device.version == 4 and device in network and pi.ip not in (network.network_address, network.broadcast_address) and device not in (pi.ip, network.network_address, network.broadcast_address); raise SystemExit(not valid)' "$1" "$2" >/dev/null 2>&1
 }
-valid_usb_identity() { [[ "$1" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]]; }
+valid_usb_identity() {
+  local identity=$1 checker=${ONBOARD_PYTHON:-python3}
+  command -v "$checker" >/dev/null 2>&1 || [[ -x "$checker" ]] || return 1
+  "$checker" "$root/scripts/lib/device_inventory.py" validate-usb-identity "$identity" >/dev/null 2>&1
+}
 choose_package_profile() {
   local default=$1 profile
   local -a profiles=()

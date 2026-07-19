@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ONBOARD_PYTHON="$root/.venv/bin/python"
 source "$root/scripts/lib/onboarding/prompts.sh"
 
 selected=$(ask 'Queue name' 'printer' <<< 'office-printer')

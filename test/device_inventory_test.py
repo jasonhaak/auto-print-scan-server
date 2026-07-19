@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,17 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "scripts/lib/device_inventory.py"
+
+
+def run_standalone(*arguments, check=True):
+    """Run the helper without --inventory/--backup-directory, for the standalone
+    validate-uri and validate-usb-identity subcommands."""
+    return subprocess.run(
+        [sys.executable, str(HELPER), *arguments],
+        check=check,
+        text=True,
+        capture_output=True,
+    )
 
 
 class DeviceInventoryTest(unittest.TestCase):
@@ -198,6 +210,74 @@ scanservjs_ocr_languages: [eng]
     def test_reports_no_profile_for_unqueryable_protocol_evidence(self):
         result = self.run_helper("profiles-for-evidence", "socket port 9100 is open")
         self.assertEqual(result.stdout, "")
+
+    def test_validate_uri_subcommand_matches_upsert_printer_scheme_rule(self):
+        # The standalone validate-uri subcommand (used by prompts.sh valid_printer_uri)
+        # must agree with the connection/scheme rule that upsert-printer enforces,
+        # since both now derive from the single PRINTER_URI_SCHEMES rule.
+        accepted = run_standalone("validate-uri", "ipp", "ipp://printer.local/ipp/print")
+        self.assertEqual(accepted.returncode, 0)
+        rejected = run_standalone("validate-uri", "socket", "ipp://printer.local/ipp/print", check=False)
+        self.assertNotEqual(rejected.returncode, 0)
+
+        before = self.inventory.read_text(encoding="utf-8")
+        mismatched = self.run_helper(
+            "upsert-printer", "--name", "mismatched", "--connection", "socket",
+            "--device-uri", "ipp://printer.local/ipp/print", "--driver-mode", "driverless",
+            "--shared", "true", check=False,
+        )
+        self.assertNotEqual(mismatched.returncode, 0)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
+
+    def test_validate_usb_identity_subcommand_matches_upsert_printer_pattern(self):
+        # The standalone validate-usb-identity subcommand (used by prompts.sh
+        # valid_usb_identity) must agree with the pattern upsert-printer enforces.
+        accepted = run_standalone("validate-usb-identity", "04a9:1909")
+        self.assertEqual(accepted.returncode, 0)
+        rejected = run_standalone("validate-usb-identity", "04a9:190", check=False)
+        self.assertNotEqual(rejected.returncode, 0)
+
+        before = self.inventory.read_text(encoding="utf-8")
+        invalid = self.run_helper(
+            "upsert-printer", "--name", "bad-identity", "--connection", "usb",
+            "--device-uri", "usb://Brother/Printer", "--driver-mode", "package_profile",
+            "--package-profile", "brlaser", "--usb-mode", "legacy_usb",
+            "--usb-identity", "04a9:190", "--shared", "true", check=False,
+        )
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
+
+    def test_onboard_and_manage_devices_persist_identical_printer_yaml(self):
+        # scripts/onboard's additional-printer loop persists a printer definition by
+        # printf/quote-ing YAML directly (see the managed_printers block near the end
+        # of scripts/onboard), while scripts/manage-devices persists through
+        # device_inventory.py's upsert-printer. Given identical inputs, both paths
+        # must produce an identical persisted printer definition.
+        name, connection, uri, driver = "printer-2", "ipp", "ipp://printer.local/ipp/print", "driverless"
+
+        onboard_script = f'''
+set -euo pipefail
+root={shlex.quote(str(ROOT))}
+source "$root/scripts/lib/onboarding/prompts.sh"
+printf '%s\\n' 'managed_printers:'
+printf '  - name: %s\\n    connection: %s\\n    device_uri: %s\\n    driver_mode: %s\\n    shared: true\\n' \\
+  "$(quote {shlex.quote(name)})" "$(quote {shlex.quote(connection)})" \\
+  "$(quote {shlex.quote(uri)})" "$(quote {shlex.quote(driver)})"
+'''
+        onboard_output = subprocess.run(
+            ["bash", "-c", onboard_script], check=True, text=True, capture_output=True
+        ).stdout
+        onboard_printer = yaml.safe_load(onboard_output)["managed_printers"][0]
+
+        self.run_helper(
+            "upsert-printer", "--name", name, "--connection", connection,
+            "--device-uri", uri, "--driver-mode", driver, "--shared", "true",
+        )
+        manage_devices_printer = next(
+            printer for printer in self.load()["managed_printers"] if printer["name"] == name
+        )
+
+        self.assertEqual(onboard_printer, manage_devices_printer)
 
 
 if __name__ == "__main__":

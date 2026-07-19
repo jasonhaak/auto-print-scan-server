@@ -160,3 +160,51 @@ unmatched=$(recommend_legacy_profile 'ipps://printer.local/ipp/print' 2>&1)
 
 manual_choice=$(choose_package_profile '' <<< 'brlaser')
 [[ "$manual_choice" == brlaser ]]
+
+# Ticket 015: the additional-printer and additional-scanner discovery offers in
+# scripts/onboard now set discovery_kind before calling discover_devices, matching
+# manage-devices' discover_for_add. Drive discover_devices end-to-end with both a
+# printer and a scanner candidate present, and confirm discovery_kind=printer
+# suppresses the scanner candidate menu while discovery_kind=scanner suppresses the
+# printer candidate menu.
+remote() {
+  case "$*" in
+    *'timeout 10s lpinfo -v'*) printf 'network ipp://printer.local/ipp/print\n'; return 0 ;;
+    *'sudo ipp-usb check'*) printf 'no IPP over USB devices found'; return 1 ;;
+    *'scanimage -L'*) printf "device \`airscan:e0:Office Scanner' is a WSD scanner\n"; return 0 ;;
+    *) return 0 ;;
+  esac
+}
+remote_tty() { return 0; }
+avahi_browse_scan() { return 0; }
+choose_candidate() { printf 'manual'; }
+recovery_choice() { printf 'manual'; return 0; }
+technical_report() { :; }
+step_check() {
+  local output_variable=$1 output status
+  shift 3
+  output=$("$@" 2>&1) && status=0 || status=$?
+  printf -v "$output_variable" '%s' "$output"
+  return "$status"
+}
+step_action() { step_check "$@"; }
+step_stream() { step_check "$@"; }
+
+discovery_kind=printer
+printer_scoped_output=$(discover_devices true all)
+unset discovery_kind
+[[ "$printer_scoped_output" == *'Select a discovered printer or choose manual entry'* ]]
+[[ "$printer_scoped_output" != *'Select a discovered scanner or choose manual entry'* ]]
+
+discovery_kind=scanner
+scanner_scoped_output=$(discover_devices true all)
+unset discovery_kind
+[[ "$scanner_scoped_output" == *'Select a discovered scanner or choose manual entry'* ]]
+[[ "$scanner_scoped_output" != *'Select a discovered printer or choose manual entry'* ]]
+
+# Without discovery_kind set (the default 'all'), both menus are offered.
+unscoped_output=$(discover_devices true all)
+[[ "$unscoped_output" == *'Select a discovered printer or choose manual entry'* ]]
+[[ "$unscoped_output" == *'Select a discovered scanner or choose manual entry'* ]]
+
+rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log

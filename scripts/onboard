@@ -376,7 +376,9 @@ while yes 'Add another printer?'; do
     printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
   done
   if yes_default 'Search for recommendations before defining this additional printer?'; then
+    discovery_kind=printer
     discover_devices true all || true
+    unset discovery_kind
   else
     printf '%s\n' 'Continuing with manual evidence. The final inventory validation still applies.'
   fi
@@ -488,7 +490,9 @@ if [[ "$scanner" == true ]]; then
 fi
 while yes 'Add another scanner?'; do
   if yes_default 'Search for scanner recommendations before defining it?'; then
+    discovery_kind=scanner
     discover_devices true all || true
+    unset discovery_kind
   else
     printf '%s\n' 'Continuing with manual scanner evidence. The final inventory validation still applies.'
   fi

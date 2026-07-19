@@ -23,6 +23,13 @@ SCANNER_CONNECTIONS = {"ipp", "ipps", "network", "usb"}
 USB_MODES = {"ipp_usb", "legacy_usb"}
 QUEUE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 USB_IDENTITY_PATTERN = re.compile(r"^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$")
+PRINTER_URI_SCHEMES = {
+    "ipp": {"ipp"},
+    "ipps": {"ipps"},
+    "socket": {"socket"},
+    "lpd": {"lpd"},
+    "usb": {"dnssd", "ipp", "ipps", "usb"},
+}
 OCR_LANGUAGE_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 PACKAGE_PROFILES_PATH = Path(__file__).resolve().parents[2] / "vars/package_profiles.yml"
 
@@ -60,6 +67,20 @@ def matching_package_profiles(identity_evidence: str) -> list[tuple[str, str]]:
     return matches
 
 
+def printer_uri_is_valid(connection: str, uri: str) -> bool:
+    """Authoritative printer URI-scheme rule, shared with the interactive Bash prompts."""
+    if connection not in PRINTER_URI_SCHEMES:
+        return False
+    if not uri or any(character.isspace() for character in uri):
+        return False
+    return urlsplit(uri).scheme.lower() in PRINTER_URI_SCHEMES[connection]
+
+
+def usb_identity_is_valid(identity: str) -> bool:
+    """Authoritative USB vendor:product identity rule, shared with the interactive Bash prompts."""
+    return bool(USB_IDENTITY_PATTERN.fullmatch(identity))
+
+
 def load_inventory(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise InventoryError(f"inventory file does not exist: {path}")
@@ -94,13 +115,7 @@ def validate_printer(printer: Any) -> None:
         raise InventoryError(f"printer {name!r} has unsupported connection {connection!r}")
     uri = require_text(printer.get("device_uri"), f"printer {name!r} device URI")
     scheme = urlsplit(uri).scheme.lower()
-    expected_schemes = {
-        "ipp": {"ipp"},
-        "ipps": {"ipps"},
-        "socket": {"socket"},
-        "lpd": {"lpd"},
-        "usb": {"dnssd", "ipp", "ipps", "usb"},
-    }[connection]
+    expected_schemes = PRINTER_URI_SCHEMES[connection]
     if scheme not in expected_schemes:
         expected = " or ".join(f"{item}://" for item in sorted(expected_schemes))
         raise InventoryError(f"printer {name!r} with connection {connection!r} requires {expected}")
@@ -301,10 +316,21 @@ def command_list(data: dict[str, Any]) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--inventory", required=True, type=Path)
-    parser.add_argument("--backup-directory", required=True, type=Path)
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--backup-directory", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
+
+    validate_uri = commands.add_parser(
+        "validate-uri", help="check a printer device URI against a connection type, without an inventory file"
+    )
+    validate_uri.add_argument("connection", choices=sorted(PRINTER_CONNECTIONS))
+    validate_uri.add_argument("uri")
+
+    validate_usb_identity = commands.add_parser(
+        "validate-usb-identity", help="check a USB vendor:product identity, without an inventory file"
+    )
+    validate_usb_identity.add_argument("identity")
 
     names = commands.add_parser("names")
     names.add_argument("kind", choices=["printer", "scanner", "link"])
@@ -354,6 +380,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     arguments = build_parser().parse_args()
+    if arguments.command == "validate-uri":
+        return 0 if printer_uri_is_valid(arguments.connection, arguments.uri) else 1
+    if arguments.command == "validate-usb-identity":
+        return 0 if usb_identity_is_valid(arguments.identity) else 1
+    if arguments.inventory is None or arguments.backup_directory is None:
+        print("Error: --inventory and --backup-directory are required for this command", file=sys.stderr)
+        return 2
     try:
         data = load_inventory(arguments.inventory)
         if arguments.command == "profiles-for-evidence":
