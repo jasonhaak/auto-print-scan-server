@@ -1,4 +1,12 @@
 ---
+- name: Install device preflight probe tools
+  ansible.builtin.apt:
+    name:
+      - cups-ipp-utils
+      - usbutils
+    state: present
+  tags: device_preflight
+
 - name: Check each declared printer
   ansible.builtin.include_tasks: printer.yml
   loop: "{{ managed_printers }}"

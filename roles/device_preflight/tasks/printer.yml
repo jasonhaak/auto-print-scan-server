@@ -18,14 +18,39 @@
 
 - name: Check declared USB printer identity
   ansible.builtin.command: "lsusb -d {{ managed_device.usb_identity }}"
-  register: device_preflight_result
+  register: device_preflight_usb_identity
   changed_when: false
   failed_when: false
   when: managed_device.connection == 'usb'
 
+- name: Check declared legacy USB printer CUPS endpoint
+  ansible.builtin.command:
+    argv:
+      - lpstat
+      - -v
+      - "{{ managed_device.name }}"
+  register: device_preflight_cups_endpoint
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection == 'usb' and managed_device.usb_mode == 'legacy_usb'
+
 - name: Require available declared printer during commissioning
   ansible.builtin.assert:
-    that: device_preflight_result.rc == 0
+    that:
+      - >-
+        managed_device.connection == 'usb'
+        or device_preflight_result.rc == 0
+      - >-
+        managed_device.connection != 'usb'
+        or device_preflight_usb_identity.rc == 0
+      - >-
+        managed_device.connection != 'usb'
+        or managed_device.usb_mode != 'legacy_usb'
+        or (
+          device_preflight_cups_endpoint.rc == 0
+          and device_preflight_cups_endpoint.stdout
+            == 'device for ' ~ managed_device.name ~ ': ' ~ managed_device.device_uri
+        )
     fail_msg: "Declared printer {{ managed_device.name }} is unavailable."
   when: print_server_commissioning | default(false) | bool
 
@@ -34,4 +59,15 @@
     msg: "Declared printer {{ managed_device.name }} is unavailable. The managed queue is preserved."
   when:
     - not print_server_commissioning | default(false) | bool
-    - device_preflight_result.rc != 0
+    - >-
+      (managed_device.connection != 'usb' and device_preflight_result.rc != 0)
+      or (managed_device.connection == 'usb' and device_preflight_usb_identity.rc != 0)
+      or (
+        managed_device.connection == 'usb'
+        and managed_device.usb_mode == 'legacy_usb'
+        and (
+          device_preflight_cups_endpoint.rc != 0
+          or device_preflight_cups_endpoint.stdout
+             != 'device for ' ~ managed_device.name ~ ': ' ~ managed_device.device_uri
+        )
+      )
