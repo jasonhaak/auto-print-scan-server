@@ -54,6 +54,7 @@ ssh_session_reachability() {
   [[ "$route_ok" == true && "$port_ok" == true ]]
 }
 ssh_session_open() {
+  ssh_session_cleanup
   ssh_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/raspberry-print-server-ssh.XXXXXX")
   ssh_socket="$ssh_socket_dir/control"
   ssh -o ControlMaster=yes -o ControlPersist=600 -o ControlPath="$ssh_socket" -fN "$admin@$host"

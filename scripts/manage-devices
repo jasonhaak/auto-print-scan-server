@@ -298,7 +298,7 @@ open_inventory_ssh_session() {
     exit 1
   }
   printf 'Connecting to %s@%s. SSH may request the Raspberry Pi password.\n' "$admin" "$host"
-  ssh_session_open
+  ssh_session_open || return 1
 }
 
 discover_for_add() {
@@ -324,18 +324,27 @@ apply_inventory() {
     ansible_playbook=ansible-playbook
   fi
   step_check command_output 'Validate managed definitions before applying' 'device_inventory.py validate' \
-    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" validate
-  open_inventory_ssh_session
-  ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
-  if ! remote 'sudo -n true' >/dev/null 2>&1; then
-    printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for this run.'
-    ansible_arguments+=(--ask-become-pass)
-  fi
-  if ! step_stream command_output 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' \
-    env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" "$ansible_playbook" "${ansible_arguments[@]}"; then
-    return 1
-  fi
-  printf '%s\n' 'The production inventory is now applied.'
+    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" validate || return 1
+  while true; do
+    if open_inventory_ssh_session; then
+      ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
+      if ! remote 'sudo -n true' >/dev/null 2>&1; then
+        printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for this run.'
+        ansible_arguments+=(--ask-become-pass)
+      fi
+      if step_stream command_output 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' \
+        env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" "$ansible_playbook" "${ansible_arguments[@]}"; then
+        printf '%s\n' 'The production inventory is now applied.'
+        return 0
+      fi
+    else
+      printf '%s\n' 'The Raspberry Pi connection failed before inventory could be applied.' >&2
+    fi
+    printf 'Apply failed. Technical transcript: %s\n' "$technical_transcript" >&2
+    recovery=$(recovery_choice 'Apply recovery (retry, stop)' retry retry stop) || return 1
+    [[ "$recovery" == retry ]] || return 1
+    ssh_session_cleanup
+  done
 }
 
 offer_apply() {

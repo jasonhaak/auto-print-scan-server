@@ -78,3 +78,7 @@ yes_default 'Apply now?' <<< ''
 if yes_default 'Apply now?' <<< 'no'; then
   exit 1
 fi
+
+if recovery_choice 'Recovery' retry retry stop <<< 'retry'; then
+  exit 1
+fi

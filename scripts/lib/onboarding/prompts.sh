@@ -47,6 +47,19 @@ yes_default() {
   printf '%s\n' 'Selected: no' >&2
   return 1
 }
+
+interactive_terminal() { [[ -t 0 && -t 1 ]]; }
+
+recovery_choice() {
+  local prompt=$1
+  shift
+  if ! interactive_terminal; then
+    printf '%s\n' 'Recovery is unavailable without an interactive terminal.' >&2
+    return 1
+  fi
+  ask_choice "$prompt" "$1" "$@"
+}
+
 ask_choice() {
   local prompt=$1 default=$2 value option
   shift 2

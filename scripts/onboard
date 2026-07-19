@@ -174,26 +174,28 @@ while true; do
   [[ "$admin" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] && break
   printf '%s\n' 'Enter a valid Linux account name using lowercase letters, numbers, underscores or hyphens.' >&2
 done
-printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
-reachability_output=''
-step_check reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
-ssh_output=''
-if ! step_check ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open; then
-  printf '%s\n' 'SSH authentication failed. Check the Raspberry Pi address, bootstrap user, password and that Raspberry Pi Imager enabled password SSH.' >&2
-  exit 1
-fi
-remote_shell_output=''
-if ! step_check remote_shell_output 'Verify the Raspberry Pi remote shell' 'ssh remote true' remote true; then
-  printf '%s\n' 'SSH connected but the remote session could not run a command. Check the Raspberry Pi SSH service and user shell.' >&2
-  exit 1
-fi
+while true; do
+  printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
+  reachability_output=''
+  step_check reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
+  if step_check ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open &&
+     step_check remote_shell_output 'Verify the Raspberry Pi remote shell' 'ssh remote true' remote true &&
+     step_check sudo_check_output 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
+    break
+  fi
+  printf '%s\n' 'The Raspberry Pi connection or sudo check failed. Check the address, bootstrap user, password and SSH settings.' >&2
+  recovery=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop) || exit 1
+  case "$recovery" in
+    retry) ssh_session_cleanup ;;
+    correct)
+      ssh_session_cleanup
+      host=$(ask 'Raspberry Pi hostname or IP address' "$host")
+      admin=$(ask 'Raspberry Pi Imager bootstrap user' "$admin")
+      ;;
+    stop) exit 1 ;;
+  esac
+done
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
-printf '%s\n' 'Next, sudo checks that this account may install packages and manage services. Enter the same Raspberry Pi password if prompted.'
-sudo_check_output=''
-if ! step_check sudo_check_output 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
-  printf '%s\n' 'Sudo verification failed. Use the administrator account created in Raspberry Pi Imager or grant it sudo access before rerunning.' >&2
-  exit 1
-fi
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
 stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.'
 suggested_cidr=$(remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' 2>/dev/null || true)
@@ -579,20 +581,28 @@ host_tmp=''
 vars_tmp=''
 subsection 'Applying Your Configuration'
 printf '%s\n' 'Your confirmed choices are now being applied. Ansible will show its normal progress while it installs services and configures the declared queues and scanners.'
-if ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
-  ansible-galaxy collection install -r "$root/requirements.yml"; then
+while ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
+  ansible-galaxy collection install -r "$root/requirements.yml"; do
+  printf 'Collection installation failed. Technical transcript: %s\n' "$technical_transcript" >&2
+  recovery=$(recovery_choice 'Collection recovery (retry, manage, stop)' retry retry manage stop) || exit 1
+  [[ "$recovery" == retry ]] && continue
+  [[ "$recovery" == manage ]] && exec "$root/scripts/manage-devices"
   exit 1
-fi
+done
 ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true)
 if ! remote 'sudo -n true' >/dev/null 2>&1; then
   printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for commissioning.'
   ansible_arguments+=(--ask-become-pass)
 fi
 ansible_output=''
-if ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
-  env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; then
+while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
+  env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; do
+  printf 'Commissioning failed. Technical transcript: %s\n' "$technical_transcript" >&2
+  recovery=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop) || exit 1
+  [[ "$recovery" == retry ]] && continue
+  [[ "$recovery" == manage ]] && exec "$root/scripts/manage-devices"
   exit 1
-fi
+done
 printf '%s\n' 'Commissioning completed successfully.'
 for driver in "${printer_drivers[@]}"; do
   if [[ "$driver" == package_profile ]]; then
