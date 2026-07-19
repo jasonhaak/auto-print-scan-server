@@ -185,6 +185,20 @@ scanservjs_ocr_languages: [eng]
         self.assertIn("overlaps trusted LAN", result.stderr)
         self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
 
+    def test_reports_matching_profile_from_ipp_identity_evidence(self):
+        result = self.run_helper(
+            "profiles-for-evidence",
+            "printer-make-and-model (name-with-language Brother MFC-7360N)",
+        )
+        self.assertEqual(
+            result.stdout,
+            "brlaser|Brother laser printers supported by Debian's brlaser package\n",
+        )
+
+    def test_reports_no_profile_for_unqueryable_protocol_evidence(self):
+        result = self.run_helper("profiles-for-evidence", "socket port 9100 is open")
+        self.assertEqual(result.stdout, "")
+
 
 if __name__ == "__main__":
     unittest.main()

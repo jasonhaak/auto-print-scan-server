@@ -62,3 +62,53 @@ if candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' lan; then
   exit 1
 fi
 candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' all
+
+rg -q 'recommend_legacy_profile' "$root/scripts/onboard"
+rg -q 'verify_cups_job' "$root/scripts/onboard"
+rg -q 'verify_scanservjs_ready' "$root/scripts/onboard"
+rg -q 'test -s' "$root/scripts/onboard"
+
+step_action() {
+  local output_var=$1
+  printf -v "$output_var" '%s' "$mock_submission"
+  return "$mock_submission_status"
+}
+remote() {
+  if [[ "$*" == *'lpstat -W all -l'* ]]; then
+    printf '%s\n' "$mock_job_state"
+  fi
+}
+sleep() { :; }
+
+mock_submission_status=1
+mock_submission='lp: Bad destination'
+rejected=$(verify_cups_job office 2>&1)
+[[ "$rejected" == *'CUPS rejected'* ]]
+
+mock_submission_status=0
+mock_submission='request id is office-42 (1 file(s))'
+mock_job_state='office-42 user 1024 completed at now'
+completed=$(verify_cups_job office)
+[[ "$completed" == *'office-42'* && "$completed" == *'physical output'* ]]
+
+mock_job_state='office-42 user 1024 aborted at now: printer stopped'
+terminal_failure=$(verify_cups_job office)
+[[ "$terminal_failure" == *'aborted'* ]]
+
+mock_job_state='office-42 user 1024 processing since now'
+pending=$(verify_cups_job office)
+[[ "$pending" == *'still pending after 30 seconds'* ]]
+
+step_check() {
+  local output_var=$1
+  printf -v "$output_var" '%s' "$mock_listener"
+  return "$mock_listener_status"
+}
+mock_listener_status=0
+mock_listener='LISTEN 0 511 127.0.0.1:8080'
+ready=$(verify_scanservjs_ready 8080)
+[[ "$ready" == *'ready on its configured local TCP port 8080'* ]]
+mock_listener_status=1
+if verify_scanservjs_ready 8080 >/dev/null 2>&1; then
+  exit 1
+fi

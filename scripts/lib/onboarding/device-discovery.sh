@@ -166,6 +166,62 @@ tcp_port_is_open() {
   remote "python3 -c 'import socket, sys; connection = socket.create_connection((sys.argv[1], int(sys.argv[2])), 2); connection.close()' $(printf '%q' "$host") $(printf '%q' "$port")" >/dev/null 2>&1
 }
 
+recommend_legacy_profile() {
+  local uri=$1 identity_output='' profile name description
+  case "$uri" in
+    ipp://*|ipps://*) ;;
+    *)
+      printf 'No IPP identity probe is available for %s. This endpoint has only protocol-appropriate reachability evidence; choose any package profile manually.\n' "$uri"
+      return
+      ;;
+  esac
+  if ! step_check identity_output 'Read printer identity for package-profile recommendations' "ipptool $uri get-printer-attributes.test" \
+    remote "ipptool -tv $(printf '%q' "$uri") get-printer-attributes.test"; then
+    printf 'The IPP identity query did not succeed. Choose a package profile manually if this printer needs one.\n' >&2
+    return
+  fi
+  printf '%s\n' 'IPP identity evidence was received. Repository matches below are recommendations only; they do not prove support or select a profile.'
+  while IFS='|' read -r name description; do
+    [[ -n "$name" ]] && printf 'Recommended profile %s: %s\n' "$name" "$description"
+  done < <("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" --inventory "$variables" --backup-directory "$backups" profiles-for-evidence "$identity_output")
+}
+
+verify_cups_job() {
+  local queue=$1 submission='' job_id='' state='' attempt=0
+  if ! step_action submission "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
+    remote "lp -d $(printf '%q' "$queue") /usr/share/cups/data/testprint"; then
+    printf 'CUPS rejected the test-page submission for %s. No CUPS job was created; check the queue and its device URI.\n' "$queue" >&2
+    return
+  fi
+  job_id=$(sed -nE 's/.*request id is ([^ ]+).*/\1/p' <<<"$submission" | head -n1)
+  if [[ -z "$job_id" ]]; then
+    printf 'CUPS accepted the test-page command for %s, but did not return a job identifier. Check the CUPS queue before retrying.\n' "$queue" >&2
+    return
+  fi
+  printf 'CUPS accepted test job %s. Waiting up to 30 seconds for its CUPS state.\n' "$job_id"
+  while (( attempt < 6 )); do
+    state=$(remote "lpstat -W all -l $(printf '%q' "$job_id") 2>&1" || true)
+    if grep -qiE 'completed|stopped|aborted|canceled' <<<"$state"; then
+      printf 'CUPS job %s reached a terminal state: %s\n' "$job_id" "$(tr '\n' ' ' <<<"$state")"
+      printf '%s\n' 'A CUPS completion state does not prove that paper printed. Confirm physical output at the printer.'
+      return
+    fi
+    attempt=$((attempt + 1))
+    (( attempt < 6 )) && sleep 5
+  done
+  printf 'CUPS job %s is still pending after 30 seconds. The queue and its retry policy were not changed; inspect it with lpstat -W all -l %s.\n' "$job_id" "$job_id"
+}
+
+verify_scanservjs_ready() {
+  local port=${1:-8080} listener=''
+  if ! step_check listener 'Check ScanservJS local TCP listener' "ss -ltnH sport = :$port" \
+    remote "systemctl is-active --quiet scanservjs.service && ss -ltnH 'sport = :$(printf '%q' "$port")'"; then
+    printf 'ScanservJS is not ready: its service must be running and listening locally on TCP port %s. Check systemctl status scanservjs.service.\n' "$port" >&2
+    return 1
+  fi
+  printf 'ScanservJS is ready on its configured local TCP port %s.\n' "$port"
+}
+
 discover_direct_ethernet_device() {
   local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'

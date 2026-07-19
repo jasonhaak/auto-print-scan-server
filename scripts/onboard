@@ -356,6 +356,7 @@ else
 fi
 profile=''
 if [[ "$driver" == package_profile ]]; then
+  recommend_legacy_profile "$uri"
   profile=$(choose_package_profile '')
 fi
 printer_queues=("$queue")
@@ -367,13 +368,18 @@ printer_usb_modes=("$usb_mode")
 printer_usb_identities=("$usb_identity")
 subsection 'Additional Devices'
 printf '%s\n' 'Add another printer or scanner only when it should be managed separately.'
-while yes 'Add another printer manually?'; do
+while yes 'Add another printer?'; do
   printf '%s\n' 'This printer will have its own queue in the print dialog.'
   while true; do
     extra_queue=$(ask 'Additional CUPS queue name' 'printer-2')
     [[ "$extra_queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
     printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
   done
+  if yes_default 'Search for recommendations before defining this additional printer?'; then
+    discover_devices true all || true
+  else
+    printf '%s\n' 'Continuing with manual evidence. The final inventory validation still applies.'
+  fi
   recommendation 'Choose network for another home-LAN device or usb for another USB-local device. Add further direct Ethernet links later with scripts/manage-devices add link.'
   extra_topology=$(ask_choice 'Additional device connection topology' 'network' network usb)
   if [[ "$extra_topology" == usb ]]; then
@@ -417,7 +423,10 @@ while yes 'Add another printer manually?'; do
     extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
   fi
   extra_profile=''
-  [[ "$extra_driver" == package_profile ]] && extra_profile=$(choose_package_profile '')
+  if [[ "$extra_driver" == package_profile ]]; then
+    recommend_legacy_profile "$extra_uri"
+    extra_profile=$(choose_package_profile '')
+  fi
   printer_queues+=("$extra_queue")
   printer_connections+=("$extra_connection")
   printer_uris+=("$extra_uri")
@@ -477,7 +486,12 @@ if [[ "$scanner" == true ]]; then
   scanner_backends+=("$scanner_backend")
   scanner_usb_modes+=("$scanner_usb_mode")
 fi
-while yes 'Add another scanner manually?'; do
+while yes 'Add another scanner?'; do
+  if yes_default 'Search for scanner recommendations before defining it?'; then
+    discover_devices true all || true
+  else
+    printf '%s\n' 'Continuing with manual scanner evidence. The final inventory validation still applies.'
+  fi
   printf '%s\n' 'On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device.'
   while true; do
     extra_scanner_name=$(ask 'Exact SANE device name from scanimage -L' '')
@@ -614,19 +628,21 @@ for driver in "${printer_drivers[@]}"; do
 done
 if yes 'Print CUPS test pages now?'; then
   for queue in "${printer_queues[@]}"; do
-    printf 'Submitting test page to %s.\n' "$queue"
-    step_action test_output "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
-      remote "lp -d $(printf '%q' "$queue") /usr/share/cups/data/testprint"
+    verify_cups_job "$queue"
   done
 fi
-if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now?'; then
+if (( ${#scanner_device_names[@]} > 0 )); then
+  scanservjs_port=$(saved_scalar scanservjs_port 8080)
+  verify_scanservjs_ready "$scanservjs_port" || true
+fi
+if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now? This can use paper or move a scanner.'; then
   for index in "${!scanner_device_names[@]}"; do
     scanner_device_name=${scanner_device_names[$index]}
     scanner_test_pdf="/var/tmp/scanservjs-onboarding-test-$((index + 1)).pdf"
     scanner_test_png="/var/tmp/scanservjs-onboarding-test-$((index + 1)).png"
     printf 'Creating scanner test PDF for %s.\n' "$scanner_device_name"
-    step_action test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert' \
-      remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=png > $(printf '%q' "$scanner_test_png") && convert $(printf '%q' "$scanner_test_png") $(printf '%q' "$scanner_test_pdf"); status=\$?; rm -f $(printf '%q' "$scanner_test_png"); exit \$status"
+    step_action test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert; verify non-empty; clean temporary PNG' \
+      remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=png > $(printf '%q' "$scanner_test_png") && convert $(printf '%q' "$scanner_test_png") $(printf '%q' "$scanner_test_pdf") && test -s $(printf '%q' "$scanner_test_pdf"); status=\$?; rm -f $(printf '%q' "$scanner_test_png"); exit \$status" || printf 'Scanner test for %s did not produce a usable PDF. Check the scanner and retry from the onboarding command.\n' "$scanner_device_name" >&2
   done
   printf 'Created %d scanner test PDF(s) under /var/tmp on %s.\n' "${#scanner_device_names[@]}" "$host"
 fi

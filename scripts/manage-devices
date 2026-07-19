@@ -189,6 +189,7 @@ configure_printer() {
   shared=$(ask_choice 'Share this queue on the trusted LAN' "$shared_default" true false)
   profile=''
   if [[ "$driver" == package_profile ]]; then
+    recommend_legacy_profile "$uri"
     profile_default=''
     if [[ -n "$original" ]]; then
       profile_default=$(field printer "$original" package_profile)

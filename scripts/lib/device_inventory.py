@@ -42,6 +42,24 @@ def known_package_profiles() -> set[str]:
     return set(profiles)
 
 
+def matching_package_profiles(identity_evidence: str) -> list[tuple[str, str]]:
+    try:
+        data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise InventoryError(f"package profile registry is unavailable: {error}") from error
+    profiles = data.get("package_profiles") if isinstance(data, dict) else None
+    if not isinstance(profiles, dict):
+        raise InventoryError("package profile registry must contain package_profiles")
+    matches = []
+    for name, profile in profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        pattern = profile.get("make_model_pattern")
+        if isinstance(pattern, str) and re.search(pattern, identity_evidence):
+            matches.append((name, str(profile.get("description", "repository package profile"))))
+    return matches
+
+
 def load_inventory(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise InventoryError(f"inventory file does not exist: {path}")
@@ -329,6 +347,8 @@ def build_parser() -> argparse.ArgumentParser:
     delete.add_argument("kind", choices=["printer", "scanner", "link"])
     delete.add_argument("identity")
     commands.add_parser("validate")
+    profiles = commands.add_parser("profiles-for-evidence")
+    profiles.add_argument("identity_evidence")
     return parser
 
 
@@ -336,6 +356,10 @@ def main() -> int:
     arguments = build_parser().parse_args()
     try:
         data = load_inventory(arguments.inventory)
+        if arguments.command == "profiles-for-evidence":
+            for name, description in matching_package_profiles(arguments.identity_evidence):
+                print(f"{name}|{description}")
+            return 0
         if arguments.command == "list":
             command_list(data)
             return 0
