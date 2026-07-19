@@ -58,6 +58,14 @@ unique_candidates() {
   awk -F'|' -v key_field="$key_field" 'NF && !seen[$key_field]++'
 }
 
+avahi_browse_scan() {
+  local status
+  remote 'timeout 15s avahi-browse -artp'
+  status=$?
+  [[ "$status" == 124 ]] && return 0
+  return "$status"
+}
+
 candidate_matches_scope() {
   local candidate=$1 scope=${2:-all} connection
   IFS='|' read -r _ connection _ <<<"$candidate"
@@ -152,47 +160,44 @@ tcp_port_is_open() {
 }
 
 discover_direct_ethernet_device() {
-  local scanner_output candidate snmp_output command_output carrier status
+  local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
   yes 'Temporarily configure the direct Ethernet link and search this device?' || return
-  if command_output=$(remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")" 2>&1); then status=0; else status=$?; fi
-  technical_report 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" "$status" "$command_output"
-  if (( status != 0 )); then
+  if ! step_check command_output 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" \
+    remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")"; then
     printf 'Interface %s does not exist on the Raspberry Pi. Continue with another topology or correct the interface.\n' "$direct_ethernet_interface" >&2
     return
   fi
-  if carrier=$(remote "cat /sys/class/net/$(printf '%q' "$direct_ethernet_interface")/carrier" 2>&1); then status=0; else status=$?; fi
-  technical_report 'Check the direct Ethernet cable carrier' "cat /sys/class/net/$direct_ethernet_interface/carrier" "$status" "$carrier"
-  if [[ "$status" != 0 || "$carrier" != 1 ]]; then
+  carrier_status=0
+  step_check carrier 'Check the direct Ethernet cable carrier' "cat /sys/class/net/$direct_ethernet_interface/carrier" \
+    remote "cat /sys/class/net/$(printf '%q' "$direct_ethernet_interface")/carrier" || carrier_status=$?
+  if [[ "$carrier_status" != 0 || "$carrier" != 1 ]]; then
     printf 'Interface %s has no Ethernet carrier. Connect the device cable before discovery.\n' "$direct_ethernet_interface" >&2
     return
   fi
   temporary_direct_connection="raspberry-print-server-onboarding-$$"
-  if command_output=$(remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")" 2>&1); then status=0; else status=$?; fi
-  technical_report 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" "$status" "$command_output"
-  if (( status != 0 )); then
+  if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
+    remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
     printf '%s\n' 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status. Continue with manual device details.' >&2
     remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
     temporary_direct_connection=''
     return
   fi
-  if command_output=$(remote "ping -c 1 -W 2 $(printf '%q' "$direct_ethernet_device_ipv4")" 2>&1); then status=0; else status=$?; fi
-  technical_report 'Reach the directly connected device' "ping -c 1 -W 2 $direct_ethernet_device_ipv4" "$status" "$command_output"
-  if (( status != 0 )); then
+  if ! step_check command_output 'Reach the directly connected device' "ping -c 1 -W 2 $direct_ethernet_device_ipv4" \
+    remote "ping -c 1 -W 2 $(printf '%q' "$direct_ethernet_device_ipv4")"; then
     printf 'The device at %s did not answer on the private link. Check its static address and cable.\n' "$direct_ethernet_device_ipv4" >&2
     remote_tty "sudo nmcli connection delete $(printf '%q' "$temporary_direct_connection")" >/dev/null 2>&1 || true
     temporary_direct_connection=''
     return
   fi
-  if command_output=$(remote "ipptool -tv $(printf '%q' "ipp://${direct_ethernet_device_ipv4}/ipp/print") get-printer-attributes.test" 2>&1); then status=0; else status=$?; fi
-  technical_report 'Probe the direct device for IPP printing' "ipptool ipp://$direct_ethernet_device_ipv4/ipp/print get-printer-attributes.test" "$status" "$command_output"
-  if (( status == 0 )); then
+  if step_check command_output 'Probe the direct device for IPP printing' "ipptool ipp://$direct_ethernet_device_ipv4/ipp/print get-printer-attributes.test" \
+    remote "ipptool -tv $(printf '%q' "ipp://${direct_ethernet_device_ipv4}/ipp/print") get-printer-attributes.test"; then
     discovered_printer_connection=ipp
     discovered_printer_uri="ipp://${direct_ethernet_device_ipv4}/ipp/print"
     printf 'Detected an IPP printer at %s. Its connection and URI are recommended below.\n' "$direct_ethernet_device_ipv4"
   else
-    if snmp_output=$(remote "for backend in /usr/lib/cups/backend/snmp /usr/libexec/cups/backend/snmp; do if test -x \"\$backend\"; then sudo \"\$backend\" $(printf '%q' "$direct_ethernet_device_ipv4"); exit; fi; done; exit 127" 2>&1); then status=0; else status=$?; fi
-    technical_report 'Ask CUPS SNMP discovery about the direct device' "CUPS SNMP backend $direct_ethernet_device_ipv4" "$status" "$snmp_output"
+    step_check snmp_output 'Ask CUPS SNMP discovery about the direct device' "CUPS SNMP backend $direct_ethernet_device_ipv4" \
+      remote "for backend in /usr/lib/cups/backend/snmp /usr/libexec/cups/backend/snmp; do if test -x \"\$backend\"; then sudo \"\$backend\" $(printf '%q' "$direct_ethernet_device_ipv4"); exit; fi; done; exit 127" || true
     candidate=$(cups_printer_candidates "$snmp_output" | sed -n '1p')
     if [[ -n "$candidate" ]]; then
       IFS='|' read -r _ discovered_printer_connection discovered_printer_uri _ <<<"$candidate"
@@ -215,8 +220,8 @@ discover_direct_ethernet_device() {
       fi
     fi
   fi
-  if scanner_output=$(remote 'airscan-discover 2>&1; scanimage -L 2>&1'); then status=0; else status=$?; fi
-  technical_report 'Probe the direct device for scanning' 'airscan-discover; scanimage -L' "$status" "$scanner_output"
+  step_check scanner_output 'Probe the direct device for scanning' 'airscan-discover; scanimage -L' \
+    remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
   candidate=$(sane_scanner_candidates "$scanner_output" | awk -F'|' '$2 != "usb" { print; exit }')
   if [[ -n "$candidate" ]]; then
     IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$candidate"
@@ -231,8 +236,8 @@ discover_devices() {
   local discovery_approved=${1:-false}
   local discovery_scope=${2:-all}
   local ipp_usb_started=false
-  local discovery_log install_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
-  local install_status=0 network_status=0 usb_status=0 ipp_usb_status=0 lpinfo_before_status=0 lpinfo_output_status=0 scanner_status=0 scanner_hardware_status=0 query_status=0
+  local discovery_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
+  local lpinfo_output_status=0
   local -a printer_candidates=() scanner_candidates=()
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
@@ -253,37 +258,35 @@ discover_devices() {
   discovery_cups_path_was_active=$(remote 'systemctl is-active cups.path 2>/dev/null' || true)
   discovery_ipp_usb_restore_needed=true
   discovery_cups_restore_needed=true
-  install_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery-install.XXXXXX.log")
-  if remote_tty 'sudo -v && sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' >"$install_log" 2>&1; then
-    install_status=0
-  else
-    install_status=$?
-  fi
-  install_output=$(<"$install_log")
-  technical_report 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' "$install_status" "$install_output"
-  if (( install_status != 0 )); then
+  if ! step_stream install_output 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' \
+    remote_tty 'sudo -v && sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
     printf '%s\n' 'Discovery tools could not be installed. Continue with manual configuration.' >&2
     restore_ipp_usb_state
     restore_cups_state
-    rm -f "$install_log" "$discovery_log"
+    rm -f "$discovery_log"
     return
   fi
-  rm -f "$install_log"
   printf '%s\n' 'Discovery tools are ready. Searching local network announcements and connected USB devices for up to 15 seconds.'
 
   if [[ "$discovery_scope" == lan ]]; then
     usb_output='Skipped by LAN-only discovery scope.'
-  elif usb_output=$(remote 'lsusb' 2>&1); then usb_status=0; else usb_status=$?; fi
+    technical_report 'USB device discovery' 'lsusb' 0 "$usb_output"
+  else
+    step_check usb_output 'USB device discovery' 'lsusb' remote 'lsusb' || true
+  fi
   remote_tty 'sudo systemctl start cups.service' >/dev/null 2>&1 || true
   remote_tty 'sudo systemctl stop ipp-usb.service' >/dev/null 2>&1 || true
-  if lpinfo_before=$(remote 'timeout 10s lpinfo -v' 2>&1); then lpinfo_before_status=0; else lpinfo_before_status=$?; fi
-  if scanner_before=$(remote 'scanimage -L 2>&1'); then scanner_status=0; else scanner_status=$?; fi
+  step_check lpinfo_before 'CUPS endpoint discovery without ipp-usb' 'lpinfo -v' remote 'timeout 10s lpinfo -v' || true
+  scanner_before=$(remote 'scanimage -L 2>&1') || true
   while IFS= read -r candidate; do
     [[ -n "$candidate" ]] && candidate_matches_scope "$candidate" "$discovery_scope" && printer_candidates+=("$candidate")
   done < <(cups_printer_candidates "$lpinfo_before")
   if [[ "$discovery_scope" == lan ]]; then
     ipp_usb_output='Skipped by LAN-only discovery scope.'
-  elif ipp_usb_output=$(remote 'sudo ipp-usb check' 2>&1); then ipp_usb_status=0; else ipp_usb_status=$?; fi
+    technical_report 'IPP-over-USB compatibility check' 'ipp-usb check' 0 "$ipp_usb_output"
+  else
+    step_check ipp_usb_output 'IPP-over-USB compatibility check' 'ipp-usb check' remote 'sudo ipp-usb check' || true
+  fi
   if [[ "$discovery_scope" != lan ]] && ipp_usb_check_has_device "$ipp_usb_output"; then
     if remote_tty 'sudo systemctl start ipp-usb.service'; then
       ipp_usb_started=true
@@ -299,19 +302,18 @@ discover_devices() {
     fi
   fi
   if [[ "$discovery_scope" != usb ]]; then
-    if network_output=$(remote 'timeout 15s avahi-browse -artp' 2>&1); then
-      network_status=0
-    else
-      network_status=$?
-      [[ "$network_status" == 124 ]] && network_status=0
-    fi
+    step_stream network_output 'LAN service discovery' 'avahi-browse -artp' avahi_browse_scan || true
   else
     network_output='Skipped by USB-only discovery scope.'
+    technical_report 'LAN service discovery' 'avahi-browse -artp' 0 "$network_output"
   fi
-  if scanner_output=$(remote 'airscan-discover 2>&1; scanimage -L 2>&1'); then scanner_status=0; else scanner_status=$?; fi
+  step_check scanner_output 'SANE scanner discovery' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
   if [[ "$discovery_scope" == lan ]]; then
     scanner_hardware_output='Skipped by LAN-only discovery scope.'
-  elif scanner_hardware_output=$(remote 'sudo sane-find-scanner -q 2>&1'); then scanner_hardware_status=0; else scanner_hardware_status=$?; fi
+    technical_report 'Low-level scanner hardware discovery' 'sane-find-scanner -q' 0 "$scanner_hardware_output"
+  else
+    step_check scanner_hardware_output 'Low-level scanner hardware discovery' 'sane-find-scanner -q' remote 'sudo sane-find-scanner -q 2>&1' || true
+  fi
   restore_ipp_usb_state
   restore_cups_state
   scanner_hint_output=$(avahi_scanner_hints "$network_output")
@@ -327,12 +329,10 @@ discover_devices() {
         rp=${rp:-ipp/print}
         rp=${rp#/}
         uri="$scheme://$device_host:$port/$rp"
-        if query_output=$(remote "ipptool -tv $(printf '%q' "$uri") get-printer-attributes.test" 2>&1); then
-          technical_report "Verify announced printer $name" "ipptool $uri get-printer-attributes.test" 0 "$query_output"
+        if step_check query_output "Verify announced printer $name" "ipptool $uri get-printer-attributes.test" \
+          remote "ipptool -tv $(printf '%q' "$uri") get-printer-attributes.test"; then
           printer_candidates+=("$name at $device_host:$port ($scheme)|$scheme|$uri|")
         else
-          query_status=$?
-          technical_report "Verify announced printer $name" "ipptool $uri get-printer-attributes.test" "$query_status" "$query_output"
           ipp_query_output+="$name at $address:$port: $query_output"$'\n'
         fi
         ;;
@@ -359,13 +359,7 @@ discover_devices() {
     printf '%s\n%s\n' 'Advertised scanner hints:' "$scanner_hint_output"
   } >"$discovery_log"
 
-  technical_report 'USB device discovery' 'lsusb' "$usb_status" "$usb_output"
-  technical_report 'CUPS endpoint discovery without ipp-usb' 'lpinfo -v' "$lpinfo_before_status" "$lpinfo_before"
-  technical_report 'IPP-over-USB compatibility check' 'ipp-usb check' "$ipp_usb_status" "$ipp_usb_output"
   [[ -n "$lpinfo_output" ]] && technical_report 'CUPS endpoint discovery with ipp-usb' 'lpinfo -v' "$lpinfo_output_status" "$lpinfo_output"
-  technical_report 'LAN service discovery' 'avahi-browse -artp' "$network_status" "$network_output"
-  technical_report 'SANE scanner discovery' 'scanimage -L' "$scanner_status" "$scanner_output"
-  technical_report 'Low-level scanner hardware discovery' 'sane-find-scanner -q' "$scanner_hardware_status" "$scanner_hardware_output"
 
   if [[ -n "$scanner_hint_output" ]]; then
     printf '\nAdvertised network scanners\n'

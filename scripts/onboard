@@ -140,7 +140,7 @@ if [[ "$search_choice" != skip ]]; then
     printf 'Searching %s now. Large ranges can take about one minute.\n' "$search_cidr"
     ssh_hosts=()
     ssh_search_output=''
-    if ! technical_capture ssh_search_output 'Search for possible Raspberry Pi SSH servers' "TCP port 22 probe across $search_cidr" find_ssh_hosts "$search_cidr"; then
+    if ! step_check ssh_search_output 'Search for possible Raspberry Pi SSH servers' "TCP port 22 probe across $search_cidr" find_ssh_hosts "$search_cidr"; then
       printf '%s\n' 'The network search failed. Enter the Raspberry Pi address manually.' >&2
     fi
     while IFS= read -r ssh_host; do
@@ -162,7 +162,7 @@ fi
 while true; do
   host=$(ask 'Raspberry Pi hostname or IP address' "$host_default")
   resolution_output=''
-  if technical_capture resolution_output 'Resolve the Raspberry Pi address' "local IPv4 name lookup for $host" ssh_session_target_resolution "$host"; then
+  if step_check resolution_output 'Resolve the Raspberry Pi address' "local IPv4 name lookup for $host" ssh_session_target_resolution "$host"; then
     break
   fi
   printf '%s\n' 'That Raspberry Pi address could not be resolved to an IPv4 address on this computer.' >&2
@@ -176,26 +176,24 @@ while true; do
 done
 printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
 reachability_output=''
-technical_capture reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
+step_check reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
 ssh_output=''
-if ! technical_capture ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open; then
+if ! step_check ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open; then
   printf '%s\n' 'SSH authentication failed. Check the Raspberry Pi address, bootstrap user, password and that Raspberry Pi Imager enabled password SSH.' >&2
   exit 1
 fi
-if ! remote true; then
-  technical_report 'Verify the Raspberry Pi remote shell' 'ssh remote true' 1 'The remote command failed.'
+remote_shell_output=''
+if ! step_check remote_shell_output 'Verify the Raspberry Pi remote shell' 'ssh remote true' remote true; then
   printf '%s\n' 'SSH connected but the remote session could not run a command. Check the Raspberry Pi SSH service and user shell.' >&2
   exit 1
 fi
-technical_report 'Verify the Raspberry Pi remote shell' 'ssh remote true' 0 'The remote command succeeded.'
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
 printf '%s\n' 'Next, sudo checks that this account may install packages and manage services. Enter the same Raspberry Pi password if prompted.'
-if ! remote_tty 'sudo -v'; then
-  technical_report 'Verify Raspberry Pi administrator privileges' 'sudo -v' 1 'sudo verification failed.'
+sudo_check_output=''
+if ! step_check sudo_check_output 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
   printf '%s\n' 'Sudo verification failed. Use the administrator account created in Raspberry Pi Imager or grant it sudo access before rerunning.' >&2
   exit 1
 fi
-technical_report 'Verify Raspberry Pi administrator privileges' 'sudo -v' 0 'sudo verification succeeded.'
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
 stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.'
 suggested_cidr=$(remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' 2>/dev/null || true)
@@ -572,7 +570,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   fi
   printf '%s\n' 'enable_remote_sane: false' 'enable_unattended_upgrades: false'
 } >"$vars_tmp"
-technical_capture validation_output 'Validate the confirmed inventory' 'device_inventory.py validate' \
+step_check validation_output 'Validate the confirmed inventory' 'device_inventory.py validate' \
   "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" --inventory "$vars_tmp" \
   --backup-directory "$backups" validate
 mv "$host_tmp" "$inventory"
@@ -581,21 +579,18 @@ host_tmp=''
 vars_tmp=''
 subsection 'Applying Your Configuration'
 printf '%s\n' 'Your confirmed choices are now being applied. Ansible will show its normal progress while it installs services and configures the declared queues and scanners.'
-technical_capture galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
+step_action galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
   ansible-galaxy collection install -r "$root/requirements.yml"
 ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true)
 if ! remote 'sudo -n true' >/dev/null 2>&1; then
   printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for commissioning.'
   ansible_arguments+=(--ask-become-pass)
 fi
-technical_report 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' 0 'Ansible output is streamed below and is not truncated.'
-if ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; then
-  ansible_status=0
-else
-  ansible_status=$?
+ansible_output=''
+if ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
+  env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; then
+  exit 1
 fi
-technical_report 'Complete Raspberry Pi commissioning' 'ansible-playbook playbooks/site.yml' "$ansible_status" "$([[ "$ansible_status" == 0 ]] && printf 'Ansible completed successfully.' || printf 'Ansible failed; review the streamed output above.')"
-(( ansible_status == 0 )) || exit "$ansible_status"
 printf '%s\n' 'Commissioning completed successfully.'
 for driver in "${printer_drivers[@]}"; do
   if [[ "$driver" == package_profile ]]; then
@@ -608,7 +603,7 @@ done
 if yes 'Print CUPS test pages now?'; then
   for queue in "${printer_queues[@]}"; do
     printf 'Submitting test page to %s.\n' "$queue"
-    technical_capture test_output "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
+    step_action test_output "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
       remote "lp -d $(printf '%q' "$queue") /usr/share/cups/data/testprint"
   done
 fi
@@ -618,7 +613,7 @@ if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now?';
     scanner_test_pdf="/var/tmp/scanservjs-onboarding-test-$((index + 1)).pdf"
     scanner_test_png="/var/tmp/scanservjs-onboarding-test-$((index + 1)).png"
     printf 'Creating scanner test PDF for %s.\n' "$scanner_device_name"
-    technical_capture test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert' \
+    step_action test_output "Create a scanner test PDF for $scanner_device_name" 'scanimage; convert' \
       remote "scanimage -d $(printf '%q' "$scanner_device_name") --format=png > $(printf '%q' "$scanner_test_png") && convert $(printf '%q' "$scanner_test_png") $(printf '%q' "$scanner_test_pdf"); status=\$?; rm -f $(printf '%q' "$scanner_test_png"); exit \$status"
   done
   printf 'Created %d scanner test PDF(s) under /var/tmp on %s.\n' "${#scanner_device_names[@]}" "$host"

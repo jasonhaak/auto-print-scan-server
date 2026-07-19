@@ -53,3 +53,78 @@ technical_capture captured 'Capture state' 'set state' set_state_from_capture
 
 finished=$(technical_transcript_finish)
 [[ "$finished" == *"$technical_transcript"* ]]
+
+# --- step_check / step_action / step_stream ---
+
+TECHNICAL_VERBOSE=false
+technical_transcript_start "$workspace" step-test
+
+dot_fill=$(step_dot_fill 'Checking sudo access' 40)
+[[ "${#dot_fill}" == 10 ]]
+[[ "$dot_fill" != *[!.]* ]]
+[[ -z "$(step_dot_fill 'A much too long label for this width' 20)" ]]
+
+# step_check/step_action/step_stream write their captured output through a nameref,
+# which command substitution (running the call in a subshell) would silently lose.
+# Redirecting to a file instead keeps the call in the current shell.
+display_file="$workspace/display.log"
+
+out=''
+step_check out 'Checking sudo access' 'sudo -v' bash -c 'printf remote-output' >"$display_file"
+check_display=$(<"$display_file")
+[[ "$out" == remote-output ]]
+[[ "$check_display" == *'Checking sudo access'* ]]
+[[ "$check_display" == *'[  OK  ]'* ]]
+[[ "$check_display" != *'Technical details'* ]]
+grep -Fq 'Checking sudo access' "$technical_transcript"
+grep -Fq 'remote-output' "$technical_transcript"
+
+out=''
+TECHNICAL_VERBOSE=true step_check out 'Checking sudo access verbosely' 'sudo -v' bash -c 'printf remote-output' >"$display_file"
+TECHNICAL_VERBOSE=false
+check_verbose_display=$(<"$display_file")
+[[ "$check_verbose_display" == *'Technical details'* ]]
+
+out=''
+fail_status=0
+step_check out 'Checking a failing thing' 'false-check' bash -c 'printf fail-output; exit 3' >"$display_file" || fail_status=$?
+check_fail_display=$(<"$display_file")
+[[ "$fail_status" == 3 ]]
+[[ "$check_fail_display" == *'[FAILED]'* ]]
+[[ "$check_fail_display" == *'Technical details'* ]]
+[[ "$check_fail_display" == *'fail-output'* ]]
+
+out=''
+step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
+action_display=$(<"$display_file")
+[[ "$action_display" == *'[  OK  ]'* ]]
+[[ "$action_display" == *'Technical details'* ]]
+[[ "$action_display" == *'action-output'* ]]
+
+stream_fixture() {
+  printf 'line-one\n'
+  printf 'password=hunter2\n'
+  printf 'line-two\n'
+}
+out=''
+step_stream out 'Installing discovery tools' 'apt-get install' stream_fixture >"$display_file"
+stream_display=$(<"$display_file")
+[[ "$out" == *'line-one'* && "$out" == *'password=hunter2'* && "$out" == *'line-two'* ]]
+[[ "$stream_display" == *'line-one'* ]]
+[[ "$stream_display" == *'password=hunter2'* ]]
+[[ "$stream_display" == *'Installing discovery tools'* ]]
+[[ "$stream_display" == *'[  OK  ]'* ]]
+grep -Fq 'line-one' "$technical_transcript"
+grep -Fq 'password=[REDACTED]' "$technical_transcript"
+if grep -Fq 'password=hunter2' "$technical_transcript"; then
+  exit 1
+fi
+
+out=''
+stream_fail_status=0
+stream_fail_fixture() { printf 'stream-fail-output\n'; return 5; }
+step_stream out 'Installing a failing tool' 'apt-get install fails' stream_fail_fixture >"$display_file" || stream_fail_status=$?
+stream_fail_display=$(<"$display_file")
+[[ "$stream_fail_status" == 5 ]]
+[[ "$stream_fail_display" == *'[FAILED]'* ]]
+[[ "$stream_fail_display" == *'Technical details'* ]]

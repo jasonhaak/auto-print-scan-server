@@ -202,7 +202,7 @@ configure_printer() {
   [[ -n "$profile" ]] && command+=(--package-profile "$profile")
   [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
   [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
-  technical_capture command_output 'Save the managed printer definition' 'device_inventory.py upsert-printer' "${command[@]}"
+  step_action command_output 'Save the managed printer definition' 'device_inventory.py upsert-printer' "${command[@]}"
 }
 
 configure_scanner() {
@@ -251,7 +251,7 @@ configure_scanner() {
     done
     command+=(--retention-days "$retention" --ocr-languages "$ocr")
   fi
-  technical_capture command_output 'Save the managed scanner definition' 'device_inventory.py upsert-scanner' "${command[@]}"
+  step_action command_output 'Save the managed scanner definition' 'device_inventory.py upsert-scanner' "${command[@]}"
 }
 
 configure_link() {
@@ -283,7 +283,7 @@ configure_link() {
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
   [[ -n "$original" ]] && command+=(--original-interface "$original")
   command+=(--interface "$interface" --pi-ipv4-cidr "$pi_cidr" --device-ipv4 "$device_ipv4")
-  technical_capture command_output 'Save the direct Ethernet link definition' 'device_inventory.py upsert-link' "${command[@]}"
+  step_action command_output 'Save the direct Ethernet link definition' 'device_inventory.py upsert-link' "${command[@]}"
   printf 'The link is independent from device definitions. Add a printer or scanner using device address %s when needed.\n' "$device_ipv4"
 }
 
@@ -316,14 +316,14 @@ discover_for_add() {
 }
 
 apply_inventory() {
-  local commissioning=${1:-false} ansible_playbook command_output status
+  local commissioning=${1:-false} ansible_playbook command_output
   if [[ -x "$root/.venv/bin/ansible-playbook" ]]; then
     ansible_playbook="$root/.venv/bin/ansible-playbook"
   else
     need ansible-playbook
     ansible_playbook=ansible-playbook
   fi
-  technical_capture command_output 'Validate managed definitions before applying' 'device_inventory.py validate' \
+  step_check command_output 'Validate managed definitions before applying' 'device_inventory.py validate' \
     "$python" "$helper" --inventory "$variables" --backup-directory "$backups" validate
   open_inventory_ssh_session
   ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
@@ -331,11 +331,10 @@ apply_inventory() {
     printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for this run.'
     ansible_arguments+=(--ask-become-pass)
   fi
-  technical_report 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' 0 'Ansible output is streamed below and is not truncated.'
-  if ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" \
-    "$ansible_playbook" "${ansible_arguments[@]}"; then status=0; else status=$?; fi
-  technical_report 'Complete the Ansible inventory application' 'ansible-playbook playbooks/site.yml' "$status" "$([[ "$status" == 0 ]] && printf 'Ansible completed successfully.' || printf 'Ansible failed; review the streamed output above.')"
-  (( status == 0 )) || return "$status"
+  if ! step_stream command_output 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' \
+    env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" "$ansible_playbook" "${ansible_arguments[@]}"; then
+    return 1
+  fi
   printf '%s\n' 'The production inventory is now applied.'
 }
 
@@ -392,7 +391,7 @@ case "$action" in
     identity=$(select_device "$kind" "${3:-}")
     "$python" "$helper" --inventory "$variables" --backup-directory "$backups" show "$kind" "$identity"
     yes "Delete this managed $kind from inventory?" || exit 0
-    technical_capture command_output "Delete the managed $kind definition" "device_inventory.py delete $kind" \
+    step_action command_output "Delete the managed $kind definition" "device_inventory.py delete $kind" \
       "$python" "$helper" --inventory "$variables" --backup-directory "$backups" delete "$kind" "$identity"
     offer_apply false
     ;;
