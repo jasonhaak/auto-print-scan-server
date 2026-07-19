@@ -274,8 +274,10 @@ discover_devices() {
   else
     step_check usb_output 'USB device discovery' 'lsusb' remote 'lsusb' || true
   fi
-  remote_tty 'sudo systemctl start cups.service' >/dev/null 2>&1 || true
-  remote_tty 'sudo systemctl stop ipp-usb.service' >/dev/null 2>&1 || true
+  step_action command_output 'Start CUPS for endpoint discovery' 'systemctl start cups.service' \
+    remote_tty 'sudo systemctl start cups.service' || true
+  step_action command_output 'Stop IPP-over-USB for direct endpoint discovery' 'systemctl stop ipp-usb.service' \
+    remote_tty 'sudo systemctl stop ipp-usb.service' || true
   step_check lpinfo_before 'CUPS endpoint discovery without ipp-usb' 'lpinfo -v' remote 'timeout 10s lpinfo -v' || true
   scanner_before=$(remote 'scanimage -L 2>&1') || true
   while IFS= read -r candidate; do
@@ -288,7 +290,8 @@ discover_devices() {
     step_check ipp_usb_output 'IPP-over-USB compatibility check' 'ipp-usb check' remote 'sudo ipp-usb check' || true
   fi
   if [[ "$discovery_scope" != lan ]] && ipp_usb_check_has_device "$ipp_usb_output"; then
-    if remote_tty 'sudo systemctl start ipp-usb.service'; then
+    if step_action command_output 'Start IPP-over-USB for USB endpoint discovery' 'systemctl start ipp-usb.service' \
+      remote_tty 'sudo systemctl start ipp-usb.service'; then
       ipp_usb_started=true
       for _ in {1..5}; do
         if lpinfo_output=$(remote 'timeout 2s lpinfo -v' 2>&1); then lpinfo_output_status=0; else lpinfo_output_status=$?; fi

@@ -579,8 +579,10 @@ host_tmp=''
 vars_tmp=''
 subsection 'Applying Your Configuration'
 printf '%s\n' 'Your confirmed choices are now being applied. Ansible will show its normal progress while it installs services and configures the declared queues and scanners.'
-step_action galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
-  ansible-galaxy collection install -r "$root/requirements.yml"
+if ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-galaxy collection install' \
+  ansible-galaxy collection install -r "$root/requirements.yml"; then
+  exit 1
+fi
 ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true)
 if ! remote 'sudo -n true' >/dev/null 2>&1; then
   printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for commissioning.'
