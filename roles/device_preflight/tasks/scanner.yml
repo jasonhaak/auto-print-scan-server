@@ -1,9 +1,23 @@
 ---
+- name: Check scanimage is installed
+  ansible.builtin.command: which scanimage
+  register: device_preflight_scanimage_binary
+  changed_when: false
+  failed_when: false
+
 - name: Query declared scanner
   ansible.builtin.command: "scanimage -L"
   register: device_preflight_scanner
   changed_when: false
   failed_when: false
+
+- name: Require scanimage during commissioning
+  ansible.builtin.assert:
+    that: device_preflight_scanimage_binary.rc == 0
+    fail_msg: >-
+      sane-utils (scanimage) is missing - this should have been installed by the sane role before
+      commissioning checks run.
+  when: print_server_commissioning | default(false) | bool
 
 - name: Require declared scanner during commissioning
   ansible.builtin.assert:

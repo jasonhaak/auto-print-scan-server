@@ -1,4 +1,11 @@
 ---
+- name: Check ipptool is installed
+  ansible.builtin.command: which ipptool
+  register: device_preflight_ipptool_binary
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection in ['ipp', 'ipps']
+
 - name: Query declared IPP printer
   ansible.builtin.command: "ipptool -tv {{ managed_device.device_uri }} get-printer-attributes.test"
   register: device_preflight_result
@@ -16,12 +23,26 @@
   failed_when: false
   when: managed_device.connection in ['socket', 'lpd']
 
+- name: Check lsusb is installed
+  ansible.builtin.command: which lsusb
+  register: device_preflight_lsusb_binary
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection == 'usb'
+
 - name: Check declared USB printer identity
   ansible.builtin.command: "lsusb -d {{ managed_device.usb_identity }}"
   register: device_preflight_usb_identity
   changed_when: false
   failed_when: false
   when: managed_device.connection == 'usb'
+
+- name: Check lpstat is installed
+  ansible.builtin.command: which lpstat
+  register: device_preflight_lpstat_binary
+  changed_when: false
+  failed_when: false
+  when: managed_device.connection == 'usb' and managed_device.usb_mode == 'legacy_usb'
 
 - name: Check declared legacy USB printer CUPS endpoint
   ansible.builtin.command:
@@ -33,6 +54,33 @@
   changed_when: false
   failed_when: false
   when: managed_device.connection == 'usb' and managed_device.usb_mode == 'legacy_usb'
+
+- name: Require ipptool during commissioning
+  ansible.builtin.assert:
+    that: managed_device.connection not in ['ipp', 'ipps'] or device_preflight_ipptool_binary.rc == 0
+    fail_msg: >-
+      cups-ipp-utils (ipptool) is missing - this should have been installed by the device_preflight
+      role before commissioning checks run.
+  when: print_server_commissioning | default(false) | bool
+
+- name: Require lsusb during commissioning
+  ansible.builtin.assert:
+    that: managed_device.connection != 'usb' or device_preflight_lsusb_binary.rc == 0
+    fail_msg: >-
+      usbutils (lsusb) is missing - this should have been installed by the device_preflight role
+      before commissioning checks run.
+  when: print_server_commissioning | default(false) | bool
+
+- name: Require lpstat during commissioning
+  ansible.builtin.assert:
+    that: >-
+      managed_device.connection != 'usb'
+      or managed_device.usb_mode != 'legacy_usb'
+      or device_preflight_lpstat_binary.rc == 0
+    fail_msg: >-
+      cups (lpstat) is missing - this should have been installed by the cups role before
+      commissioning checks run.
+  when: print_server_commissioning | default(false) | bool
 
 - name: Require available declared printer during commissioning
   ansible.builtin.assert:
