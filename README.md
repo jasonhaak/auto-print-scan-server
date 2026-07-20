@@ -104,19 +104,19 @@ The wizard asks for the Raspberry Pi address and bootstrap administrator, then o
 
 The wizard walks through the following process:
 
-1. **Connect to Raspberry Pi**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the Raspberry Pi. SSH and sudo failures stop with recovery guidance.
+1. **Connect to Raspberry Pi**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the Raspberry Pi. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
 2. **Read Raspberry Pi Settings**: reports the connected IPv4 route with its actual prefix, timezone and locale, then validates trusted IPv4 and optional IPv6 input.
-3. **Discover Devices**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected.
-4. **Configure Devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link. ScanservJS retention and OCR settings are shared by all scanners.
-5. **Review and Commission**: shows a non-secret summary before writing production inventory or provisioning services. Confirmation then creates timestamped local backups in `.onboard-backups/`, writes production inventory and runs Ansible with normal progress output. It then offers confirmed printer and scanner tests.
+3. **Discover Devices**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected. A failed install or an empty result offers retry, a changed search scope, manual entry or stop.
+4. **Configure Devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link; a discovered scanner is only recommended when its identifier or hostname resolution is bound to that exact direct device address, never to an unrelated LAN scanner. A failed link, interface or ping offers retry, corrected settings, manual entry or stop. ScanservJS retention, OCR and port settings are shared by all scanners.
+5. **Review and Commission**: shows a non-secret summary before writing production inventory or provisioning services. Confirmation then creates timestamped local backups in `.onboard-backups/`, writes production inventory and runs Ansible with normal progress output. A failed collection install or commissioning run offers retry, switching to `scripts/manage-devices` or stop, with the committed inventory and backup left untouched either way. It then offers confirmed printer and scanner tests: the printer test tracks the actual CUPS job and polls for a bounded, reported outcome without claiming paper output; the scanner test requires non-empty output and checks that ScanservJS has a real local listener, not only that its service is enabled.
 
 SSH and sudo passwords are requested interactively and are never stored in inventory or backups. When a standard local SSH public key exists, onboarding installs it for the managed administrator so later maintenance can connect without the account password. If commissioning or a real device test fails, the generated inventory remains available for correction and rerunning.
 
-Searches and remote operations show structured technical sections with command purpose, result and bounded output. The complete sanitized transcript is retained with mode `0600` under `.onboard-logs/`. Run `./scripts/onboard --verbose` to show complete captured output instead of the bounded view.
+Searches and remote operations show a label and a result tag as they run; a successful read-only check collapses to that single line, while a failed check or any state-changing action always shows its full command and output. The complete sanitized transcript is retained with mode `0600` under `.onboard-logs/` regardless of what the terminal shows. Run `./scripts/onboard --verbose` to show every check's full output, not only failures and actions.
 
 ### 5. Test the Configured Devices
 
-After commissioning, confirm the optional CUPS test page. If a scanner is configured, confirm the optional scanner test PDF and open ScanservJS from a trusted-LAN browser:
+After commissioning, confirm the optional CUPS test page. If a scanner is configured, confirm the optional scanner test PDF and open ScanservJS from a trusted-LAN browser, using the configured `scanservjs_port` (8080 by default):
 
 ```text
 http://<pi-hostname-or-address>:8080
@@ -125,6 +125,7 @@ http://<pi-hostname-or-address>:8080
 ### 6. Add, Change or Remove Devices
 
 ```bash
+./scripts/manage-devices
 ./scripts/manage-devices list
 ./scripts/manage-devices add printer
 ./scripts/manage-devices add scanner
@@ -136,7 +137,7 @@ http://<pi-hostname-or-address>:8080
 ./scripts/manage-devices apply
 ```
 
-`add` offers scoped assisted discovery before manual entry. `edit` keeps every current value as its prompt default. `delete` shows the exact definition and requires confirmation. Printer, scanner and direct Ethernet link changes create timestamped backups and replace only the selected definition. Links remain independent because one multifunction device can use the same link for printing and scanning; deleting a device never deletes its link. Deleting the only printer is rejected because the repository provisions a print server. Deleting the last scanner disables scanner services and timers while preserving completed scans.
+Running the command with no arguments shows current definitions and prompts for an action interactively; every other form runs that action directly. `add` offers scoped assisted discovery (printer-only or scanner-only, matching the device being added) before manual entry. `edit` keeps every current value as its prompt default. `delete` shows the exact definition and requires confirmation. Printer, scanner and direct Ethernet link changes create timestamped backups and replace only the selected definition. Links remain independent because one multifunction device can use the same link for printing and scanning; deleting a device never deletes its link. Deleting the only printer is rejected because the repository provisions a print server. Deleting the last scanner disables scanner services and timers while preserving completed scans.
 
 Running `./scripts/onboard` after first setup offers this device workflow. Use `./scripts/onboard --reconfigure` only when server-level settings such as the target host, trusted LAN or direct Ethernet links must be rebuilt.
 
@@ -154,6 +155,7 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 | `managed_scanners` | No | `[]` | List of SANE device names, connections and backend packages. |
 | `scanservjs_retention_days` | With scanner | None | Completed-scan retention period from 1 to 900 days. |
 | `scanservjs_ocr_languages` | With scanner | `[eng]` | Selected Tesseract languages, for example `[eng, deu]`. |
+| `scanservjs_port` | With scanner | `8080` | Local TCP port ScanservJS listens on, from 1 to 65535. |
 | `enable_remote_sane` | No | `false` | Enables SANE-native access for trusted-LAN Linux clients. |
 | `enable_unattended_upgrades` | No | `false` | Enables unattended security updates without automatic reboot. |
 
@@ -166,7 +168,7 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 | `lpd` | Older network printer | Requires the exact remote queue and normally a package profile. The Raspberry Pi does not host LPD. |
 | `usb` | Locally connected printer | Requires `ipp_usb` or `legacy_usb`. |
 
-For a legacy printer, use `driver_mode: package_profile`. The advisory discovery playbook compares the reachable printer's make and model against versioned repository profiles after commissioning. The OpenPrinting driverless database is linked as an optional reference. No device details are sent and no profile is selected automatically.
+For a legacy printer, use `driver_mode: package_profile`. When the printer's URI is `ipp://` or `ipps://`, onboarding queries its identity before you pick a profile and recommends matching repository profiles as evidence, not a claim of support; a `socket://` or `lpd://` printer has no such probe available and profile selection stays fully manual. An advisory playbook (`playbooks/discover-printer.yml`) repeats this same identity check once the printer is reachable after commissioning. The OpenPrinting driverless database is linked as an optional reference. No device details are sent and no profile is selected automatically.
 
 ### Device Topologies
 
@@ -215,6 +217,7 @@ managed_scanners:
     backend: sane-airscan
 scanservjs_retention_days: 90
 scanservjs_ocr_languages: [eng, deu]
+scanservjs_port: 8080
 enable_remote_sane: false
 ```
 
@@ -224,7 +227,7 @@ enable_remote_sane: false
 2. Baseline roles validate the supported platform, configure users and SSH, then apply the trusted-LAN firewall policy.
 3. CUPS creates or updates every managed queue and removes only queues recorded as previously Ansible-managed. Avahi provides link-local DNS-SD discovery when a queue is shared. CUPS administration remains localhost-only.
 4. The scanner path installs SANE and the checksum-pinned ScanservJS package. Removing the last scanner stops browser scanning, remote SANE and scanner timers without deleting completed scans.
-5. A run with `print_server_commissioning=true` requires every declared device to be reachable. Routine maintenance warns about unavailable hardware and preserves existing queues.
+5. A run with `print_server_commissioning=true` requires every declared device to be reachable, using the exact probe tool and, for a declared scanner, its configured SANE backend; commissioning fails distinctly when a probe tool itself is missing rather than reporting it as an unreachable device, and it does not depend on interactive discovery having run first. Routine maintenance warns about unavailable hardware and preserves existing queues.
 6. UFW, CUPS queues and direct Ethernet links keep project-owned state files. Later runs remove stale project entries without resetting unrelated administrator configuration.
 
 ## Installation & Development
