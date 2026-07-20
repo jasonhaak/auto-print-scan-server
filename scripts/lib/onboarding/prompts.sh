@@ -10,16 +10,25 @@ cli_heading() {
   fi
 }
 stage() {
+  local recap=${4:-}
   printf '\n%s\n%s\n%s\n\n%s\n' "$(cli_heading '════════════════════════════════════════════════════')" "$(cli_heading "[$1] $2")" "$(cli_heading '════════════════════════════════════════════════════')" "$3"
+  [[ -n "$recap" ]] && printf 'So far: %s\n' "$recap"
+  return 0
 }
 recommendation() { printf '\n%s\n  %s\n' "$(cli_heading 'Recommendation')" "$1"; }
 subsection() { printf '\n%s\n' "$(cli_heading "──── $1 ────")"; }
 input_required() { printf '\n%s\n' "$(cli_heading "Input required: $1")"; }
 ask() {
-  local value
-  read -r -p "$1 [$2]: " value
-  value=${value:-$2}
-  printf 'Selected: %s\n' "$value" >&2
+  local raw value
+  printf '\n' >&2
+  read -r -p "$1 [$2]: " raw
+  value=${raw:-$2}
+  # On an interactive terminal, a typed value is already visible from the terminal's own echo;
+  # only report it back when a default was silently accepted, or when there is no terminal echo
+  # to rely on (piped input, e.g. in tests or scripted runs).
+  if [[ -z "$raw" ]] || ! interactive_terminal; then
+    printf 'Selected: %s\n' "$value" >&2
+  fi
   printf '%s' "$value"
 }
 ask_detected() {
@@ -29,6 +38,7 @@ ask_detected() {
 }
 yes() {
   local value
+  printf '\n' >&2
   read -r -p "$1 [y/N]: " value
   if [[ "$value" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     printf '%s\n' 'Selected: yes' >&2
@@ -39,6 +49,7 @@ yes() {
 }
 yes_default() {
   local value
+  printf '\n' >&2
   read -r -p "$1 [Y/n]: " value
   if [[ -z "$value" || "$value" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     printf '%s\n' 'Selected: yes' >&2
@@ -61,13 +72,22 @@ recovery_choice() {
 }
 
 ask_choice() {
-  local prompt=$1 default=$2 value option
+  local prompt=$1 default=$2 raw value option
   shift 2
   while true; do
-    read -r -p "$prompt [$default]: " value
-    value=${value:-$default}
+    printf '\n' >&2
+    read -r -p "$prompt [$default]: " raw
+    value=${raw:-$default}
     for option in "$@"; do
-      [[ "$value" == "$option" ]] && { printf 'Accepted choice: %s\n' "$value" >&2; printf '%s' "$value"; return; }
+      if [[ "$value" == "$option" ]]; then
+        # Same rationale as ask(): skip the echo only when the terminal already showed the
+        # typed value and it was accepted as-is.
+        if [[ -z "$raw" ]] || ! interactive_terminal; then
+          printf 'Accepted choice: %s\n' "$value" >&2
+        fi
+        printf '%s' "$value"
+        return
+      fi
     done
     printf 'Invalid choice: %s. Expected one of: %s. Please try again.\n' "$value" "$*" >&2
   done

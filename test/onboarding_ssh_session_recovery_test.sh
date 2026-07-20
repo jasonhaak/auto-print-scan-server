@@ -40,3 +40,24 @@ second_dir=$ssh_socket_dir
 
 ssh_session_cleanup
 [[ ! -e "$second_dir" ]]
+
+# A plain non-interactive SSH command execution does not always inherit /usr/sbin or /sbin (where
+# lpinfo, sane-find-scanner and similar admin tools live), even though a login shell for the same
+# account would. remote()/remote_tty() must prefix every remote command with an explicit PATH so
+# tool lookups do not silently fail with "command not found" depending on the Pi's SSH/PAM setup.
+captured_command=''
+ssh() {
+  for argument in "$@"; do
+    captured_command=$argument
+  done
+}
+remote 'lpinfo -v'
+[[ "$captured_command" == *'export PATH='* ]]
+[[ "$captured_command" == *'/usr/sbin'* ]]
+[[ "$captured_command" == *'lpinfo -v'* ]]
+
+captured_command=''
+remote_tty 'sudo -v'
+[[ "$captured_command" == *'export PATH='* ]]
+[[ "$captured_command" == *'/usr/sbin'* ]]
+[[ "$captured_command" == *'sudo -v'* ]]

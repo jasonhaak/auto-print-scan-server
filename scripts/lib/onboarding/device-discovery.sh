@@ -301,6 +301,8 @@ discover_direct_ethernet_device() {
     return $?
   fi
   temporary_direct_connection="raspberry-print-server-onboarding-$$"
+  # Refresh sudo live, uncaptured, before the nmcli step below captures its own output to a file.
+  remote_tty 'sudo -v'
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
     remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
     direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status.'
@@ -380,8 +382,11 @@ discover_devices() {
   discovery_cups_path_was_active=$(remote 'systemctl is-active cups.path 2>/dev/null' || true)
   discovery_ipp_usb_restore_needed=true
   discovery_cups_restore_needed=true
+  # Refresh sudo live, uncaptured, before the install below streams its own output through a pipe.
+  # A captured or piped sudo prompt can leak typed characters; a live prompt here cannot.
+  remote_tty 'sudo -v'
   if ! step_stream install_output 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' \
-    remote_tty 'sudo -v && sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
+    remote_tty 'sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
     printf '%s\n' 'Discovery tools could not be installed.' >&2
     restore_ipp_usb_state
     restore_cups_state
@@ -406,6 +411,8 @@ discover_devices() {
   else
     step_check usb_output 'USB device discovery' 'lsusb' remote 'lsusb' || true
   fi
+  # Refresh sudo live, uncaptured, before the two steps below each capture their own output.
+  remote_tty 'sudo -v'
   step_action command_output 'Start CUPS for endpoint discovery' 'systemctl start cups.service' \
     remote_tty 'sudo systemctl start cups.service' || true
   step_action command_output 'Stop IPP-over-USB for direct endpoint discovery' 'systemctl stop ipp-usb.service' \
@@ -422,6 +429,8 @@ discover_devices() {
     step_check ipp_usb_output 'IPP-over-USB compatibility check' 'ipp-usb check' remote 'sudo ipp-usb check' || true
   fi
   if [[ "$discovery_scope" != lan ]] && ipp_usb_check_has_device "$ipp_usb_output"; then
+    # Refresh sudo live, uncaptured, before the step below captures its own output to a file.
+    remote_tty 'sudo -v'
     if step_action command_output 'Start IPP-over-USB for USB endpoint discovery' 'systemctl start ipp-usb.service' \
       remote_tty 'sudo systemctl start ipp-usb.service'; then
       ipp_usb_started=true

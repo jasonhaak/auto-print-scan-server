@@ -24,8 +24,6 @@ cli_status() {
   fi
 }
 
-STEP_TAG_WIDTH=8
-
 step_tag_text() {
   if [[ "$1" == 0 ]]; then printf '[  OK  ]'; else printf '[FAILED]'; fi
 }
@@ -38,35 +36,28 @@ step_tag_colored() {
   fi
 }
 
-step_dot_fill() {
-  local label=$1 width=${2:-} dots_needed
-  if [[ -z "$width" ]]; then
-    width=0
-    [[ -t 1 ]] && width=$(tput cols 2>/dev/null || printf 80)
-  fi
-  dots_needed=$(( width - ${#label} - STEP_TAG_WIDTH - 2 ))
-  if (( width > 0 && dots_needed > 0 )); then
-    printf '%*s' "$dots_needed" '' | tr ' ' '.'
-  fi
-}
-
+# On a terminal, a pending marker is printed first and overwritten in place (via carriage
+# return) once the outcome is known, so a slow step still shows it is in progress without
+# printing the status tag before the status exists. Piped/non-terminal output skips the
+# overwrite (it can't render one) and only prints the final line.
 step_line_open() {
-  local label=$1 dots
-  dots=$(step_dot_fill "$label")
-  if [[ -n "$dots" ]]; then
-    printf '%s %s ' "$label" "$dots"
-  else
-    printf '%s ... ' "$label"
+  if [[ -t 1 ]]; then
+    printf '[ .... ] %s' "$1"
   fi
+  return 0
 }
 
 step_line_close() {
-  printf '%s\n' "$(step_tag_colored "$1")"
+  local status=$1 purpose=$2 prefix=''
+  if [[ -t 1 ]]; then
+    prefix=$'\r'
+  fi
+  printf '%s%s %s\n' "$prefix" "$(step_tag_colored "$status")" "$purpose"
 }
 
 step_line_full() {
   step_line_open "$1"
-  step_line_close "$2"
+  step_line_close "$2" "$1"
 }
 
 technical_transcript_write() {
@@ -84,8 +75,8 @@ technical_block_print() {
   local purpose=$1 command_label=$2 status=$3 raw_output=${4:-}
   local output line_count
   output=$(printf '%s' "$raw_output" | technical_redact)
-  printf '\n%s\n' "$(cli_color '36' '──────────────── Technical details ────────────────')"
-  printf '%s %s\n' "$(cli_color '36' 'Check:')" "$purpose"
+  printf '\n%s\n' "$(cli_color '1;36' '──────────────── Technical details ────────────────')"
+  printf '%s %s\n' "$(cli_color '1;36' 'Check:')" "$purpose"
   printf '%s %s\n' 'Command:' "$command_label"
   printf '%s %s\n' 'Result:' "$(cli_status "$status") $([[ "$status" == 0 ]] && printf success || printf 'failed (exit %s)' "$status")"
   if [[ -n "$output" ]]; then
@@ -104,7 +95,7 @@ technical_block_print() {
   else
     printf '%s\n' 'Output: (none)'
   fi
-  printf '%s\n' "$(cli_color '36' '────────────────────────────────────────────────────')"
+  printf '%s\n' "$(cli_color '1;36' '────────────────────────────────────────────────────')"
 }
 
 step_run() {
@@ -118,7 +109,7 @@ step_run() {
   step_run_output=$(<"$output_file")
   rm -f "$output_file"
   step_output_ref=$step_run_output
-  step_line_close "$step_run_status"
+  step_line_close "$step_run_status" "$purpose"
   technical_transcript_write "$purpose" "$command_label" "$step_run_status" "$step_run_output"
 }
 
@@ -132,12 +123,38 @@ step_check() {
   return "$step_run_status"
 }
 
+# Same display policy as step_check (box only on failure or verbose mode). Kept as a separate
+# name from step_check because callers use it to mark commands that change remote state rather
+# than ones that only inspect it; a box that appeared on every success trained users to stop
+# reading it, so passing steps stay quiet here too.
 step_action() {
-  local output_variable=$1 purpose=$2 command_label=$3
-  shift 3
-  step_run "$output_variable" "$purpose" "$command_label" "$@"
-  technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output"
-  return "$step_run_status"
+  step_check "$@"
+}
+
+# Like step_check, but never redirects the wrapped command's stdout/stderr. Use this only for a
+# command that may interactively prompt for a secret (for example the first `sudo -v` of a run).
+# Capturing such a prompt to a file or pipe (as step_check/step_action/step_stream do) can defeat
+# the terminal's own echo suppression and leak typed characters into the technical block and the
+# saved transcript. The transcript records that output was intentionally not captured instead.
+#
+# Unlike step_check, the label line ends with a newline before the command runs rather than
+# staying open for an inline status tag: an uncaptured command can write straight to the
+# terminal (a password prompt, an SSH "Shared connection ... closed" notice), and that live
+# text must land below the label, not spliced into the middle of it. The status is then
+# printed as its own "label ... [OK]" recap line once the command finishes, so the outcome is
+# unambiguous even after several lines of interleaved chatter.
+step_check_live() {
+  local purpose=$1 command_label=$2 status placeholder
+  shift 2
+  placeholder='(interactive session; output not captured to protect entered credentials)'
+  printf '%s ...\n' "$purpose"
+  if "$@"; then status=0; else status=$?; fi
+  step_line_full "$purpose" "$status"
+  technical_transcript_write "$purpose" "$command_label" "$status" "$placeholder"
+  if [[ "$status" != 0 || "${TECHNICAL_VERBOSE:-false}" == true ]]; then
+    technical_block_print "$purpose" "$command_label" "$status" "$placeholder"
+  fi
+  return "$status"
 }
 
 step_stream() {
@@ -145,7 +162,7 @@ step_stream() {
   local -n step_output_ref=$output_variable
   shift 3
   local output_file status output
-  printf '%s...\n' "$purpose"
+  printf '%s ...\n' "$purpose"
   output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-step.XXXXXX")
   if "$@" 2>&1 | tee "$output_file"; then
     status=0

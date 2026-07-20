@@ -11,6 +11,22 @@ selected=$(ask 'Queue name' 'printer' <<< 'office-printer')
 defaulted=$(ask 'Queue name' 'printer' <<< '')
 [[ "$defaulted" == printer ]]
 
+# On a real terminal, a typed value is already visible from the terminal's own echo, so ask()
+# should not repeat it. A silently accepted default is not visible anywhere else, so it must
+# still be echoed back.
+ask_stderr=$(mktemp "${TMPDIR:-/tmp}/onboarding-prompts-test.XXXXXX")
+interactive_terminal() { return 0; }
+ask 'Queue name' 'printer' <<< 'office-printer' 2>"$ask_stderr" >/dev/null
+[[ "$(<"$ask_stderr")" != *'Selected:'* ]]
+ask 'Queue name' 'printer' <<< '' 2>"$ask_stderr" >/dev/null
+[[ "$(<"$ask_stderr")" == *'Selected: printer'* ]]
+choice_stderr=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket <<< 'ipps' 2>&1 >/dev/null)
+[[ "$choice_stderr" != *'Accepted choice:'* ]]
+choice_stderr=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket <<< '' 2>&1 >/dev/null)
+[[ "$choice_stderr" == *'Accepted choice: ipp'* ]]
+interactive_terminal() { [[ -t 0 && -t 1 ]]; }
+rm -f "$ask_stderr"
+
 detected=$(ask_detected 'Trusted IPv4 LAN CIDR' '192.168.178.0/24' 'Do not enter the Raspberry Pi address itself.' <<< '')
 [[ "$detected" == 192.168.178.0/24 ]]
 valid_ipv4_cidr '192.168.178.0/24'

@@ -108,19 +108,15 @@ printf '%s\n' '' 'This guided setup has five steps:' \
 stage '1/5' 'Connect to Your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
 host_default=$(saved_host_value ansible_host print-server.local)
 [[ "$host_default" == 192.0.2.10 ]] && host_default=print-server.local
-administrator_cidr=$(administrator_lan_cidr || true)
-if [[ -n "$administrator_cidr" ]]; then
-  technical_report 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' 0 "$administrator_cidr"
+if step_check administrator_cidr 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' administrator_lan_cidr; then
   printf 'Detected local network: %s. A search checks private addresses for SSH port 22. It does not authenticate or change any device.\n' "$administrator_cidr"
 else
-  technical_report 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' 1 'No private IPv4 network was detected.'
   printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the Raspberry Pi address manually.'
 fi
+input_required 'Choose the network search scope'
 if [[ -n "$administrator_cidr" ]]; then
-  input_required 'Choose the network search scope'
   search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (detected, other, skip)' 'detected' detected other skip)
 else
-  input_required 'Choose the network search scope'
   search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (other, skip)' 'other' other skip)
 fi
 if [[ "$search_choice" != skip ]]; then
@@ -178,9 +174,9 @@ while true; do
   printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
   reachability_output=''
   step_check reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
-  if step_check ssh_output 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open &&
+  if step_check_live 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open &&
      step_check remote_shell_output 'Verify the Raspberry Pi remote shell' 'ssh remote true' remote true &&
-     step_check sudo_check_output 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
+     step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
     break
   fi
   printf '%s\n' 'The Raspberry Pi connection or sudo check failed. Check the address, bootstrap user, password and SSH settings.' >&2
@@ -197,12 +193,13 @@ while true; do
 done
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
-stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.'
-suggested_cidr=$(remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' 2>/dev/null || true)
-timezone=$(remote 'cat /etc/timezone 2>/dev/null || timedatectl show --property=Timezone --value' 2>/dev/null || true)
-locale=$(remote "locale | awk -F= '/^LANG=/{print \$2; exit}'" 2>/dev/null || true)
-settings_output=$(printf 'IPv4 network: %s\nTimezone: %s\nLocale: %s' "${suggested_cidr:-not detected}" "${timezone:-not detected}" "${locale:-not detected}")
-technical_report 'Read Raspberry Pi network and regional settings' 'ip route; timedatectl; locale' 0 "$settings_output"
+stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
+step_check suggested_cidr 'Detect the Raspberry Pi trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
+  remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' || true
+step_check timezone 'Detect the Raspberry Pi timezone' 'cat /etc/timezone; timedatectl show --property=Timezone' \
+  remote 'cat /etc/timezone 2>/dev/null || timedatectl show --property=Timezone --value' || true
+step_check locale 'Detect the Raspberry Pi locale' 'locale' \
+  remote "locale | awk -F= '/^LANG=/{print \$2; exit}'" || true
 timezone=${timezone:-"$(saved_scalar common_timezone Europe/Berlin)"}
 locale=${locale:-"$(saved_scalar common_locale en_US.UTF-8)"}
 printf 'Detected Raspberry Pi settings: IPv4 network %s, timezone %s, locale %s.\n' "${suggested_cidr:-not detected}" "$timezone" "$locale"
@@ -219,11 +216,11 @@ while true; do
   [[ -z "$ipv6_cidr" ]] || valid_ipv6_cidr "$ipv6_cidr" && break
   printf '%s\n' 'Invalid IPv6 CIDR. Use a local IPv6 prefix followed by /0 to /128, or leave it empty.' >&2
 done
-stage '3/5' 'Find Printers and Scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.'
+stage '3/5' 'Find Printers and Scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Choose the device discovery scope'
 discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
-stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.'
+stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
 while true; do
   hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
   [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] && break
@@ -247,6 +244,7 @@ while true; do
 done
 printf 'Timezone and locale are inherited from Raspberry Pi Imager: %s, %s.\n' "$timezone" "$locale"
 input_required 'Choose the device connection'
+printf '\n'
 printf '%s\n' 'Choose how this device reaches the Raspberry Pi. This controls which discovery and connection settings are used.'
 printf '%s\n' 'Connection preference, when the device supports it:' \
   '  1. network: Ethernet through the router or switch. This is the simplest path and can support standard printing and scanning.' \
@@ -554,7 +552,7 @@ for index in "${!printer_queues[@]}"; do
 done
 [[ "$scanner" != true || "$scanner_connection" != usb || "$scanner_usb_mode" == ipp_usb || "$scanner_usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid scanner USB mode.' >&2; exit 1; }
 
-stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.'
+stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
 printf 'Pi: %s\nTrusted LAN: %s\nPrinters: %s\n' "$host" "$cidr" "${printer_queues[*]}"
 (( ${#scanner_device_names[@]} > 0 )) && printf 'Scanners: %s, retention %s days, OCR %s, ScanservJS port %s\n' "${scanner_device_names[*]}" "$retention" "$ocr" "$scanservjs_port"
 [[ -n "$authorized_key" ]] && printf '%s\n' 'Future SSH access: install the detected administrator public key'

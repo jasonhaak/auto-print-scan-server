@@ -59,10 +59,14 @@ finished=$(technical_transcript_finish)
 TECHNICAL_VERBOSE=false
 technical_transcript_start "$workspace" step-test
 
-dot_fill=$(step_dot_fill 'Checking sudo access' 40)
-[[ "${#dot_fill}" == 10 ]]
-[[ "$dot_fill" != *[!.]* ]]
-[[ -z "$(step_dot_fill 'A much too long label for this width' 20)" ]]
+# step_line_open only prints a pending marker on a real terminal, since a non-terminal
+# consumer (a pipe, a log file, this test's own command substitution) can never render the
+# carriage-return overwrite that step_line_close relies on to replace it.
+[[ -z "$(step_line_open 'Checking sudo access')" ]]
+
+# step_line_close puts the status tag first, then the label, and a real terminal writes a
+# leading carriage return so the tag overwrites the pending marker in place.
+[[ "$(step_line_close 0 'Checking sudo access')" == '[  OK  ] Checking sudo access' ]]
 
 # step_check/step_action/step_stream write their captured output through a nameref,
 # which command substitution (running the call in a subshell) would silently lose.
@@ -94,12 +98,30 @@ check_fail_display=$(<"$display_file")
 [[ "$check_fail_display" == *'Technical details'* ]]
 [[ "$check_fail_display" == *'fail-output'* ]]
 
+# step_action shares step_check's display policy: a passing action stays quiet (the box no
+# longer means "something worth reading" if it appears after every success), and the same
+# action failing, or TECHNICAL_VERBOSE being set, still opens the box.
 out=''
 step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
 action_display=$(<"$display_file")
 [[ "$action_display" == *'[  OK  ]'* ]]
-[[ "$action_display" == *'Technical details'* ]]
-[[ "$action_display" == *'action-output'* ]]
+[[ "$action_display" != *'Technical details'* ]]
+grep -Fq 'action-output' "$technical_transcript"
+
+out=''
+action_fail_status=0
+step_action out 'Restarting a failing service' 'systemctl restart demo-fail' bash -c 'printf action-fail-output; exit 4' >"$display_file" || action_fail_status=$?
+action_fail_display=$(<"$display_file")
+[[ "$action_fail_status" == 4 ]]
+[[ "$action_fail_display" == *'[FAILED]'* ]]
+[[ "$action_fail_display" == *'Technical details'* ]]
+[[ "$action_fail_display" == *'action-fail-output'* ]]
+
+out=''
+TECHNICAL_VERBOSE=true step_action out 'Restarting a service verbosely' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
+TECHNICAL_VERBOSE=false
+action_verbose_display=$(<"$display_file")
+[[ "$action_verbose_display" == *'Technical details'* ]]
 
 stream_fixture() {
   printf 'line-one\n'
@@ -128,3 +150,28 @@ stream_fail_display=$(<"$display_file")
 [[ "$stream_fail_status" == 5 ]]
 [[ "$stream_fail_display" == *'[FAILED]'* ]]
 [[ "$stream_fail_display" == *'Technical details'* ]]
+
+# step_check_live must never redirect the wrapped command's stdout/stderr into a file or pipe (a
+# captured or piped interactive prompt can defeat the terminal's own echo suppression and leak
+# typed secrets). Its own stdout inherits whatever step_check_live's caller had, so live_fixture's
+# 'live-output' reaches this test's own capture directly and inline, exactly as if unwrapped ---
+# what must NOT happen is that output landing in the saved transcript or in a re-displayed
+# technical block, which is where step_check/step_action/step_stream deliberately keep a copy.
+live_fixture() { printf 'live-output'; }
+step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' live_fixture >"$display_file"
+live_display=$(<"$display_file")
+[[ "$live_display" == *'live-output'* ]]
+[[ "$live_display" == *'Verify Raspberry Pi administrator privileges'* ]]
+[[ "$live_display" == *'[  OK  ]'* ]]
+grep -Fq 'not captured to protect entered credentials' "$technical_transcript"
+if grep -Fq 'live-output' "$technical_transcript"; then
+  exit 1
+fi
+
+live_fail_status=0
+live_fail_fixture() { return 7; }
+step_check_live 'Failing live check' 'false-live' live_fail_fixture >"$display_file" || live_fail_status=$?
+live_fail_display=$(<"$display_file")
+[[ "$live_fail_status" == 7 ]]
+[[ "$live_fail_display" == *'[FAILED]'* ]]
+[[ "$live_fail_display" == *'not captured to protect entered credentials'* ]]
