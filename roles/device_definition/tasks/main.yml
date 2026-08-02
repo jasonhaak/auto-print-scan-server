@@ -22,5 +22,10 @@
       {{ ((managed_printers | map(attribute='package_profile') | reject('undefined') | list)
          + (managed_scanners | map(attribute='package_profile') | reject('undefined') | list))
          | unique | list }}
-    device_scanner_backends: "{{ managed_scanners | map(attribute='backend') | unique | list }}"
+    device_scanner_backends: >-
+      {{ ((managed_scanners | rejectattr('backend_install', 'defined')
+          | map(attribute='backend') | list)
+          + (managed_scanners | selectattr('backend_install', 'defined')
+          | selectattr('backend_install') | map(attribute='backend') | list))
+          | unique | list }}
   tags: device_definition

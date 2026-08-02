@@ -207,11 +207,13 @@ configure_printer() {
 }
 
 configure_scanner() {
-  local original=${1:-} name connection backend usb_mode usb_identity retention ocr scanservjs_port command_output
-  local usb_mode_default connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan}
+  local original=${1:-} name connection backend backend_install usb_mode usb_identity retention ocr scanservjs_port command_output
+  local usb_mode_default connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan} backend_install_default=true
   if [[ -n "$original" ]]; then
     connection_default=$(field scanner "$original" connection)
     backend_default=$(field scanner "$original" backend)
+    backend_install_default=$(field scanner "$original" backend_install)
+    [[ -n "$backend_install_default" ]] || backend_install_default=true
   fi
   while true; do
     name=$(ask 'Exact SANE device name from scanimage -L' "${original:-${discovered_scanner_device_name:-}}")
@@ -219,10 +221,11 @@ configure_scanner() {
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   input_required 'Scanner connection'
-  printf '%s\n' 'Use sane-airscan for most network scanners (eSCL/WSD), sane-utils for a legacy USB scanner, or its documented backend package.'
+  printf '%s\n' 'Use sane-airscan for most network scanners (eSCL/WSD), sane-utils for a legacy USB scanner, or the exact name of an already installed device backend.'
   connection=$(ask_choice 'Scanner connection (network, ipp, ipps or USB)' "$connection_default" network ipp ipps usb)
   [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
-  backend=$(ask 'SANE backend package' "$backend_default")
+  backend=$(ask 'SANE backend name' "$backend_default")
+  backend_install=$(ask_choice 'Install this backend package with APT' "$backend_install_default" true false)
   usb_mode=''
   usb_identity=''
   if [[ "$connection" == usb ]]; then
@@ -237,7 +240,7 @@ configure_scanner() {
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)
   [[ -n "$original" ]] && command+=(--original-device-name "$original")
-  command+=(--device-name "$name" --connection "$connection" --backend "$backend")
+  command+=(--device-name "$name" --connection "$connection" --backend "$backend" --backend-install "$backend_install")
   [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
   [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
   if [[ -z "$original" ]] && ! "$python" "$helper" --inventory "$variables" --backup-directory "$backups" names scanner | grep -q .; then

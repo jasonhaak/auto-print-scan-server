@@ -121,6 +121,19 @@ scanservjs_ocr_languages: [eng]
         self.assertNotIn("usb_mode", scanner)
         self.assertNotIn("usb_identity", scanner)
 
+    def test_preserves_a_preinstalled_scanner_backend_without_apt_ownership(self):
+        self.run_helper(
+            "upsert-scanner", "--device-name", "brother:bus2;dev1",
+            "--connection", "usb", "--backend", "brother", "--backend-install", "false",
+            "--usb-mode", "legacy_usb", "--retention-days", "90",
+            "--ocr-languages", "eng", "--port", "8080",
+        )
+
+        scanner = self.load()["managed_scanners"][0]
+        self.assertEqual(scanner["backend"], "brother")
+        self.assertIs(scanner["backend_install"], False)
+        self.assertEqual(scanner["usb_mode"], "legacy_usb")
+
     def test_deletes_a_device_without_changing_other_definitions(self):
         self.run_helper(
             "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",

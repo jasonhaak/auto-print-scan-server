@@ -29,13 +29,13 @@ scanners=$(sane_scanner_candidates $'device `airscan:e0:Office Scanner\' is a WS
 [[ "$scanners" == $'airscan:e0:Office Scanner (SANE AirScan detected)|ipp|sane-airscan||airscan:e0:Office Scanner\ngenesys:libusb:001:004 (SANE USB detected)|usb|sane-utils|legacy_usb|genesys:libusb:001:004' ]]
 
 brother_scanner=$(sane_scanner_candidates $'device `brother:net1;dev0\' is a flatbed scanner')
-[[ -z "$brother_scanner" ]]
+[[ "$brother_scanner" == 'brother:net1;dev0 (preinstalled Brother backend)|network|brother||brother:net1;dev0|false' ]]
 brother_usb_scanner=$(sane_scanner_candidates $'device `brother:bus2;dev1\' is a flatbed scanner')
-[[ -z "$brother_usb_scanner" ]]
+[[ "$brother_usb_scanner" == 'brother:bus2;dev1 (preinstalled Brother backend)|usb|brother|legacy_usb|brother:bus2;dev1|false' ]]
 
-unsupported_guidance=$(unsupported_scanner_guidance 'brother:bus2;dev1')
-[[ "$unsupported_guidance" == *'brother:bus2;dev1'* ]]
-[[ "$unsupported_guidance" == *'manual experimental setup'* ]]
+unsupported_guidance=$(unsupported_scanner_guidance 'brother:other;dev1')
+[[ "$unsupported_guidance" == *'brother:other;dev1'* ]]
+[[ "$unsupported_guidance" == *'Manual experimental setup'* ]]
 
 ipp_usb_scanners=$(ipp_usb_scanner_candidates \
   $'device `airscan:e0:Existing\' is a scanner\ndevice `airscan:e1:USB MFD\' is a scanner' \
@@ -317,7 +317,8 @@ remote() {
 }
 remote_tty() { return 0; }
 avahi_browse_scan() { return 0; }
-choose_candidate() { printf 'manual'; }
+candidate_title_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-candidate-title.XXXXXX")
+choose_candidate() { printf '%s\n' "$1" >>"$candidate_title_file"; printf 'manual'; }
 recovery_choice() { printf 'manual'; return 0; }
 technical_report() { :; }
 step_check() {
@@ -333,21 +334,23 @@ step_stream() { step_check "$@"; }
 discovery_kind=printer
 printer_scoped_output=$(discover_devices true all)
 unset discovery_kind
-[[ "$printer_scoped_output" == *'Select a discovered printer or choose manual entry'* ]]
-[[ "$printer_scoped_output" != *'Select a discovered scanner or choose manual entry'* ]]
+[[ "$printer_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
+[[ "$(cat "$candidate_title_file")" == 'Detected printers' ]]
+: >"$candidate_title_file"
 
 discovery_kind=scanner
 scanner_scoped_output=$(discover_devices true all)
 unset discovery_kind
-[[ "$scanner_scoped_output" == *'Select a discovered scanner or choose manual entry'* ]]
-[[ "$scanner_scoped_output" != *'Select a discovered printer or choose manual entry'* ]]
+[[ "$scanner_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
+[[ "$(cat "$candidate_title_file")" == 'Detected scanners' ]]
+: >"$candidate_title_file"
 
 # Without discovery_kind set (the default 'all'), both menus are offered.
 unscoped_output=$(discover_devices true all)
-[[ "$unscoped_output" == *'Select a discovered printer or choose manual entry'* ]]
-[[ "$unscoped_output" == *'Select a discovered scanner or choose manual entry'* ]]
+[[ "$unscoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
+[[ "$(cat "$candidate_title_file")" == $'Detected printers\nDetected scanners' ]]
 
-rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
+rm -f "$candidate_title_file" "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
 
 # Ticket 013: discover_direct_ethernet_device must offer a recovery menu
 # (retry, change settings, continue manually, stop) on every failure branch,

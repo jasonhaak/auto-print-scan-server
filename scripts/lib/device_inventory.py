@@ -152,6 +152,9 @@ def validate_scanner(scanner: Any) -> None:
     if connection not in SCANNER_CONNECTIONS:
         raise InventoryError(f"scanner {name!r} has unsupported connection {connection!r}")
     require_text(scanner.get("backend"), f"scanner {name!r} backend")
+    backend_install = scanner.get("backend_install", True)
+    if not isinstance(backend_install, bool):
+        raise InventoryError(f"scanner {name!r} backend_install must be true or false")
     if connection == "usb" and scanner.get("usb_mode") not in USB_MODES:
         raise InventoryError(f"USB scanner {name!r} must select ipp_usb or legacy_usb")
     identity = scanner.get("usb_identity")
@@ -361,6 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
     scanner.add_argument("--device-name", required=True)
     scanner.add_argument("--connection", required=True, choices=sorted(SCANNER_CONNECTIONS))
     scanner.add_argument("--backend", required=True)
+    scanner.add_argument("--backend-install", type=parse_bool, default=True)
     scanner.add_argument("--usb-mode", choices=sorted(USB_MODES))
     scanner.add_argument("--usb-identity")
     scanner.add_argument("--retention-days", type=int)
@@ -445,6 +449,8 @@ def main() -> int:
                 "connection": arguments.connection,
                 "backend": arguments.backend,
             }
+            if not arguments.backend_install:
+                replacement["backend_install"] = False
             if arguments.usb_mode:
                 replacement["usb_mode"] = arguments.usb_mode
             if arguments.usb_identity:

@@ -271,6 +271,7 @@ if [[ "$topology" == direct_ethernet ]]; then
   discovered_scanner=false
   discovered_scanner_connection=''
   discovered_scanner_backend=''
+  discovered_scanner_backend_install=''
   discovered_scanner_usb_mode=''
   recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
   active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
@@ -312,6 +313,7 @@ if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
   discovered_scanner=false
   discovered_scanner_connection=''
   discovered_scanner_backend=''
+  discovered_scanner_backend_install=''
   discovered_scanner_usb_mode=''
   discovered_scanner_device_name=''
 fi
@@ -452,15 +454,25 @@ while yes 'Add another printer?'; do
 done
 
 scanner=false
+scanner_backend_install=true
 subsection 'Optional Scanner'
 if [[ "${discovered_scanner:-false}" == true ]]; then
   scanner=true
   scanner_connection=$discovered_scanner_connection
   scanner_backend=$discovered_scanner_backend
+  scanner_backend_install=${discovered_scanner_backend_install:-true}
   scanner_uri=''
   scanner_usb_mode=${discovered_scanner_usb_mode:-}
-  if [[ "$scanner_connection" == usb && -z "$scanner_usb_mode" ]]; then
-    scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+  input_required 'Scanner backend'
+  if [[ "$scanner_backend_install" == false ]]; then
+    printf '%s\n' "Detected preinstalled SANE backend: $scanner_backend. Onboarding will retain this backend but will not install, update or register it."
+  else
+    printf '%s\n' 'The detected SANE backend package is installed during commissioning.'
+  fi
+  scanner_backend=$(ask 'SANE backend name' "$scanner_backend")
+  scanner_backend_install=$(ask_choice 'Install this backend package with APT' "$scanner_backend_install" true false)
+  if [[ "$scanner_connection" == usb ]]; then
+    scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
   fi
 else
   if [[ -n "${discovered_unsupported_scanner_device_name:-}" ]]; then
@@ -472,7 +484,8 @@ else
     scanner=true
     scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
     scanner_backend_guidance "$scanner_connection"
-    scanner_backend=$(ask 'SANE backend package' "$(scanner_backend_default "$scanner_connection")")
+    scanner_backend=$(ask 'SANE backend name' "$(scanner_backend_default "$scanner_connection")")
+    scanner_backend_install=$(ask_choice 'Install this backend package with APT' true true false)
     scanner_uri=$(ask 'Optional scanner device URI' '')
     scanner_usb_mode=''
     [[ "$scanner_connection" == usb ]] && scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
@@ -511,11 +524,13 @@ fi
 scanner_device_names=()
 scanner_connections=()
 scanner_backends=()
+scanner_backend_installs=()
 scanner_usb_modes=()
 if [[ "$scanner" == true ]]; then
   scanner_device_names+=("$scanner_device_name")
   scanner_connections+=("$scanner_connection")
   scanner_backends+=("$scanner_backend")
+  scanner_backend_installs+=("$scanner_backend_install")
   scanner_usb_modes+=("$scanner_usb_mode")
 fi
 while yes 'Add another scanner?'; do
@@ -534,12 +549,14 @@ while yes 'Add another scanner?'; do
   done
   extra_scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
   scanner_backend_guidance "$extra_scanner_connection"
-  extra_scanner_backend=$(ask 'SANE backend package' "$(scanner_backend_default "$extra_scanner_connection")")
+  extra_scanner_backend=$(ask 'SANE backend name' "$(scanner_backend_default "$extra_scanner_connection")")
+  extra_scanner_backend_install=$(ask_choice 'Install this backend package with APT' true true false)
   extra_scanner_usb_mode=''
   [[ "$extra_scanner_connection" == usb ]] && extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
   scanner_device_names+=("$extra_scanner_name")
   scanner_connections+=("$extra_scanner_connection")
   scanner_backends+=("$extra_scanner_backend")
+  scanner_backend_installs+=("$extra_scanner_backend_install")
   scanner_usb_modes+=("$extra_scanner_usb_mode")
 done
 if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
@@ -617,6 +634,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
     for index in "${!scanner_device_names[@]}"; do
       printf '  - device_name: %s\n    connection: %s\n    backend: %s\n' \
         "$(quote "${scanner_device_names[$index]}")" "$(quote "${scanner_connections[$index]}")" "$(quote "${scanner_backends[$index]}")"
+      [[ "${scanner_backend_installs[$index]}" == false ]] && printf '%s\n' '    backend_install: false'
       [[ -n "${scanner_usb_modes[$index]}" ]] && printf '    usb_mode: %s\n' "$(quote "${scanner_usb_modes[$index]}")"
     done
     printf 'scanservjs_retention_days: %s\nscanservjs_ocr_languages: [%s]\nscanservjs_port: %s\n' "$retention" "$languages" "$scanservjs_port"

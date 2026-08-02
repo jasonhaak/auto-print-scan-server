@@ -136,6 +136,12 @@ sane_scanner_candidates() {
       *libusb*|usb:*)
         printf '%s (SANE USB detected)|usb|sane-utils|legacy_usb|%s\n' "$scanner_identifier" "$scanner_identifier"
         ;;
+      brother:bus*)
+        printf '%s (preinstalled Brother backend)|usb|brother|legacy_usb|%s|false\n' "$scanner_identifier" "$scanner_identifier"
+        ;;
+      brother:net*)
+        printf '%s (preinstalled Brother backend)|network|brother||%s|false\n' "$scanner_identifier" "$scanner_identifier"
+        ;;
     esac
   done <<<"$output"
 }
@@ -581,7 +587,7 @@ discover_devices() {
     candidate_count=0
     choice=$(choose_candidate 'Detected scanners' "${scanner_candidates[@]}")
     if [[ "$choice" != manual ]]; then
-      IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$choice"
+      IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$choice"
       discovered_scanner=true
       printf 'Selected detected scanner: %s. Its detected settings will be suggested below.\n' "$selected_scanner_label"
     fi

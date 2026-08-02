@@ -183,7 +183,7 @@ link to trusted-LAN clients or run DHCP for it. Initial onboarding creates one l
 links can be added, edited or deleted through `scripts/manage-devices`. A direct-link `/30` must
 not overlap any trusted-LAN CIDR.
 
-Use USB as a fallback when Ethernet is unavailable. USB commonly supports printing, but scanner support depends on a usable Linux SANE backend for that device. Onboarding accepts only an exact CUPS `usb://` endpoint or a new ipp-usb endpoint as printer evidence. It accepts exact standard SANE identifiers as scanner evidence and retains ambiguous backend-specific identifiers as manual defaults rather than guessing their transport.
+Use USB as a fallback when Ethernet is unavailable. USB commonly supports printing, but scanner support depends on a usable Linux SANE backend for that device. Onboarding accepts only an exact CUPS `usb://` endpoint or a new ipp-usb endpoint as printer evidence. It accepts exact standard SANE identifiers as scanner evidence. When `scanimage -L` reports a recognised preinstalled device backend such as `brother:bus…` or `brother:net…`, onboarding can retain that exact identifier without installing or changing the backend package.
 
 The playbooks do not check for one concrete Raspberry Pi model. They check Raspberry Pi OS, a tested Debian base and architecture through the compatibility variables above. This keeps future releases easy to add while preventing an untested operating-system upgrade from changing packages and services unexpectedly.
 
@@ -192,6 +192,8 @@ The playbooks do not check for one concrete Raspberry Pi model. They check Raspb
 ScanservJS is the supported cross-platform scanning path. It has no application login, so completed scans are visible to everyone allowed on the trusted LAN until retention deletes them. Remote SANE remains off by default and is intended for compatible native Linux clients.
 
 Scanner connection `network` represents an exact SANE identifier reached over IP, including `net:` identifiers from package-provided backends. Existing `ipp` and `ipps` values remain accepted. Connection `usb` requires an explicit `ipp_usb` or `legacy_usb` mode.
+
+Set `backend_install: false` for a scanner backend installed and maintained outside this repository. The deployment still installs `sane-utils` and uses the configured identifier for validation, but does not install, update or register that backend. Use this only after `scanimage -L` has reported the exact device and a real test scan has succeeded.
 
 `scanservjs_ocr_languages` accepts one or more Tesseract language codes. Selecting `[eng, deu]` installs English and German OCR data and configures combined OCR for PDF scans.
 
