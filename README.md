@@ -17,6 +17,7 @@ Automated Ansible deployment of one Raspberry Pi as a trusted-LAN print server w
 - [How it Works](#how-it-works)
 - [Installation & Development](#installation--development)
 - [Testing](#testing)
+- [Troubleshooting and Experimental Hardware](#troubleshooting-and-experimental-hardware)
 - [Author & Licence](#author--licence)
 
 ## Features
@@ -265,7 +266,11 @@ Run the same shell tests, inventory tests, YAML lint, Ansible lint and playbook 
 ./scripts/qa
 ```
 
-The static suite checks configuration syntax and Ansible conventions. Follow [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) for required Raspberry Pi, printer, scanner, mDNS and firewall acceptance checks.
+The static suite checks configuration syntax and Ansible conventions. Follow [acceptance testing](docs/acceptance-testing.md) for required Raspberry Pi, printer, scanner, mDNS and firewall acceptance checks.
+
+## Troubleshooting and Experimental Hardware
+
+- [Brother scanners with brscan2](docs/guides/brother-scanners.md): manual fallback when a Brother scanner is available but standard SANE backends cannot perform a scan.
 
 ## Author & Licence
 
