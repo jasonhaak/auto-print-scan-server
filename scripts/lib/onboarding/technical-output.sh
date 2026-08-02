@@ -56,7 +56,7 @@ step_line_full() {
 }
 
 technical_transcript_write() {
-  local purpose=$1 command_label=$2 status=$3 raw_output=${4:-}
+  local purpose=$1 command_label=$2 status=$3 raw_output=${4:-} operation=${5:-Check}
   local output
   output=$(printf '%s' "$raw_output" | technical_redact)
   {
@@ -67,11 +67,11 @@ technical_transcript_write() {
 }
 
 technical_block_print() {
-  local purpose=$1 command_label=$2 status=$3 raw_output=${4:-}
+  local purpose=$1 command_label=$2 status=$3 raw_output=${4:-} operation=${5:-Check}
   local output line_count
   output=$(printf '%s' "$raw_output" | technical_redact)
   printf '\n%s\n' "$(cli_color '1;36' '──────────────── Technical details ────────────────')"
-  printf '%s %s\n' "$(cli_color '1;36' 'Check:')" "$purpose"
+  printf '%s %s\n' "$(cli_color '1;36' "$operation:")" "$purpose"
   printf '%s %s\n' 'Command:' "$command_label"
   printf '%s %s\n' 'Result:' "$(cli_status "$status") $([[ "$status" == 0 ]] && printf success || printf 'failed (exit %s)' "$status")"
   if [[ -n "$output" ]]; then
@@ -125,7 +125,7 @@ step_action() {
   shift 3
   printf '%s %s\n' "$(cli_color '1;33' 'Action:')" "$purpose"
   step_run "$output_variable" "$purpose" "$command_label" "$@"
-  technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output"
+  technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output" Action
   return "$step_run_status"
 }
 

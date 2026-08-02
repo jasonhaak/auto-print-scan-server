@@ -105,6 +105,7 @@ step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf 
 action_display=$(<"$display_file")
 [[ "$action_display" == *'[  OK  ]'* ]]
 [[ "$action_display" == *'Action: Restarting a service'* ]]
+[[ "$action_display" != *'Check: Restarting a service'* ]]
 [[ "$action_display" == *'action-output'* ]]
 grep -Fq 'action-output' "$technical_transcript"
 

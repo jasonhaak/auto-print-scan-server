@@ -33,11 +33,11 @@ interactive_terminal() { return 0; }
 ask 'Queue name' 'printer' <<< 'office-printer' 2>"$ask_stderr" >/dev/null
 [[ "$(<"$ask_stderr")" != *'Selected:'* ]]
 ask 'Queue name' 'printer' <<< '' 2>"$ask_stderr" >/dev/null
-[[ "$(<"$ask_stderr")" == *'Selected: printer'* ]]
+[[ "$(<"$ask_stderr")" != *'Selected:'* ]]
 choice_stderr=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket <<< 'ipps' 2>&1 >/dev/null)
 [[ "$choice_stderr" != *'Accepted choice:'* ]]
 choice_stderr=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket <<< '' 2>&1 >/dev/null)
-[[ "$choice_stderr" == *'Accepted choice: ipp'* ]]
+[[ "$choice_stderr" != *'Accepted choice:'* ]]
 interactive_terminal() { [[ -t 0 && -t 1 ]]; }
 rm -f "$ask_stderr"
 

@@ -401,6 +401,7 @@ discover_devices() {
   input_required 'Discovery tools'
   recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
   if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
+    printf '%s\n' 'Discovery skipped. Device details will be entered manually.'
     rm -f "$discovery_log"
     return
   fi
@@ -479,7 +480,7 @@ discover_devices() {
     fi
   fi
   if [[ "$discovery_scope" != usb ]]; then
-    step_stream network_output 'LAN service discovery' 'avahi-browse -artp' avahi_browse_scan || true
+    step_check network_output 'LAN service discovery' 'avahi-browse -artp' avahi_browse_scan || true
   else
     network_output='Skipped by USB-only discovery scope.'
     technical_report 'LAN service discovery' 'avahi-browse -artp' 0 "$network_output"
@@ -567,18 +568,18 @@ discover_devices() {
   fi
 
   if (( ${#printer_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != scanner ]]; then
-    input_required 'Select a discovered printer or choose manual entry'
+    input_required 'Printer selection'
     candidate_count=0
-    choice=$(choose_candidate 'Discovered printers. Select the device to configure or enter details manually.' "${printer_candidates[@]}")
+    choice=$(choose_candidate 'Detected printers' "${printer_candidates[@]}")
     if [[ "$choice" != manual ]]; then
       IFS='|' read -r selected_printer_label discovered_printer_connection discovered_printer_uri discovered_printer_usb_mode <<<"$choice"
       printf 'Selected detected printer: %s. Its connection and URI will be suggested below.\n' "$selected_printer_label"
     fi
   fi
   if (( ${#scanner_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != printer ]]; then
-    input_required 'Select a discovered scanner or choose manual entry'
+    input_required 'Scanner selection'
     candidate_count=0
-    choice=$(choose_candidate 'Discovered scanners. Select one to configure or enter details manually.' "${scanner_candidates[@]}")
+    choice=$(choose_candidate 'Detected scanners' "${scanner_candidates[@]}")
     if [[ "$choice" != manual ]]; then
       IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$choice"
       discovered_scanner=true

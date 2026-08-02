@@ -227,6 +227,7 @@ input_required 'Discovery scope'
 discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
 stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
+input_required 'Server identity'
 while true; do
   hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
   [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$ ]] && break
@@ -242,6 +243,7 @@ for public_key_path in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$H
 done
 [[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
 subsection 'Printer 1'
+input_required 'Printer queue'
 printf '%s\n' 'The queue name is what phones, computers and tablets will see when choosing this printer.'
 while true; do
   queue=$(ask 'CUPS queue name' 'printer')
