@@ -67,7 +67,7 @@
   ansible.builtin.replace:
     path: "{{ item.item }}"
     regexp: '(<policy domain="resource" name="disk" value=")[^"]+("/>)'
-    replace: '\1{{ scanservjs_imagemagick_disk_limit }}\2'
+    replace: '\g<1>{{ scanservjs_imagemagick_disk_limit }}\g<2>'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
   when: item.stat.exists
   tags: scanservjs
@@ -150,7 +150,7 @@
   ansible.builtin.command:
     argv:
       - df
-      - -Pm
+      - -m
       - --output=avail
       - "{{ scanservjs_data_directory }}"
   register: scanservjs_free_space
