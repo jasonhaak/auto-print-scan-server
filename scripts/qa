@@ -20,6 +20,7 @@ for test_script in "$root/test/"*.sh; do
 done
 python "$root/test/device_inventory_test.py"
 python "$root/test/device_preflight_role_test.py"
+python "$root/test/cups_role_test.py"
 
 printf '%s\n' 'Checking YAML and Ansible conventions.'
 cd "$root"

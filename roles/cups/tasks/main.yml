@@ -32,6 +32,47 @@
   notify: Restart CUPS
   tags: cups
 
+- name: Apply pending CUPS configuration changes
+  ansible.builtin.meta: flush_handlers
+  tags: cups
+
+- name: Ensure the CUPS scheduler is enabled and running
+  ansible.builtin.service:
+    name: cups
+    enabled: true
+    state: started
+  tags: cups
+
+- name: Wait for the CUPS scheduler to accept commands
+  ansible.builtin.command:
+    argv: [lpstat, -r]
+  register: cups_scheduler_status
+  changed_when: false
+  retries: 5
+  delay: 1
+  until: cups_scheduler_status.rc == 0 and 'scheduler is running' in cups_scheduler_status.stdout
+  tags: cups
+
+- name: List installed CUPS models for selected package profiles
+  ansible.builtin.command:
+    argv: [lpinfo, -m]
+  register: cups_available_models
+  changed_when: false
+  when: managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list | length > 0
+  tags: cups
+
+- name: Require each selected package-profile CUPS model
+  ansible.builtin.assert:
+    that: package_profiles[item.package_profile].cups_model in cups_available_models.stdout
+    fail_msg: >-
+      Package profile {{ item.package_profile }} is installed, but CUPS does not advertise
+      its required model {{ package_profiles[item.package_profile].cups_model }}. Check
+      lpinfo -m and correct the package profile before retrying.
+  loop: "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}"
+  loop_control:
+    label: "{{ item.name }} -> {{ item.package_profile }}"
+  tags: cups
+
 - name: Create CUPS ownership state directory
   ansible.builtin.file:
     path: /var/lib/raspberry-print-server
