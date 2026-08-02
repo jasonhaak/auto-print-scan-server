@@ -161,10 +161,22 @@ direct_scanner_hostname_resolves_exclusively() {
   [[ "$(grep -c . <<<"$addresses")" -eq 1 && "$addresses" == "$address" ]]
 }
 
+scanner_line_mentions_ipv4_address() {
+  local line=$1 address=$2 escaped_address
+  escaped_address=${address//./\\.}
+  grep -qE "(^|[^[:alnum:].])$escaped_address([^[:alnum:].]|$)" <<<"$line"
+}
+
 direct_scanner_candidate() {
-  local output=$1 address=$2 candidate identifier host
+  local output=$1 address=$2 line candidate identifier host
+  while IFS= read -r line; do
+    [[ "$line" == device\ \`* ]] || continue
+    scanner_line_mentions_ipv4_address "$line" "$address" || continue
+    candidate=$(sane_scanner_candidates "$line" | sed -n '1p')
+    [[ -n "$candidate" ]] && { printf '%s' "$candidate"; return; }
+  done <<<"$output"
   while IFS= read -r candidate; do
-    [[ "$candidate" == *"$address"* ]] && { printf '%s' "$candidate"; return; }
+    scanner_line_mentions_ipv4_address "$candidate" "$address" && { printf '%s' "$candidate"; return; }
   done < <(sane_scanner_candidates "$output")
   while IFS= read -r candidate; do
     IFS='|' read -r _ _ _ _ identifier <<<"$candidate"
@@ -186,7 +198,20 @@ first_sane_scanner_identifier() {
 }
 
 sane_hardware_detected() {
-  grep -qiE 'found (USB|SCSI) scanner' <<<"$1"
+  grep -qiE 'found (possible )?(USB|SCSI) scanner' <<<"$1"
+}
+
+sane_discovery_outcome() {
+  if [[ -n "$(first_sane_scanner_identifier "$1")" ]]; then
+    printf '%s\n' 'SANE discovery returned an exact device identifier.'
+  else
+    printf '%s\n' 'SANE discovery returned no usable device identifier.'
+  fi
+}
+
+no_printer_discovery_guidance() {
+  printf '%s\n' 'No printer was found on the trusted LAN or USB. Find its IPP address in its web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
+  printf '%s\n' 'A device cabled directly to a separate Raspberry Pi Ethernet interface is probed later through the direct_ethernet topology flow, after you enter its static address.'
 }
 
 tcp_port_is_open() {
@@ -451,7 +476,7 @@ discover_devices() {
     network_output='Skipped by USB-only discovery scope.'
     technical_report 'LAN service discovery' 'avahi-browse -artp' 0 "$network_output"
   fi
-  step_check scanner_output 'SANE scanner discovery' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
+  step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
   if [[ "$discovery_scope" == lan ]]; then
     scanner_hardware_output='Skipped by LAN-only discovery scope.'
     technical_report 'Low-level scanner hardware discovery' 'sane-find-scanner -q' 0 "$scanner_hardware_output"
@@ -514,8 +539,9 @@ discover_devices() {
   fi
 
   printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}"
-  (( ${#printer_candidates[@]} > 0 )) || printf '%s\n' 'No printer was found. Find its IPP address in its web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
+  (( ${#printer_candidates[@]} > 0 )) || no_printer_discovery_guidance
   if (( ${#scanner_candidates[@]} == 0 )); then
+    sane_discovery_outcome "$scanner_output"
     if [[ -n "$scanner_hint_output" ]]; then
       printf '%s\n' 'A scanner was advertised on the LAN but SANE did not report an exact usable identifier. Review the technical output, confirm the scanner protocol is enabled and retry before configuring it manually.'
     elif [[ -n "$(first_sane_scanner_identifier "$scanner_output")" ]]; then

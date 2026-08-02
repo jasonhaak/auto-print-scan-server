@@ -36,6 +36,11 @@ ipp_usb_scanners=$(ipp_usb_scanner_candidates \
 [[ "$(first_sane_scanner_identifier $'device `vendor:net:192.0.2.30\' is a scanner')" == 'vendor:net:192.0.2.30' ]]
 direct_scanner=$(direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner\ndevice `airscan:e1:192.168.50.2\' is a scanner' '192.168.50.2')
 [[ "$direct_scanner" == *'192.168.50.2'* ]]
+direct_scanner=$(direct_scanner_candidate $'device `airscan:w0:Office Scanner\' is a WSD scanner ip=192.168.50.2' '192.168.50.2')
+[[ "$direct_scanner" == 'airscan:w0:Office Scanner (SANE AirScan detected)|ipp|sane-airscan||airscan:w0:Office Scanner' ]]
+if direct_scanner_candidate $'device `airscan:w0:192.168.50.20\' is a WSD scanner' '192.168.50.2'; then
+  exit 1
+fi
 if direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner' '192.168.50.2'; then
   exit 1
 fi
@@ -77,9 +82,19 @@ fi
 unset -f remote
 
 sane_hardware_detected 'found USB scanner at libusb:001:004'
+sane_hardware_detected 'found possible USB scanner at libusb:001:004'
 if sane_hardware_detected 'sane-find-scanner: command not found'; then
   exit 1
 fi
+
+[[ "$(sane_discovery_outcome '')" == 'SANE discovery returned no usable device identifier.' ]]
+[[ "$(sane_discovery_outcome $'device `airscan:e0:Office Scanner\' is a scanner')" == 'SANE discovery returned an exact device identifier.' ]]
+rg -Fq "step_check scanner_output 'Run SANE scanner discovery command'" "$root/scripts/lib/onboarding/device-discovery.sh"
+! rg -Fq "step_check scanner_output 'SANE scanner discovery'" "$root/scripts/lib/onboarding/device-discovery.sh"
+
+no_printer_guidance=$(no_printer_discovery_guidance)
+[[ "$no_printer_guidance" == *'trusted LAN or USB'* ]]
+[[ "$no_printer_guidance" == *'direct_ethernet topology flow'* ]]
 
 deduplicated=$(printf '%s\n' \
   'Printer one|ipp|ipp://printer.local/ipp/print|' \

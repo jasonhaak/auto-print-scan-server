@@ -59,7 +59,10 @@ yes_default() {
   return 1
 }
 
-interactive_terminal() { [[ -t 0 && -t 1 ]]; }
+# Recovery choices return their value on stdout, which callers capture. stderr remains attached
+# to the administrator terminal for prompts and diagnostics, so use it to identify an interactive
+# session without mistaking command substitution for non-interactive execution.
+interactive_terminal() { [[ -t 0 && -t 2 ]]; }
 
 recovery_choice() {
   local prompt=$1
@@ -151,6 +154,16 @@ choose_package_profile() {
   [[ -n "$default" ]] || default=${profiles[0]}
   printf 'Available package profiles: %s\n' "${profiles[*]}" >&2
   ask_choice 'Explicit package profile' "$default" "${profiles[@]}"
+}
+scanner_backend_default() {
+  [[ "$1" == usb ]] || printf '%s' sane-airscan
+}
+scanner_backend_guidance() {
+  if [[ "$1" == usb ]]; then
+    printf '%s\n' 'sane-utils provides scanimage and other tools, but may not recognise a legacy USB scanner. Enter the device-compatible SANE backend package.'
+  else
+    printf '%s\n' 'Use sane-airscan for most network scanners. It supports modern eSCL and WSD scanning. Enter another documented backend package only when the device requires it.'
+  fi
 }
 quote() { local value=$1; value=${value//\\/\\\\}; value=${value//\"/\\\"}; printf '"%s"' "$value"; }
 choose_candidate() {

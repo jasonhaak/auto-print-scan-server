@@ -3,6 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/scripts/lib/onboarding/ssh-session.sh"
+source "$root/scripts/lib/onboarding/device-discovery.sh"
 
 # ssh_session_open/cleanup shell out to the real ssh binary to manage a ControlMaster socket.
 # Stub it so this test exercises the socket bookkeeping (mktemp path, cleanup) without an SSH
@@ -56,7 +57,32 @@ remote 'lpinfo -v'
 [[ "$captured_command" == *'/usr/sbin'* ]]
 [[ "$captured_command" == *'lpinfo -v'* ]]
 
+# A bare SSH command's restricted PATH omits the directory containing lpinfo. Run the remote
+# command against a test-only administration directory to prove the prefix restores lookup,
+# then verify its output creates a legacy_usb candidate.
+restricted_remote_path=/usr/bin:/bin
+[[ "$restricted_remote_path" != *'/usr/sbin'* ]]
+test_admin_path=$(mktemp -d "${TMPDIR:-/tmp}/raspberry-print-server-lpinfo.XXXXXX")
+printf '%s\n' '#!/usr/bin/env bash' 'printf "direct usb://Brother/MFC-7360N?serial=123\\n"' >"$test_admin_path/lpinfo"
+chmod +x "$test_admin_path/lpinfo"
+remote_path_prefix="export PATH=\"$test_admin_path:$restricted_remote_path\";"
+ssh() {
+  local argument remote_command=''
+  for argument in "$@"; do remote_command=$argument; done
+  env PATH="$restricted_remote_path" bash -c "$remote_command"
+}
+lpinfo_output=$(remote 'lpinfo -v')
+legacy_candidate=$(cups_printer_candidates "$lpinfo_output")
+[[ "$legacy_candidate" == 'USB printer (usb://Brother/MFC-7360N?serial=123)|usb|usb://Brother/MFC-7360N?serial=123|legacy_usb' ]]
+rm -rf "$test_admin_path"
+remote_path_prefix='export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH";'
+
 captured_command=''
+ssh() {
+  for argument in "$@"; do
+    captured_command=$argument
+  done
+}
 remote_tty 'sudo -v'
 [[ "$captured_command" == *'export PATH='* ]]
 [[ "$captured_command" == *'/usr/sbin'* ]]

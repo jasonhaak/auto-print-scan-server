@@ -454,8 +454,8 @@ else
   if yes 'Configure a scanner?'; then
     scanner=true
     scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-    printf '%s\n' 'Use sane-airscan for most network scanners. It supports modern eSCL and WSD scanning. Use sane-utils for a legacy USB scanner, or enter its documented backend package.'
-    scanner_backend=$(ask 'SANE backend package' 'sane-airscan')
+    scanner_backend_guidance "$scanner_connection"
+    scanner_backend=$(ask 'SANE backend package' "$(scanner_backend_default "$scanner_connection")")
     scanner_uri=$(ask 'Optional scanner device URI' '')
     scanner_usb_mode=''
     [[ "$scanner_connection" == usb ]] && scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
@@ -512,8 +512,8 @@ while yes 'Add another scanner?'; do
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   extra_scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-  printf '%s\n' 'Use sane-airscan for most network scanners, sane-utils for a legacy USB scanner, or its documented backend package.'
-  extra_scanner_backend=$(ask 'SANE backend package' 'sane-airscan')
+  scanner_backend_guidance "$extra_scanner_connection"
+  extra_scanner_backend=$(ask 'SANE backend package' "$(scanner_backend_default "$extra_scanner_connection")")
   extra_scanner_usb_mode=''
   [[ "$extra_scanner_connection" == usb ]] && extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
   scanner_device_names+=("$extra_scanner_name")
