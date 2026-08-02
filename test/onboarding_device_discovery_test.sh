@@ -26,7 +26,12 @@ fi
 ipp_usb_check_has_device $'Configuration files: OK\nBus 001 Device 004: compatible IPP-over-USB device'
 
 scanners=$(sane_scanner_candidates $'device `airscan:e0:Office Scanner\' is a WSD scanner\ndevice `genesys:libusb:001:004\' is a USB scanner\ndevice `vendor:net:192.0.2.30\' is a backend-specific scanner')
-[[ "$scanners" == $'airscan:e0:Office Scanner (SANE AirScan detected)|ipp|sane-airscan||airscan:e0:Office Scanner\ngenesys:libusb:001:004 (SANE USB detected)|usb|sane-utils|legacy_usb|genesys:libusb:001:004' ]]
+[[ "$scanners" == $'airscan:e0:Office Scanner (SANE AirScan detected)|ipp|sane-airscan||airscan:e0:Office Scanner\ngenesys:libusb:001:004 (SANE USB detected)|usb|sane-utils|legacy_usb|genesys:libusb:001:004\nvendor:net:192.0.2.30 (manual backend required)|network|manual||vendor:net:192.0.2.30' ]]
+
+brother_scanner=$(sane_scanner_candidates $'device `brother:net1;dev0\' is a flatbed scanner')
+[[ "$brother_scanner" == 'brother:net1;dev0 (manual backend required)|network|manual||brother:net1;dev0' ]]
+brother_usb_scanner=$(sane_scanner_candidates $'device `brother:bus2;dev1\' is a flatbed scanner')
+[[ "$brother_usb_scanner" == 'brother:bus2;dev1 (manual backend required)|usb|manual|legacy_usb|brother:bus2;dev1' ]]
 
 ipp_usb_scanners=$(ipp_usb_scanner_candidates \
   $'device `airscan:e0:Existing\' is a scanner\ndevice `airscan:e1:USB MFD\' is a scanner' \

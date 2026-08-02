@@ -136,6 +136,15 @@ sane_scanner_candidates() {
       *libusb*|usb:*)
         printf '%s (SANE USB detected)|usb|sane-utils|legacy_usb|%s\n' "$scanner_identifier" "$scanner_identifier"
         ;;
+      brother:bus*)
+        printf '%s (manual backend required)|usb|manual|legacy_usb|%s\n' "$scanner_identifier" "$scanner_identifier"
+        ;;
+      brother:net*)
+        printf '%s (manual backend required)|network|manual||%s\n' "$scanner_identifier" "$scanner_identifier"
+        ;;
+      *)
+        printf '%s (manual backend required)|network|manual||%s\n' "$scanner_identifier" "$scanner_identifier"
+        ;;
     esac
   done <<<"$output"
 }
@@ -574,6 +583,11 @@ discover_devices() {
     choice=$(choose_candidate 'Discovered scanners. Select one to configure or enter details manually.' "${scanner_candidates[@]}")
     if [[ "$choice" != manual ]]; then
       IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$choice"
+      if [[ "$discovered_scanner_backend" == manual ]]; then
+        discovered_scanner_requires_manual_backend=true
+      else
+        discovered_scanner_requires_manual_backend=false
+      fi
       discovered_scanner=true
       printf 'Selected detected scanner: %s. Its detected settings will be suggested below.\n' "$selected_scanner_label"
     fi

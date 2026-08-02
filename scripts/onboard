@@ -270,7 +270,6 @@ if [[ "$topology" == direct_ethernet ]]; then
   discovered_scanner_connection=''
   discovered_scanner_backend=''
   discovered_scanner_usb_mode=''
-  discovered_scanner_device_name=''
   recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
   active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
   detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
@@ -306,8 +305,9 @@ elif [[ "$topology" != usb && "${discovered_printer_connection:-}" == usb ]]; th
   discovered_printer_uri=''
   discovered_printer_usb_mode=''
 fi
-if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
-   [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; then
+if [[ "${discovered_scanner_requires_manual_backend:-false}" != true ]] &&
+   { [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
+     [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; }; then
   discovered_scanner=false
   discovered_scanner_connection=''
   discovered_scanner_backend=''
@@ -454,10 +454,26 @@ scanner=false
 subsection 'Optional Scanner'
 if [[ "${discovered_scanner:-false}" == true ]]; then
   scanner=true
-  scanner_connection=$discovered_scanner_connection
-  scanner_backend=$discovered_scanner_backend
+  if [[ "${discovered_scanner_requires_manual_backend:-false}" == true ]]; then
+    printf 'Detected scanner %s requires a manually selected SANE backend. The exact device name will be kept.\n' "$discovered_scanner_device_name"
+    scanner_connection=$(ask_choice 'Scanner connection' "${discovered_scanner_connection:-network}" network usb ipp ipps)
+    printf '%s\n' 'This backend-specific scanner needs the package that currently provides its SANE identifier. Do not accept a generic backend unless it recognises this device.'
+    while true; do
+      scanner_backend=$(ask 'SANE backend package' '')
+      [[ -n "$scanner_backend" ]] && break
+      printf '%s\n' 'A SANE backend package is required for this scanner.' >&2
+    done
+  else
+    scanner_connection=$discovered_scanner_connection
+    scanner_backend=$discovered_scanner_backend
+  fi
   scanner_uri=''
-  scanner_usb_mode=$discovered_scanner_usb_mode
+  scanner_usb_mode=${discovered_scanner_usb_mode:-}
+  if [[ "$scanner_connection" == usb && "${discovered_scanner_requires_manual_backend:-false}" == true ]]; then
+    scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-legacy_usb}" ipp_usb legacy_usb)
+  elif [[ "$scanner_connection" == usb && -z "$scanner_usb_mode" ]]; then
+    scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+  fi
 else
   printf '%s\n' 'Choose a scanner only when it is connected. Browser scanning is the normal cross-platform option and lets users choose from configured scanners.'
   if yes 'Configure a scanner?'; then
@@ -471,7 +487,11 @@ else
   fi
 fi
 if [[ "$scanner" == true ]]; then
-  printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.'
+  if [[ -n "${discovered_scanner_device_name:-}" ]]; then
+    printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name"
+  else
+    printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.'
+  fi
   while true; do
     scanner_device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
     [[ -n "$scanner_device_name" ]] && break
