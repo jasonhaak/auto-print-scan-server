@@ -10,6 +10,12 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 onboard="$root/scripts/onboard"
 
+# The confirmed production write must be a visible action delegated to the shared inventory
+# writer, rather than hand-written cp/mv calls in the onboarding script.
+write_block=$(awk '/Write confirmed production inventory/{capturing = 1} capturing {print} capturing && /--variables-document/{exit}' "$onboard")
+[[ "$write_block" == *'step_action'* ]]
+[[ "$write_block" == *'device_inventory.py write-initial'* ]]
+
 extract_loop() {
   local start_pattern=$1
   awk -v start="$start_pattern" '

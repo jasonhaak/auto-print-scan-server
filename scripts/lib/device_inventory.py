@@ -286,6 +286,55 @@ def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any]) -
     return backup
 
 
+def validate_yaml_document(path: Path, label: str) -> None:
+    if not path.is_file():
+        raise InventoryError(f"{label} file does not exist: {path}")
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise InventoryError(f"{label} YAML is invalid: {error}") from error
+    if not isinstance(document, dict):
+        raise InventoryError(f"{label} must contain a YAML mapping")
+
+
+def write_initial_inventory(
+    host_target: Path, variables_target: Path, host_document: Path, variables_document: Path, backup_directory: Path
+) -> tuple[Path, Path]:
+    if host_target == variables_target:
+        raise InventoryError("host and device-variable inventory targets must be different")
+    validate_yaml_document(host_document, "host inventory document")
+    variables = load_inventory(variables_document)
+    rendered = {
+        host_target: host_document.read_text(encoding="utf-8"),
+        variables_target: "---\n# Maintained by scripts/onboard and scripts/manage-devices. Do not store passwords here.\n"
+        + yaml.safe_dump(variables, sort_keys=False, default_flow_style=False, width=1000),
+    }
+    for target in rendered:
+        if not target.is_file():
+            raise InventoryError(f"inventory target does not exist: {target}")
+    backup_directory.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    backups = {target: backup_directory / f"{target.name}.{stamp}" for target in rendered}
+    temporary_names: dict[Path, str] = {}
+    try:
+        for target, content in rendered.items():
+            shutil.copy2(target, backups[target])
+            descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+            temporary_names[target] = temporary_name
+            with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
+                temporary.write(content)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+            os.chmod(temporary_name, target.stat().st_mode & 0o777)
+        for target in (host_target, variables_target):
+            os.replace(temporary_names.pop(target), target)
+    finally:
+        for temporary_name in temporary_names.values():
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+    return backups[host_target], backups[variables_target]
+
+
 def parse_bool(value: str) -> bool:
     if value not in {"true", "false"}:
         raise argparse.ArgumentTypeError("expected true or false")
@@ -337,6 +386,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--backup-directory", type=Path)
+    parser.add_argument("--host-inventory", type=Path)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
 
@@ -395,6 +445,9 @@ def build_parser() -> argparse.ArgumentParser:
     delete.add_argument("kind", choices=["printer", "scanner", "link"])
     delete.add_argument("identity")
     commands.add_parser("validate")
+    initial_write = commands.add_parser("write-initial")
+    initial_write.add_argument("--host-document", required=True, type=Path)
+    initial_write.add_argument("--variables-document", required=True, type=Path)
     profiles = commands.add_parser("profiles-for-evidence")
     profiles.add_argument("identity_evidence")
     profile_prefix = commands.add_parser("profile-model-prefix")
@@ -419,6 +472,18 @@ def main() -> int:
         print("Error: --inventory and --backup-directory are required for this command", file=sys.stderr)
         return 2
     try:
+        if arguments.command == "write-initial":
+            if arguments.host_inventory is None:
+                raise InventoryError("--host-inventory is required for write-initial")
+            host_backup, variables_backup = write_initial_inventory(
+                arguments.host_inventory,
+                arguments.inventory,
+                arguments.host_document,
+                arguments.variables_document,
+                arguments.backup_directory,
+            )
+            print(f"Wrote initial production inventory. Backups: {host_backup}, {variables_backup}")
+            return 0
         data = load_inventory(arguments.inventory)
         if arguments.command == "profiles-for-evidence":
             for name, description in matching_package_profiles(arguments.identity_evidence):

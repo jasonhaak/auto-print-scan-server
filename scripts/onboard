@@ -632,9 +632,6 @@ printf '%s\n' 'Confirmation creates local inventory backups, replaces the declar
 printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or Raspberry Pi services.'
 yes 'Write production inventory and commission this Pi?' || exit 0
 
-mkdir -p "$backups" "$(dirname "$variables")"
-stamp=$(date +%Y%m%d-%H%M%S)
-for file in "$inventory" "$variables"; do [[ -f "$file" ]] && cp "$file" "$backups/$(basename "$file").$stamp"; done
 host_tmp=$(mktemp "$inventory.XXXXXX")
 vars_tmp=$(mktemp "$variables.XXXXXX")
 printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '        print-server:' "          ansible_host: $(quote "$host")" "          ansible_user: $(quote "$admin")" '          ansible_become: true' >"$host_tmp"
@@ -678,11 +675,11 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   fi
   printf '%s\n' 'enable_remote_sane: false' 'enable_unattended_upgrades: false'
 } >"$vars_tmp"
-step_check validation_output 'Validate the confirmed inventory' 'device_inventory.py validate' \
-  "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" --inventory "$vars_tmp" \
-  --backup-directory "$backups" validate
-mv "$host_tmp" "$inventory"
-mv "$vars_tmp" "$variables"
+step_action inventory_write_output 'Write confirmed production inventory' 'device_inventory.py write-initial' \
+  "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" --inventory "$variables" \
+  --host-inventory "$inventory" --backup-directory "$backups" write-initial \
+  --host-document "$host_tmp" --variables-document "$vars_tmp"
+rm -f "$host_tmp" "$vars_tmp"
 host_tmp=''
 vars_tmp=''
 subsection 'Applying Your Configuration'

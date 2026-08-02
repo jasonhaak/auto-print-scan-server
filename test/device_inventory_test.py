@@ -30,6 +30,7 @@ class DeviceInventoryTest(unittest.TestCase):
         self.addCleanup(self.tempdir.cleanup)
         self.directory = Path(self.tempdir.name)
         self.inventory = self.directory / "print_servers.yml"
+        self.host_inventory = self.directory / "hosts.yml"
         self.backups = self.directory / "backups"
         self.inventory.write_text(
             """---
@@ -49,6 +50,7 @@ scanservjs_ocr_languages: [eng]
 """,
             encoding="utf-8",
         )
+        self.host_inventory.write_text("---\nall: {children: {print_servers: {hosts: {print-server: {}}}}}\n", encoding="utf-8")
 
     def run_helper(self, *arguments, check=True):
         return subprocess.run(
@@ -66,6 +68,42 @@ scanservjs_ocr_languages: [eng]
         result = self.run_helper("list")
         self.assertIn("office", result.stdout)
         self.assertIn("No managed scanners", result.stdout)
+
+    def test_writes_initial_host_and_device_inventory_with_unique_backups(self):
+        host_document = self.directory / "new-hosts.yml"
+        variables_document = self.directory / "new-variables.yml"
+        host_document.write_text("---\nall: {children: {print_servers: {hosts: {print-server: {ansible_host: 192.0.2.20}}}}}\n", encoding="utf-8")
+        variables_document.write_text(self.inventory.read_text(encoding="utf-8").replace("print-server", "new-server"), encoding="utf-8")
+        self.inventory.chmod(0o640)
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "--inventory", str(self.inventory), "--host-inventory", str(self.host_inventory),
+             "--backup-directory", str(self.backups), "write-initial", "--host-document", str(host_document),
+             "--variables-document", str(variables_document)],
+            check=True, text=True, capture_output=True,
+        )
+        self.assertIn("Wrote initial production inventory", result.stdout)
+        self.assertIn("192.0.2.20", self.host_inventory.read_text(encoding="utf-8"))
+        self.assertIn("new-server", self.inventory.read_text(encoding="utf-8"))
+        self.assertEqual(self.inventory.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(len(list(self.backups.iterdir())), 2)
+
+    def test_rejects_invalid_initial_variables_without_replacing_either_inventory(self):
+        host_document = self.directory / "new-hosts.yml"
+        variables_document = self.directory / "invalid-variables.yml"
+        host_document.write_text("---\nall: {}\n", encoding="utf-8")
+        variables_document.write_text("---\nmanaged_printers: []\n", encoding="utf-8")
+        before_host = self.host_inventory.read_text(encoding="utf-8")
+        before_variables = self.inventory.read_text(encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "--inventory", str(self.inventory), "--host-inventory", str(self.host_inventory),
+             "--backup-directory", str(self.backups), "write-initial", "--host-document", str(host_document),
+             "--variables-document", str(variables_document)],
+            check=False, text=True, capture_output=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.host_inventory.read_text(encoding="utf-8"), before_host)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before_variables)
+        self.assertFalse(self.backups.exists())
 
     def test_adds_and_edits_a_printer_atomically_with_backup(self):
         self.run_helper(
