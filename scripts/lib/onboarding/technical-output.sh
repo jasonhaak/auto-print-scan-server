@@ -6,14 +6,9 @@ technical_redact() {
     -e 's/([Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]:[[:space:]]*)[[:graph:]]+/\1[REDACTED]/g'
 }
 
-cli_color() {
-  local code=$1 text=$2
-  if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-    printf '\033[%sm%s\033[0m' "$code" "$text"
-  else
-    printf '%s' "$text"
-  fi
-}
+if ! declare -F cli_color >/dev/null; then
+  cli_color() { printf '%s' "$2"; }
+fi
 
 cli_status() {
   local status=$1
@@ -123,12 +118,15 @@ step_check() {
   return "$step_run_status"
 }
 
-# Same display policy as step_check (box only on failure or verbose mode). Kept as a separate
-# name from step_check because callers use it to mark commands that change remote state rather
-# than ones that only inspect it; a box that appeared on every success trained users to stop
-# reading it, so passing steps stay quiet here too.
+# Actions differ from checks because they change inventory or Raspberry Pi state. Their label and
+# captured technical output are always shown, while successful read-only checks stay compact.
 step_action() {
-  step_check "$@"
+  local output_variable=$1 purpose=$2 command_label=$3
+  shift 3
+  printf '%s %s\n' "$(cli_color '1;33' 'Action:')" "$purpose"
+  step_run "$output_variable" "$purpose" "$command_label" "$@"
+  technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output"
+  return "$step_run_status"
 }
 
 # Like step_check, but never redirects the wrapped command's stdout/stderr. Use this only for a

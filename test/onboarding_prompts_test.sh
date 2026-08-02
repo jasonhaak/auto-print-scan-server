@@ -5,6 +5,20 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ONBOARD_PYTHON="$root/.venv/bin/python"
 source "$root/scripts/lib/onboarding/prompts.sh"
 
+presentation_output=$(NO_COLOR=1 major_step '1 of 5' 'Connect' 'Use a stable address' 2>&1)
+[[ "$presentation_output" == *'1 of 5 · Connect'* ]]
+[[ "$presentation_output" == *'Use a stable address'* ]]
+[[ "$presentation_output" != *$'\033['* ]]
+NO_COLOR=1 major_step '1 of 5' 'Connect' 'Use a stable address' >/dev/null 2>&1
+
+presentation_output=$(detail_block 'Detected printer' 'Model|Brother MFC-7360N' 'USB ID|04f9:0270' 2>&1)
+[[ "$presentation_output" == *'Detected printer'* ]]
+[[ "$presentation_output" == *'Model'* && "$presentation_output" == *'Brother MFC-7360N'* ]]
+
+presentation_output=$(confirmation_block 'Printer connection' 'Connection|USB' 'URI|ipp://localhost:60000/ipp/print' 2>&1)
+[[ "$presentation_output" == *'Confirmed · Printer connection'* ]]
+[[ "$presentation_output" == *'Connection'* && "$presentation_output" == *'USB'* ]]
+
 selected=$(ask 'Queue name' 'printer' <<< 'office-printer')
 [[ "$selected" == office-printer ]]
 

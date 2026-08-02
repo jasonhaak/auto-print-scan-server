@@ -139,7 +139,7 @@ configure_printer() {
       printf 'Available direct Ethernet link: %s reaches device address %s. Use ipp, ipps, socket or lpd with that address.\n' "$link_interface" "$link_device_ipv4"
     done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names link)
   fi
-  input_required 'Choose how the printer is connected'
+  input_required 'Printer connection'
   connection=$(ask_choice 'Printer connection (LAN/direct IP protocol or USB)' "$connection_default" ipp ipps socket lpd usb)
   if [[ -z "$original" && ( "$connection" == socket || "$connection" == lpd ) ]]; then
     driver_default=package_profile
@@ -218,7 +218,7 @@ configure_scanner() {
     [[ -n "$name" ]] && break
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
-  input_required 'Choose how the scanner is connected'
+  input_required 'Scanner connection'
   printf '%s\n' 'Use sane-airscan for most network scanners (eSCL/WSD), sane-utils for a legacy USB scanner, or its documented backend package.'
   connection=$(ask_choice 'Scanner connection (network, ipp, ipps or USB)' "$connection_default" network ipp ipps usb)
   [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
@@ -275,7 +275,7 @@ configure_link() {
     [[ -n "$detected_interface" ]] && interface_default=$detected_interface
     technical_report 'Detect an unused direct Ethernet interface' 'inspect /sys/class/net and the default route' 0 "${detected_interface:-No unused Ethernet interface detected.}"
   fi
-  input_required 'Configure the direct Ethernet device link'
+  input_required 'Direct Ethernet link'
   while true; do
     interface=$(ask 'Raspberry Pi Ethernet interface' "$interface_default")
     [[ "$interface" =~ ^[A-Za-z0-9_.-]+$ ]] && break
@@ -310,7 +310,7 @@ open_inventory_ssh_session() {
 
 discover_for_add() {
   local kind=$1 discovery_scope
-  input_required 'Choose the device discovery scope'
+  input_required 'Discovery scope'
   discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
   if [[ "$discovery_scope" == skip ]]; then
     return
@@ -370,6 +370,7 @@ technical_transcript_start "$root" manage-devices
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 action=${1:-}
+major_step 'Device management' 'Manage printer, scanner and direct Ethernet definitions' 'Review the current inventory, then confirm each requested change before it is saved or applied.'
 if [[ -z "$action" ]]; then
   printf '%s\n' 'Current managed definitions:'
   "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list

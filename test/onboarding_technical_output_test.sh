@@ -98,14 +98,14 @@ check_fail_display=$(<"$display_file")
 [[ "$check_fail_display" == *'Technical details'* ]]
 [[ "$check_fail_display" == *'fail-output'* ]]
 
-# step_action shares step_check's display policy: a passing action stays quiet (the box no
-# longer means "something worth reading" if it appears after every success), and the same
-# action failing, or TECHNICAL_VERBOSE being set, still opens the box.
+# A passing action is always visible: it is labelled as a state-changing operation and its
+# captured raw output is shown. Checks remain compact unless they fail or verbose mode is set.
 out=''
 step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
 action_display=$(<"$display_file")
 [[ "$action_display" == *'[  OK  ]'* ]]
-[[ "$action_display" != *'Technical details'* ]]
+[[ "$action_display" == *'Action: Restarting a service'* ]]
+[[ "$action_display" == *'action-output'* ]]
 grep -Fq 'action-output' "$technical_transcript"
 
 out=''

@@ -95,8 +95,10 @@ need ansible-playbook
 need ansible-galaxy
 need ssh
 printf '%s\n' 'Raspberry Pi print and scan server onboarding'
-printf '%s\n' 'Only non-secret inventory values are written. Ansible prompts for passwords when required.'
-printf '%s\n' 'Detected administrator tooling: Bash, SSH and Ansible are available. No action is needed for these tools.'
+detail_block 'Before you begin' \
+  'Inventory|Only non-secret values are written' \
+  'Passwords|Requested only when needed and never stored' \
+  'Tools|Bash, SSH and Ansible are ready'
 printf '%s\n' '' 'This guided setup has five steps:' \
   '  1. Connect to the Raspberry Pi and check administrator access.' \
   '  2. Confirm the trusted home network.' \
@@ -113,7 +115,7 @@ if step_check administrator_cidr 'Detect the local network containing the Raspbe
 else
   printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the Raspberry Pi address manually.'
 fi
-input_required 'Choose the network search scope'
+input_required 'Network search'
 if [[ -n "$administrator_cidr" ]]; then
   search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (detected, other, skip)' 'detected' detected other skip)
 else
@@ -155,6 +157,7 @@ if [[ "$search_choice" != skip ]]; then
     fi
   fi
 fi
+input_required 'Connection'
 while true; do
   host=$(ask 'Raspberry Pi hostname or IP address' "$host_default")
   resolution_output=''
@@ -204,20 +207,23 @@ timezone=${timezone:-"$(saved_scalar common_timezone Europe/Berlin)"}
 locale=${locale:-"$(saved_scalar common_locale en_US.UTF-8)"}
 printf 'Detected Raspberry Pi settings: IPv4 network %s, timezone %s, locale %s.\n' "${suggested_cidr:-not detected}" "$timezone" "$locale"
 printf '%s\n' 'The detected timezone and locale were set in Raspberry Pi Imager and will be kept. No input is needed for them.'
+setting_group 'Trusted IPv4 LAN'
 printf '%s\n' 'Choose the normal home-LAN subnet. A CIDR is the whole network range, for example 192.168.178.0/24, not the Raspberry Pi address. Accept the suggestion unless printing clients use another trusted VLAN.'
 while true; do
   cidr=$(ask_detected 'Trusted IPv4 LAN CIDR' "${suggested_cidr:-192.168.1.0/24}" 'Do not enter the Raspberry Pi address itself.')
   valid_ipv4_cidr "$cidr" && break
   printf '%s\n' 'Invalid IPv4 CIDR. Use four numbers from 0 to 255 followed by /0 to /32, for example 192.168.178.0/24.' >&2
 done
+setting_group 'Trusted IPv6 LAN (optional)'
 printf '%s\n' 'Leave IPv6 empty unless the home network actively uses a known local IPv6 prefix.'
 while true; do
   ipv6_cidr=$(ask 'Optional trusted IPv6 CIDR' '')
   [[ -z "$ipv6_cidr" ]] || valid_ipv6_cidr "$ipv6_cidr" && break
   printf '%s\n' 'Invalid IPv6 CIDR. Use a local IPv6 prefix followed by /0 to /128, or leave it empty.' >&2
 done
+confirmation_block 'Trusted network' "IPv4|$cidr" "IPv6|${ipv6_cidr:-not configured}" "Timezone|$timezone" "Locale|$locale"
 stage '3/5' 'Find Printers and Scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
-input_required 'Choose the device discovery scope'
+input_required 'Discovery scope'
 discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
 stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
@@ -243,7 +249,7 @@ while true; do
   printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
 done
 printf 'Timezone and locale are inherited from Raspberry Pi Imager: %s, %s.\n' "$timezone" "$locale"
-input_required 'Choose the device connection'
+input_required 'Printer connection'
 printf '\n'
 printf '%s\n' 'Choose how this device reaches the Raspberry Pi. This controls which discovery and connection settings are used.'
 printf '%s\n' 'Connection preference, when the device supports it:' \
@@ -369,6 +375,9 @@ printer_drivers=("$driver")
 printer_profiles=("$profile")
 printer_usb_modes=("$usb_mode")
 printer_usb_identities=("$usb_identity")
+confirmation_block 'Printer connection' \
+  "Queue|$queue" "Connection|$connection" "URI|$uri" "Driver|$driver" \
+  "USB mode|${usb_mode:-not applicable}" "USB ID|${usb_identity:-not applicable}"
 subsection 'Additional Devices'
 printf '%s\n' 'Add another printer or scanner only when it should be managed separately.'
 while yes 'Add another printer?'; do

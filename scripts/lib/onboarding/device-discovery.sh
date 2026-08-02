@@ -391,6 +391,7 @@ discover_devices() {
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
   printf '%s\n' 'Discovery can find printers and scanners that are visible on the trusted LAN or connected by USB.'
+  input_required 'Discovery tools'
   recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
   if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
     rm -f "$discovery_log"
@@ -539,6 +540,10 @@ discover_devices() {
   fi
 
   printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}"
+  detail_block 'Discovery result' \
+    "Printers|${#printer_candidates[@]} candidate(s)" \
+    "Scanners|${#scanner_candidates[@]} candidate(s)" \
+    "Scope|$discovery_scope"
   (( ${#printer_candidates[@]} > 0 )) || no_printer_discovery_guidance
   if (( ${#scanner_candidates[@]} == 0 )); then
     sane_discovery_outcome "$scanner_output"

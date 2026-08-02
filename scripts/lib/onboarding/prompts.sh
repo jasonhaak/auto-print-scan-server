@@ -1,26 +1,54 @@
 #!/usr/bin/env bash
 
 need() { command -v "$1" >/dev/null || { printf 'Missing command: %s\n' "$1" >&2; exit 1; }; }
-cli_heading() {
-  local text=$1
-  if declare -F cli_color >/dev/null; then
-    cli_color '1;36' "$text"
+cli_color() {
+  local code=$1 text=$2
+  if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]]; then
+    printf '\033[%sm%s\033[0m' "$code" "$text"
   else
     printf '%s' "$text"
   fi
 }
-stage() {
-  local recap=${4:-}
-  printf '\n%s\n%s\n%s\n\n%s\n' "$(cli_heading '════════════════════════════════════════════════════')" "$(cli_heading "[$1] $2")" "$(cli_heading '════════════════════════════════════════════════════')" "$3"
-  [[ -n "$recap" ]] && printf 'So far: %s\n' "$recap"
+cli_heading() {
+  cli_color '1;36' "$1"
+}
+major_step() {
+  local number=$1 title=$2 purpose=$3 recap=${4:-}
+  printf '\n%s\n%s\n%s\n%s\n' "$(cli_heading '══════════════════════════════════════════════')" "$(cli_heading "$number · $title")" "$(cli_heading '══════════════════════════════════════════════')" "$purpose" >&2
+  [[ -n "$recap" ]] && printf 'Context: %s\n' "$recap" >&2
   return 0
 }
-recommendation() { printf '\n%s\n  %s\n' "$(cli_heading 'Recommendation')" "$1"; }
+detail_block() {
+  local title=$1 item key value
+  shift
+  printf '\n%s\n' "$(cli_heading "──────────────── $title ────────────────")" >&2
+  for item in "$@"; do
+    key=${item%%|*}; value=${item#*|}
+    printf '  %-12s %s\n' "$key" "$value" >&2
+  done
+}
+confirmation_block() {
+  local title=$1 item key value
+  shift
+  printf '\n%s\n' "$(cli_heading "Confirmed · $title")" >&2
+  for item in "$@"; do
+    key=${item%%|*}; value=${item#*|}
+    printf '  %-12s %s\n' "$key:" "$value" >&2
+  done
+}
+setup_status() { printf '%s %s\n' "$(cli_color '32' '✓')" "$1" >&2; }
+setting_group() { detail_block "$1"; }
+group_header() { printf '%s\n' "$(cli_heading "──────────────── $1 ────────────────")" >&2; }
+stage() {
+  local recap=${4:-}
+  major_step "$1" "$2" "$3" "$recap"
+  return 0
+}
+recommendation() { printf '\n%s\n  %s\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
 subsection() { printf '\n%s\n' "$(cli_heading "──── $1 ────")"; }
-input_required() { printf '\n%s\n' "$(cli_heading "Input required: $1")"; }
+input_required() { group_header "$1"; }
 ask() {
   local raw value
-  printf '\n' >&2
   read -r -p "$1 [$2]: " raw
   value=${raw:-$2}
   # On an interactive terminal, a typed value is already visible from the terminal's own echo;
@@ -29,6 +57,7 @@ ask() {
   if [[ -z "$raw" ]] || ! interactive_terminal; then
     printf 'Selected: %s\n' "$value" >&2
   fi
+  printf '\n' >&2
   printf '%s' "$value"
 }
 ask_detected() {
@@ -38,24 +67,26 @@ ask_detected() {
 }
 yes() {
   local value
-  printf '\n' >&2
   read -r -p "$1 [y/N]: " value
   if [[ "$value" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     printf '%s\n' 'Selected: yes' >&2
+    printf '\n' >&2
     return 0
   fi
   printf '%s\n' 'Selected: no' >&2
+  printf '\n' >&2
   return 1
 }
 yes_default() {
   local value
-  printf '\n' >&2
   read -r -p "$1 [Y/n]: " value
   if [[ -z "$value" || "$value" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     printf '%s\n' 'Selected: yes' >&2
+    printf '\n' >&2
     return 0
   fi
   printf '%s\n' 'Selected: no' >&2
+  printf '\n' >&2
   return 1
 }
 
@@ -78,7 +109,6 @@ ask_choice() {
   local prompt=$1 default=$2 raw value option
   shift 2
   while true; do
-    printf '\n' >&2
     read -r -p "$prompt [$default]: " raw
     value=${raw:-$default}
     for option in "$@"; do
@@ -88,6 +118,7 @@ ask_choice() {
         if [[ -z "$raw" ]] || ! interactive_terminal; then
           printf 'Accepted choice: %s\n' "$value" >&2
         fi
+        printf '\n' >&2
         printf '%s' "$value"
         return
       fi
