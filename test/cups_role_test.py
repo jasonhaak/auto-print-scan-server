@@ -30,8 +30,8 @@ class CupsRoleTest(unittest.TestCase):
 
         profile_task = tasks[profile_index]
         self.assertEqual(
-            profile_task["when"],
-            None if "when" not in profile_task else profile_task["when"],
+            profile_task["loop"],
+            "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}",
         )
         self.assertIn("cups_available_models.stdout", profile_task["ansible.builtin.assert"]["that"])
 
