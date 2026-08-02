@@ -9,6 +9,7 @@ source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/server-discovery.sh"
 source "$root/scripts/lib/onboarding/ssh-session.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/device-decisions.sh"
 source "$root/scripts/lib/onboarding/legacy-driver.sh"
 source "$root/scripts/lib/onboarding/technical-output.sh"
 ssh_socket=''
@@ -370,9 +371,9 @@ fi
 profile=''
 printer_identity_evidence=''
 if [[ "$driver" == package_profile ]]; then
-  recommend_legacy_profile "$uri"
-  printer_identity_evidence=${legacy_printer_identity_evidence:-}
-  profile=$(choose_package_profile '')
+  collect_legacy_printer_profile "$uri" ''
+  printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
+  profile=$COLLECTED_PRINTER_PROFILE
 fi
 printer_queues=("$queue")
 printer_connections=("$connection")
@@ -383,9 +384,7 @@ printer_identity_evidences=("$printer_identity_evidence")
 printer_cups_models=('')
 printer_usb_modes=("$usb_mode")
 printer_usb_identities=("$usb_identity")
-confirmation_block 'Printer connection' \
-  "Queue|$queue" "Connection|$connection" "URI|$uri" "Driver|$driver" \
-  "USB mode|${usb_mode:-not applicable}" "USB ID|${usb_identity:-not applicable}"
+printer_connection_confirmation "$queue" "$connection" "$uri" "$driver" "$usb_mode" "$usb_identity"
 subsection 'Additional Devices'
 printf '%s\n' 'Add another printer or scanner only when it should be managed separately.'
 while yes 'Add another printer?'; do
@@ -447,9 +446,9 @@ while yes 'Add another printer?'; do
   extra_profile=''
   extra_printer_identity_evidence=''
   if [[ "$extra_driver" == package_profile ]]; then
-    recommend_legacy_profile "$extra_uri"
-    extra_printer_identity_evidence=${legacy_printer_identity_evidence:-}
-    extra_profile=$(choose_package_profile '')
+    collect_legacy_printer_profile "$extra_uri" ''
+    extra_printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
+    extra_profile=$COLLECTED_PRINTER_PROFILE
   fi
   printer_queues+=("$extra_queue")
   printer_connections+=("$extra_connection")
@@ -475,11 +474,14 @@ if [[ "${discovered_scanner:-false}" == true ]]; then
   input_required 'Scanner backend'
   if [[ "$scanner_backend_install" == false ]]; then
     printf '%s\n' "Detected preinstalled SANE backend: $scanner_backend. Onboarding will retain this backend but will not install, update or register it."
+    scanner_backend=$(ask 'SANE backend name' "$scanner_backend")
+    scanner_backend_install=$(ask_choice 'Install this backend package with APT' "$scanner_backend_install" true false)
   else
     printf '%s\n' 'The detected SANE backend package is installed during commissioning.'
+    collect_scanner_backend "$scanner_connection" "$scanner_backend" "$scanner_backend_install"
+    scanner_backend=$COLLECTED_SCANNER_BACKEND
+    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   fi
-  scanner_backend=$(ask 'SANE backend name' "$scanner_backend")
-  scanner_backend_install=$(ask_choice 'Install this backend package with APT' "$scanner_backend_install" true false)
   if [[ "$scanner_connection" == usb ]]; then
     scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
   fi
@@ -492,9 +494,9 @@ else
   if yes 'Configure a different scanner?'; then
     scanner=true
     scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-    scanner_backend_guidance "$scanner_connection"
-    scanner_backend=$(ask 'SANE backend name' "$(scanner_backend_default "$scanner_connection")")
-    scanner_backend_install=$(ask_choice 'Install this backend package with APT' true true false)
+    collect_scanner_backend "$scanner_connection" "$(scanner_backend_default "$scanner_connection")" true
+    scanner_backend=$COLLECTED_SCANNER_BACKEND
+    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
     scanner_uri=$(ask 'Optional scanner device URI' '')
     scanner_usb_mode=''
     [[ "$scanner_connection" == usb ]] && scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
@@ -557,9 +559,9 @@ while yes 'Add another scanner?'; do
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   extra_scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-  scanner_backend_guidance "$extra_scanner_connection"
-  extra_scanner_backend=$(ask 'SANE backend name' "$(scanner_backend_default "$extra_scanner_connection")")
-  extra_scanner_backend_install=$(ask_choice 'Install this backend package with APT' true true false)
+  collect_scanner_backend "$extra_scanner_connection" "$(scanner_backend_default "$extra_scanner_connection")" true
+  extra_scanner_backend=$COLLECTED_SCANNER_BACKEND
+  extra_scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   extra_scanner_usb_mode=''
   [[ "$extra_scanner_connection" == usb ]] && extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
   scanner_device_names+=("$extra_scanner_name")
@@ -608,12 +610,12 @@ if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
   for index in "${!printer_queues[@]}"; do
     [[ "${printer_drivers[$index]}" == package_profile ]] || continue
     printf 'Preparing the legacy model choice for queue %s.\n' "${printer_queues[$index]}" >&2
-    prepare_and_choose_cups_model "${printer_profiles[$index]}" "${printer_uris[$index]}" "${printer_identity_evidences[$index]}" || {
+    prepare_legacy_printer_model "${printer_profiles[$index]}" "${printer_uris[$index]}" "${printer_identity_evidences[$index]}" || {
       printf '%s\n' 'A CUPS model must be selected for every package-profile printer before commissioning.' >&2
       exit 1
     }
-    printer_cups_models[$index]=$LEGACY_SELECTED_CUPS_MODEL
-    printer_profiles[$index]=$LEGACY_SELECTED_PACKAGE_PROFILE
+    printer_cups_models[$index]=$COLLECTED_PRINTER_CUPS_MODEL
+    printer_profiles[$index]=$COLLECTED_PRINTER_PROFILE
   done
   rm -f "$host_tmp"
   host_tmp=''

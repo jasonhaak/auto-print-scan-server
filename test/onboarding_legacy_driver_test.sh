@@ -3,6 +3,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/scripts/lib/onboarding/legacy-driver.sh"
+source "$root/scripts/lib/onboarding/device-decisions.sh"
 
 prepare_count=0
 package_profile_model_prefix() { printf '%s' 'drv:///brlaser.drv/'; }
@@ -16,6 +17,8 @@ step_check() {
   return 0
 }
 choose_cups_model() { printf '%s' 'drv:///brlaser.drv/br7360.ppd'; }
+recommend_legacy_profile() { legacy_printer_identity_evidence='Brother MFC-7360N'; }
+choose_package_profile() { printf '%s' "${1:-brlaser}"; }
 
 legacy_driver_inventory=/tmp/inventory
 ssh_socket=/tmp/socket
@@ -24,3 +27,7 @@ prepare_and_choose_cups_model brlaser 'usb://Brother/MFC-7360N?serial=one' 'Brot
 [[ "$LEGACY_SELECTED_CUPS_MODEL" == 'drv:///brlaser.drv/br7360.ppd' ]]
 prepare_and_choose_cups_model brlaser 'usb://Brother/MFC-7360N?serial=two' 'Brother MFC-7360N'
 [[ "$prepare_count" == 1 ]]
+
+collect_legacy_printer_profile 'usb://Brother/MFC-7360N?serial=three' brlaser
+[[ "$COLLECTED_PRINTER_PROFILE" == brlaser ]]
+[[ "$COLLECTED_PRINTER_IDENTITY_EVIDENCE" == 'Brother MFC-7360N' ]]

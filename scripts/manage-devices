@@ -9,6 +9,7 @@ helper="$root/scripts/lib/device_inventory.py"
 source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/ssh-session.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/device-decisions.sh"
 source "$root/scripts/lib/onboarding/legacy-driver.sh"
 source "$root/scripts/lib/onboarding/technical-output.sh"
 
@@ -192,22 +193,24 @@ configure_printer() {
   local printer_identity_evidence=''
   cups_model=''
   if [[ "$driver" == package_profile ]]; then
-    recommend_legacy_profile "$uri"
-    printer_identity_evidence=${legacy_printer_identity_evidence:-}
     profile_default=''
     if [[ -n "$original" ]]; then
       profile_default=$(field printer "$original" package_profile)
     fi
-    profile=$(choose_package_profile "$profile_default")
+    collect_legacy_printer_profile "$uri" "$profile_default"
+    printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
+    profile=$COLLECTED_PRINTER_PROFILE
     open_inventory_ssh_session
     legacy_driver_inventory=$inventory
-    prepare_and_choose_cups_model "$profile" "$uri" "$printer_identity_evidence" || {
+    prepare_legacy_printer_model "$profile" "$uri" "$printer_identity_evidence" || {
       printf '%s\n' 'The printer definition was not saved because no advertised CUPS model was selected.' >&2
       return 1
     }
-    cups_model=$LEGACY_SELECTED_CUPS_MODEL
-    profile=$LEGACY_SELECTED_PACKAGE_PROFILE
+    cups_model=$COLLECTED_PRINTER_CUPS_MODEL
+    profile=$COLLECTED_PRINTER_PROFILE
   fi
+
+  printer_connection_confirmation "$name" "$connection" "$uri" "$driver" "$usb_mode" "$usb_identity"
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-printer)
   [[ -n "$original" ]] && command+=(--original-name "$original")
@@ -234,11 +237,11 @@ configure_scanner() {
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   input_required 'Scanner connection'
-  printf '%s\n' 'Use sane-airscan for most network scanners (eSCL/WSD), sane-utils for a legacy USB scanner, or the exact name of an already installed device backend.'
   connection=$(ask_choice 'Scanner connection (network, ipp, ipps or USB)' "$connection_default" network ipp ipps usb)
   [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
-  backend=$(ask 'SANE backend name' "$backend_default")
-  backend_install=$(ask_choice 'Install this backend package with APT' "$backend_install_default" true false)
+  collect_scanner_backend "$connection" "$backend_default" "$backend_install_default"
+  backend=$COLLECTED_SCANNER_BACKEND
+  backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   usb_mode=''
   usb_identity=''
   if [[ "$connection" == usb ]]; then
