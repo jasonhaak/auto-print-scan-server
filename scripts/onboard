@@ -305,9 +305,8 @@ elif [[ "$topology" != usb && "${discovered_printer_connection:-}" == usb ]]; th
   discovered_printer_uri=''
   discovered_printer_usb_mode=''
 fi
-if [[ "${discovered_scanner_requires_manual_backend:-false}" != true ]] &&
-   { [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
-     [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; }; then
+if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
+   [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; then
   discovered_scanner=false
   discovered_scanner_connection=''
   discovered_scanner_backend=''
@@ -454,29 +453,20 @@ scanner=false
 subsection 'Optional Scanner'
 if [[ "${discovered_scanner:-false}" == true ]]; then
   scanner=true
-  if [[ "${discovered_scanner_requires_manual_backend:-false}" == true ]]; then
-    printf 'Detected scanner %s requires a manually selected SANE backend. The exact device name will be kept.\n' "$discovered_scanner_device_name"
-    scanner_connection=$(ask_choice 'Scanner connection' "${discovered_scanner_connection:-network}" network usb ipp ipps)
-    printf '%s\n' 'This backend-specific scanner needs the package that currently provides its SANE identifier. Do not accept a generic backend unless it recognises this device.'
-    while true; do
-      scanner_backend=$(ask 'SANE backend package' '')
-      [[ -n "$scanner_backend" ]] && break
-      printf '%s\n' 'A SANE backend package is required for this scanner.' >&2
-    done
-  else
-    scanner_connection=$discovered_scanner_connection
-    scanner_backend=$discovered_scanner_backend
-  fi
+  scanner_connection=$discovered_scanner_connection
+  scanner_backend=$discovered_scanner_backend
   scanner_uri=''
   scanner_usb_mode=${discovered_scanner_usb_mode:-}
-  if [[ "$scanner_connection" == usb && "${discovered_scanner_requires_manual_backend:-false}" == true ]]; then
-    scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-legacy_usb}" ipp_usb legacy_usb)
-  elif [[ "$scanner_connection" == usb && -z "$scanner_usb_mode" ]]; then
+  if [[ "$scanner_connection" == usb && -z "$scanner_usb_mode" ]]; then
     scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
   fi
 else
+  if [[ -n "${discovered_unsupported_scanner_device_name:-}" ]]; then
+    unsupported_scanner_guidance "$discovered_unsupported_scanner_device_name"
+    printf '%s\n' 'This onboarding run will not install or register an unverified scanner backend.'
+  fi
   printf '%s\n' 'Choose a scanner only when it is connected. Browser scanning is the normal cross-platform option and lets users choose from configured scanners.'
-  if yes 'Configure a scanner?'; then
+  if yes 'Configure a different scanner?'; then
     scanner=true
     scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
     scanner_backend_guidance "$scanner_connection"

@@ -136,15 +136,6 @@ sane_scanner_candidates() {
       *libusb*|usb:*)
         printf '%s (SANE USB detected)|usb|sane-utils|legacy_usb|%s\n' "$scanner_identifier" "$scanner_identifier"
         ;;
-      brother:bus*)
-        printf '%s (manual backend required)|usb|manual|legacy_usb|%s\n' "$scanner_identifier" "$scanner_identifier"
-        ;;
-      brother:net*)
-        printf '%s (manual backend required)|network|manual||%s\n' "$scanner_identifier" "$scanner_identifier"
-        ;;
-      *)
-        printf '%s (manual backend required)|network|manual||%s\n' "$scanner_identifier" "$scanner_identifier"
-        ;;
     esac
   done <<<"$output"
 }
@@ -216,6 +207,13 @@ sane_discovery_outcome() {
   else
     printf '%s\n' 'SANE discovery returned no usable device identifier.'
   fi
+}
+
+unsupported_scanner_guidance() {
+  local identifier=$1
+  printf 'Unsupported scanner detected: %s\n' "$identifier"
+  printf '%s\n' 'Automatic configuration is unavailable because its SANE backend and transport could not be verified.'
+  printf '%s\n' 'Manual experimental setup requires a compatible backend, any required device registration and one successful test scan before it is added to a managed workflow.'
 }
 
 no_printer_discovery_guidance() {
@@ -559,8 +557,8 @@ discover_devices() {
     if [[ -n "$scanner_hint_output" ]]; then
       printf '%s\n' 'A scanner was advertised on the LAN but SANE did not report an exact usable identifier. Review the technical output, confirm the scanner protocol is enabled and retry before configuring it manually.'
     elif [[ -n "$(first_sane_scanner_identifier "$scanner_output")" ]]; then
-      discovered_scanner_device_name=$(first_sane_scanner_identifier "$scanner_output")
-      printf 'SANE reported scanner %s, but its transport is backend-specific and could not be inferred safely. The exact identifier will be suggested during manual scanner setup.\n' "$discovered_scanner_device_name"
+      discovered_unsupported_scanner_device_name=$(first_sane_scanner_identifier "$scanner_output")
+      unsupported_scanner_guidance "$discovered_unsupported_scanner_device_name"
     elif sane_hardware_detected "$scanner_hardware_output"; then
       printf '%s\n' 'Scanner-like USB hardware was found, but SANE did not report a usable device identifier. Install the device-compatible SANE backend, then run scanimage -L again.'
     else
@@ -583,11 +581,6 @@ discover_devices() {
     choice=$(choose_candidate 'Discovered scanners. Select one to configure or enter details manually.' "${scanner_candidates[@]}")
     if [[ "$choice" != manual ]]; then
       IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$choice"
-      if [[ "$discovered_scanner_backend" == manual ]]; then
-        discovered_scanner_requires_manual_backend=true
-      else
-        discovered_scanner_requires_manual_backend=false
-      fi
       discovered_scanner=true
       printf 'Selected detected scanner: %s. Its detected settings will be suggested below.\n' "$selected_scanner_label"
     fi
