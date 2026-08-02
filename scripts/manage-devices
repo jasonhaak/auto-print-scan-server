@@ -9,6 +9,7 @@ helper="$root/scripts/lib/device_inventory.py"
 source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/ssh-session.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/legacy-driver.sh"
 source "$root/scripts/lib/onboarding/technical-output.sh"
 
 TECHNICAL_VERBOSE=false
@@ -117,7 +118,7 @@ default_printer_uri() {
 }
 
 configure_printer() {
-  local original=${1:-} name connection uri driver shared profile usb_mode usb_identity link_interface link_device_ipv4 command_output
+  local original=${1:-} name connection uri driver shared profile cups_model usb_mode usb_identity link_interface link_device_ipv4 command_output
   local uri_default usb_mode_default profile_default
   local name_default=printer connection_default=${discovered_printer_connection:-ipp} driver_default=driverless shared_default=true
   if [[ -n "$original" ]]; then
@@ -188,19 +189,31 @@ configure_printer() {
   fi
   shared=$(ask_choice 'Share this queue on the trusted LAN' "$shared_default" true false)
   profile=''
+  local printer_identity_evidence=''
+  cups_model=''
   if [[ "$driver" == package_profile ]]; then
     recommend_legacy_profile "$uri"
+    printer_identity_evidence=${legacy_printer_identity_evidence:-}
     profile_default=''
     if [[ -n "$original" ]]; then
       profile_default=$(field printer "$original" package_profile)
     fi
     profile=$(choose_package_profile "$profile_default")
+    open_inventory_ssh_session
+    legacy_driver_inventory=$inventory
+    prepare_and_choose_cups_model "$profile" "$uri" "$printer_identity_evidence" || {
+      printf '%s\n' 'The printer definition was not saved because no advertised CUPS model was selected.' >&2
+      return 1
+    }
+    cups_model=$LEGACY_SELECTED_CUPS_MODEL
+    profile=$LEGACY_SELECTED_PACKAGE_PROFILE
   fi
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-printer)
   [[ -n "$original" ]] && command+=(--original-name "$original")
   command+=(--name "$name" --connection "$connection" --device-uri "$uri" --driver-mode "$driver" --shared "$shared")
   [[ -n "$profile" ]] && command+=(--package-profile "$profile")
+  [[ -n "$cups_model" ]] && command+=(--cups-model "$cups_model")
   [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
   [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
   step_action command_output 'Save the managed printer definition' 'device_inventory.py upsert-printer' "${command[@]}"

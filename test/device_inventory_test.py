@@ -181,6 +181,26 @@ scanservjs_ocr_languages: [eng]
         self.assertIn("driverless IPP or DNS-SD URI", incompatible.stderr)
         self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
 
+    def test_package_profile_requires_and_persists_an_exact_cups_model(self):
+        missing = self.run_helper(
+            "upsert-printer", "--name", "legacy", "--connection", "usb",
+            "--device-uri", "usb://Brother/Printer", "--driver-mode", "package_profile",
+            "--package-profile", "brlaser", "--usb-mode", "legacy_usb",
+            "--usb-identity", "04f9:0270", "--shared", "true", check=False,
+        )
+        self.assertIn("CUPS model", missing.stderr)
+        self.run_helper(
+            "upsert-printer", "--name", "legacy", "--connection", "usb",
+            "--device-uri", "usb://Brother/Printer", "--driver-mode", "package_profile",
+            "--package-profile", "brlaser", "--cups-model", "drv:///brlaser.drv/br7360.ppd",
+            "--usb-mode", "legacy_usb", "--usb-identity", "04f9:0270", "--shared", "true",
+        )
+        self.assertEqual(self.load()["managed_printers"][1]["cups_model"], "drv:///brlaser.drv/br7360.ppd")
+
+    def test_reports_a_profile_model_prefix_without_inventory(self):
+        result = run_standalone("profile-model-prefix", "brlaser")
+        self.assertEqual(result.stdout, "drv:///brlaser.drv/\n")
+
     def test_reads_fields_for_prompt_defaults(self):
         result = self.run_helper("field", "printer", "office", "device_uri")
         self.assertEqual(result.stdout, "ipp://office.local/ipp/print")

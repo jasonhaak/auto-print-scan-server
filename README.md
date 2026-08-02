@@ -169,7 +169,7 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 | `lpd` | Older network printer | Requires the exact remote queue and normally a package profile. The Raspberry Pi does not host LPD. |
 | `usb` | Locally connected printer | Requires `ipp_usb` or `legacy_usb`. |
 
-For a legacy printer, use `driver_mode: package_profile`. When the printer's URI is `ipp://` or `ipps://`, onboarding queries its identity before you pick a profile and recommends matching repository profiles as evidence, not a claim of support; a `socket://` or `lpd://` printer has no such probe available and profile selection stays fully manual. An advisory playbook (`playbooks/discover-printer.yml`) repeats this same identity check once the printer is reachable after commissioning. The OpenPrinting driverless database is linked as an optional reference. No device details are sent and no profile is selected automatically.
+For a legacy printer, use `driver_mode: package_profile`. Onboarding first prepares the selected generic driver package, then lists the exact CUPS models advertised by that Raspberry Pi and requires an explicit choice. The queue stores both `package_profile` and `cups_model`; a future printer model therefore does not require a repository change. When the URI is `ipp://` or `ipps://`, onboarding may recommend a package profile from identity evidence, but never selects it automatically.
 
 ### Device Topologies
 
@@ -214,6 +214,7 @@ managed_printers:
     device_uri: socket://label-printer.local:9100
     driver_mode: package_profile
     package_profile: brlaser
+    cups_model: drv:///brlaser.drv/br7360.ppd
 managed_scanners:
   - device_name: airscan:e0:Office Scanner
     connection: ipp

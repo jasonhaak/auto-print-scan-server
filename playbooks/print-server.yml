@@ -3,7 +3,7 @@
   hosts: print_servers
   become: true
   vars_files:
-    - ../vars/package_profiles.yml
+    - ../vars/driver_profiles.yml
   roles:
     - role: device_definition
       tags: device_definition

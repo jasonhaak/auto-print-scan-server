@@ -31,7 +31,7 @@ PRINTER_URI_SCHEMES = {
     "usb": {"dnssd", "ipp", "ipps", "usb"},
 }
 OCR_LANGUAGE_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
-PACKAGE_PROFILES_PATH = Path(__file__).resolve().parents[2] / "vars/package_profiles.yml"
+PACKAGE_PROFILES_PATH = Path(__file__).resolve().parents[2] / "vars/driver_profiles.yml"
 
 
 class InventoryError(ValueError):
@@ -47,6 +47,18 @@ def known_package_profiles() -> set[str]:
     if not isinstance(profiles, dict):
         raise InventoryError("package profile registry must contain package_profiles")
     return set(profiles)
+
+
+def package_profile_model_prefix(name: str) -> str:
+    try:
+        data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise InventoryError(f"package profile registry is unavailable: {error}") from error
+    profiles = data.get("package_profiles") if isinstance(data, dict) else None
+    profile = profiles.get(name) if isinstance(profiles, dict) else None
+    if not isinstance(profile, dict):
+        raise InventoryError(f"unknown package profile {name!r}")
+    return require_text(profile.get("model_prefix"), f"package profile {name!r} model_prefix")
 
 
 def matching_package_profiles(identity_evidence: str) -> list[tuple[str, str]]:
@@ -127,6 +139,7 @@ def validate_printer(printer: Any) -> None:
         profile = require_text(printer.get("package_profile"), f"printer {name!r} package profile")
         if profile not in known_package_profiles():
             raise InventoryError(f"printer {name!r} has unknown package profile {profile!r}")
+        require_text(printer.get("cups_model"), f"printer {name!r} CUPS model")
 
     shared = printer.get("shared", True)
     if not isinstance(shared, bool):
@@ -356,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     printer.add_argument("--driver-mode", required=True, choices=["driverless", "package_profile"])
     printer.add_argument("--shared", required=True, type=parse_bool)
     printer.add_argument("--package-profile")
+    printer.add_argument("--cups-model")
     printer.add_argument("--usb-mode", choices=sorted(USB_MODES))
     printer.add_argument("--usb-identity")
 
@@ -383,6 +397,8 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("validate")
     profiles = commands.add_parser("profiles-for-evidence")
     profiles.add_argument("identity_evidence")
+    profile_prefix = commands.add_parser("profile-model-prefix")
+    profile_prefix.add_argument("profile")
     return parser
 
 
@@ -392,6 +408,13 @@ def main() -> int:
         return 0 if printer_uri_is_valid(arguments.connection, arguments.uri) else 1
     if arguments.command == "validate-usb-identity":
         return 0 if usb_identity_is_valid(arguments.identity) else 1
+    if arguments.command == "profile-model-prefix":
+        try:
+            print(package_profile_model_prefix(arguments.profile))
+            return 0
+        except InventoryError as error:
+            print(f"Error: {error}", file=sys.stderr)
+            return 2
     if arguments.inventory is None or arguments.backup_directory is None:
         print("Error: --inventory and --backup-directory are required for this command", file=sys.stderr)
         return 2
@@ -431,6 +454,8 @@ def main() -> int:
             }
             if arguments.package_profile:
                 replacement["package_profile"] = arguments.package_profile
+            if arguments.cups_model:
+                replacement["cups_model"] = arguments.cups_model
             if arguments.usb_mode:
                 replacement["usb_mode"] = arguments.usb_mode
             if arguments.usb_identity:
@@ -439,6 +464,7 @@ def main() -> int:
             selected = find_device(data, "printer", arguments.name)
             if selected["driver_mode"] == "driverless":
                 selected.pop("package_profile", None)
+                selected.pop("cups_model", None)
             if selected["connection"] != "usb":
                 selected.pop("usb_mode", None)
                 selected.pop("usb_identity", None)

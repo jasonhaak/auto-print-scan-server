@@ -9,6 +9,7 @@ source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/server-discovery.sh"
 source "$root/scripts/lib/onboarding/ssh-session.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
+source "$root/scripts/lib/onboarding/legacy-driver.sh"
 source "$root/scripts/lib/onboarding/technical-output.sh"
 ssh_socket=''
 ssh_socket_dir=''
@@ -105,7 +106,7 @@ printf '%s\n' '' 'This guided setup has five steps:' \
   '  3. Find connected printers and scanners.' \
   '  4. Choose the devices and their settings.' \
   '  5. Review everything before the Raspberry Pi is changed.' \
-  'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Production inventory, queues and services are changed only after final confirmation.'
+  'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Legacy driver inspection can install only its selected driver package before final queue confirmation.'
 
 stage '1/5' 'Connect to Your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
 host_default=$(saved_host_value ansible_host print-server.local)
@@ -367,8 +368,10 @@ else
   driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
 fi
 profile=''
+printer_identity_evidence=''
 if [[ "$driver" == package_profile ]]; then
   recommend_legacy_profile "$uri"
+  printer_identity_evidence=${legacy_printer_identity_evidence:-}
   profile=$(choose_package_profile '')
 fi
 printer_queues=("$queue")
@@ -376,6 +379,8 @@ printer_connections=("$connection")
 printer_uris=("$uri")
 printer_drivers=("$driver")
 printer_profiles=("$profile")
+printer_identity_evidences=("$printer_identity_evidence")
+printer_cups_models=('')
 printer_usb_modes=("$usb_mode")
 printer_usb_identities=("$usb_identity")
 confirmation_block 'Printer connection' \
@@ -440,8 +445,10 @@ while yes 'Add another printer?'; do
     extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
   fi
   extra_profile=''
+  extra_printer_identity_evidence=''
   if [[ "$extra_driver" == package_profile ]]; then
     recommend_legacy_profile "$extra_uri"
+    extra_printer_identity_evidence=${legacy_printer_identity_evidence:-}
     extra_profile=$(choose_package_profile '')
   fi
   printer_queues+=("$extra_queue")
@@ -449,6 +456,8 @@ while yes 'Add another printer?'; do
   printer_uris+=("$extra_uri")
   printer_drivers+=("$extra_driver")
   printer_profiles+=("$extra_profile")
+  printer_identity_evidences+=("$extra_printer_identity_evidence")
+  printer_cups_models+=('')
   printer_usb_modes+=("$extra_usb_mode")
   printer_usb_identities+=("$extra_usb_identity")
 done
@@ -590,8 +599,33 @@ for index in "${!printer_queues[@]}"; do
 done
 [[ "$scanner" != true || "$scanner_connection" != usb || "$scanner_usb_mode" == ipp_usb || "$scanner_usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid scanner USB mode.' >&2; exit 1; }
 
+# A package profile identifies a generic Debian driver package. The exact PPD/model is
+# deliberately selected from this Raspberry Pi after that package is prepared.
+if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
+  host_tmp=$(mktemp "$inventory.XXXXXX")
+  printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '        print-server:' "          ansible_host: $(quote "$host")" "          ansible_user: $(quote "$admin")" '          ansible_become: true' >"$host_tmp"
+  legacy_driver_inventory=$host_tmp
+  for index in "${!printer_queues[@]}"; do
+    [[ "${printer_drivers[$index]}" == package_profile ]] || continue
+    printf 'Preparing the legacy model choice for queue %s.\n' "${printer_queues[$index]}" >&2
+    prepare_and_choose_cups_model "${printer_profiles[$index]}" "${printer_uris[$index]}" "${printer_identity_evidences[$index]}" || {
+      printf '%s\n' 'A CUPS model must be selected for every package-profile printer before commissioning.' >&2
+      exit 1
+    }
+    printer_cups_models[$index]=$LEGACY_SELECTED_CUPS_MODEL
+    printer_profiles[$index]=$LEGACY_SELECTED_PACKAGE_PROFILE
+  done
+  rm -f "$host_tmp"
+  host_tmp=''
+fi
+
 stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
-printf 'Pi: %s\nTrusted LAN: %s\nPrinters: %s\n' "$host" "$cidr" "${printer_queues[*]}"
+printf 'Pi: %s\nTrusted LAN: %s\nPrinters:\n' "$host" "$cidr"
+for index in "${!printer_queues[@]}"; do
+  printf '  %s: %s' "${printer_queues[$index]}" "${printer_drivers[$index]}"
+  [[ -n "${printer_profiles[$index]}" ]] && printf ', profile %s, model %s' "${printer_profiles[$index]}" "${printer_cups_models[$index]}"
+  printf '\n'
+done
 (( ${#scanner_device_names[@]} > 0 )) && printf 'Scanners: %s, retention %s days, OCR %s, ScanservJS port %s\n' "${scanner_device_names[*]}" "$retention" "$ocr" "$scanservjs_port"
 [[ -n "$authorized_key" ]] && printf '%s\n' 'Future SSH access: install the detected administrator public key'
 printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
@@ -625,6 +659,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
       "$(quote "${printer_queues[$index]}")" "$(quote "${printer_connections[$index]}")" \
       "$(quote "${printer_uris[$index]}")" "$(quote "${printer_drivers[$index]}")"
     [[ -n "${printer_profiles[$index]}" ]] && printf '    package_profile: %s\n' "$(quote "${printer_profiles[$index]}")"
+    [[ -n "${printer_cups_models[$index]}" ]] && printf '    cups_model: %s\n' "$(quote "${printer_cups_models[$index]}")"
     [[ -n "${printer_usb_modes[$index]}" ]] && printf '    usb_mode: %s\n' "$(quote "${printer_usb_modes[$index]}")"
     [[ -n "${printer_usb_identities[$index]}" ]] && printf '    usb_identity: %s\n' "$(quote "${printer_usb_identities[$index]}")"
   done

@@ -8,6 +8,7 @@
       - item.connection in ['usb', 'ipp', 'ipps', 'socket', 'lpd']
       - item.driver_mode in ['driverless', 'package_profile']
       - item.device_uri | length > 0
+      - item.driver_mode != 'package_profile' or item.cups_model | default('') | length > 0
       - item.connection != 'usb' or item.usb_identity | default('') is match('^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$')
     fail_msg: >-
       Every managed printer requires a unique safe queue name, supported connection, driver mode
@@ -63,11 +64,11 @@
 
 - name: Require each selected package-profile CUPS model
   ansible.builtin.assert:
-    that: package_profiles[item.package_profile].cups_model in cups_available_models.stdout
+    that: item.cups_model in cups_available_models.stdout
     fail_msg: >-
-      Package profile {{ item.package_profile }} is installed, but CUPS does not advertise
-      its required model {{ package_profiles[item.package_profile].cups_model }}. Check
-      lpinfo -m and correct the package profile before retrying.
+      Queue {{ item.name }} selected CUPS model {{ item.cups_model }}, but CUPS does not
+      advertise it after installing package profile {{ item.package_profile }}. Run lpinfo -m
+      on the Raspberry Pi, then choose an advertised model before retrying.
   loop: "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}"
   loop_control:
     label: "{{ item.name }} -> {{ item.package_profile }}"
@@ -138,7 +139,7 @@
       - -v
       - "{{ item.device_uri }}"
       - -m
-      - "{{ 'everywhere' if item.driver_mode == 'driverless' else package_profiles[item.package_profile].cups_model }}"
+      - "{{ 'everywhere' if item.driver_mode == 'driverless' else item.cups_model }}"
       - -D
       - Ansible-managed print server queue
       - -o

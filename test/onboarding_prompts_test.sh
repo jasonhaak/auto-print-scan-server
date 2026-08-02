@@ -73,6 +73,12 @@ fi
 
 profile=$(choose_package_profile '' <<< '')
 [[ "$profile" == brlaser ]]
+[[ "$(package_profile_model_prefix brlaser)" == 'drv:///brlaser.drv/' ]]
+candidate_count=0
+selected_cups_model=$(choose_cups_model brlaser 'usb://Brother/MFC-7360N?serial=example' \
+  $'drv:///brlaser.drv/br7360.ppd Brother MFC-7360N\ndrv:///brlaser.drv/br7040.ppd Brother DCP-7040' \
+  'drv:///brlaser.drv/' <<< '1')
+[[ "$selected_cups_model" == 'drv:///brlaser.drv/br7360.ppd' ]]
 
 valid_printer_uri ipp 'ipp://printer.local/ipp/print'
 valid_printer_uri socket 'socket://printer.local:9100'

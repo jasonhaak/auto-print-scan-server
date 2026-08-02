@@ -234,6 +234,7 @@ tcp_port_is_open() {
 
 recommend_legacy_profile() {
   local uri=$1 identity_output='' profile name description
+  legacy_printer_identity_evidence=''
   case "$uri" in
     ipp://*|ipps://*) ;;
     *)
@@ -246,6 +247,7 @@ recommend_legacy_profile() {
     printf 'The IPP identity query did not succeed. Choose a package profile manually if this printer needs one.\n' >&2
     return
   fi
+  legacy_printer_identity_evidence=$identity_output
   printf '%s\n' 'IPP identity evidence was received. Repository matches below are recommendations only; they do not prove support or select a profile.'
   while IFS='|' read -r name description; do
     [[ -n "$name" ]] && printf 'Recommended profile %s: %s\n' "$name" "$description"

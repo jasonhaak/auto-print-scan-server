@@ -1,0 +1,34 @@
+---
+- name: Prepare selected legacy printer driver packages
+  hosts: print_servers
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../vars/driver_profiles.yml
+  vars:
+    selected_package_profiles: []
+  tasks:
+    - name: Validate selected legacy driver profiles
+      ansible.builtin.assert:
+        that:
+          - item in package_profiles
+          - package_profiles[item].packages is iterable
+          - package_profiles[item].packages | length > 0
+      loop: "{{ selected_package_profiles }}"
+
+    - name: Install CUPS for legacy model inspection
+      ansible.builtin.apt:
+        name: [cups, cups-filters]
+        state: present
+
+    - name: Install selected legacy driver packages
+      ansible.builtin.apt:
+        name: "{{ package_profiles[item].packages }}"
+        state: present
+      loop: "{{ selected_package_profiles }}"
+
+    - name: Start CUPS for legacy model inspection
+      ansible.builtin.service:
+        name: cups
+        enabled: true
+        state: started

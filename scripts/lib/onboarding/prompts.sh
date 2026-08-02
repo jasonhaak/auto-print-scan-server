@@ -180,11 +180,76 @@ choose_package_profile() {
   local -a profiles=()
   while IFS= read -r profile; do
     [[ -n "$profile" ]] && profiles+=("$profile")
-  done < <(sed -nE 's/^  ([A-Za-z0-9_.-]+):$/\1/p' "$root/vars/package_profiles.yml")
+  done < <(sed -nE 's/^  ([A-Za-z0-9_.-]+):$/\1/p' "$root/vars/driver_profiles.yml")
   (( ${#profiles[@]} > 0 )) || { printf '%s\n' 'No package profiles are registered.' >&2; return 1; }
   [[ -n "$default" ]] || default=${profiles[0]}
   printf 'Available package profiles: %s\n' "${profiles[*]}" >&2
   ask_choice 'Explicit package profile' "$default" "${profiles[@]}"
+}
+package_profile_model_prefix() {
+  "$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" profile-model-prefix "$1"
+}
+choose_cups_model() {
+  local profile=$1 uri=$2 models=$3 prefix=$4 evidence=${5:-} candidate model description selection recommended='' identity normalized_description score best_score=0 index recommended_index=0 choice_default
+  local -a candidates=() scores=()
+  identity=${uri%%\?*}
+  identity=${identity##*/}
+  while IFS= read -r candidate; do
+    model=${candidate%%[[:space:]]*}
+    description=${candidate#"$model"}
+    [[ "$model" == "$prefix"* ]] || continue
+    candidates+=("$model${description}|$model")
+    normalized_description=$(tr -cd '[:alnum:]' <<<"${description,,}")
+    score=0
+    for identity in $identity $evidence; do
+      identity=$(tr -cd '[:alnum:]' <<<"${identity,,}")
+      (( ${#identity} >= 4 )) || continue
+      [[ "$normalized_description" == *"$identity"* ]] && ((score++))
+    done
+    scores+=("$score")
+    if (( score > best_score )); then
+      best_score=$score
+      recommended=$model
+      recommended_index=${#candidates[@]}
+    fi
+  done <<<"$models"
+  (( ${#candidates[@]} > 0 )) || {
+    printf 'CUPS did not advertise a model beginning with %s for profile %s. Choose another profile or inspect lpinfo -m on the Raspberry Pi.\n' "$prefix" "$profile" >&2
+    return 1
+  }
+  input_required 'Exact CUPS model'
+  printf '%s\n' 'Choose the exact model advertised by CUPS. This is saved for this queue and verified again during commissioning.' >&2
+  [[ -n "$recommended" ]] && recommendation "Recommended from detected printer identity: $recommended. Confirm it explicitly below."
+  printf '\n%-4s %-46s %s\n' 'No.' 'Model' 'Description' >&2
+  for index in "${!candidates[@]}"; do
+    model=${candidates[$index]##*|}
+    description=${candidates[$index]%%|*}
+    description=${description#"$model"}
+    printf '%-4s %-46s %s%s\n' "$((index + 1))" "$model" "${description# }" \
+      "$([[ "$model" == "$recommended" ]] && printf '  [recommended]')" >&2
+  done
+  printf '%-4s %s\n' "$(( ${#candidates[@]} + 1 ))" 'Enter a listed model manually' >&2
+  choice_default=$(( ${#candidates[@]} + 1 ))
+  (( recommended_index > 0 )) && choice_default=$recommended_index
+  while true; do
+    selection=$(ask 'Choose a number' "$choice_default")
+    [[ "$selection" =~ ^[0-9]+$ ]] || { printf '%s\n' 'Enter a listed number.' >&2; continue; }
+    (( selection >= 1 && selection <= ${#candidates[@]} + 1 )) && break
+    printf '%s\n' 'Enter a listed number.' >&2
+  done
+  if (( selection == ${#candidates[@]} + 1 )); then
+    selection=manual
+  else
+    selection=${candidates[$((selection - 1))]}
+  fi
+  if [[ "$selection" == manual ]]; then
+    while true; do
+      model=$(ask 'Exact CUPS model from lpinfo -m' "${recommended:-${candidates[0]##*|}}")
+      for candidate in "${candidates[@]}"; do [[ "${candidate##*|}" == "$model" ]] && { printf '%s' "$model"; return; }; done
+      printf '%s\n' 'Enter one of the models advertised above.' >&2
+    done
+  fi
+  printf '%s' "${selection##*|}"
 }
 scanner_backend_default() {
   [[ "$1" == usb ]] || printf '%s' sane-airscan

@@ -35,11 +35,20 @@ class CupsRoleTest(unittest.TestCase):
         )
         self.assertIn("cups_available_models.stdout", profile_task["ansible.builtin.assert"]["that"])
 
-    def test_brlaser_profile_uses_the_mfc_7360n_ppd(self):
-        profiles = yaml.safe_load((ROOT / "vars/package_profiles.yml").read_text(encoding="utf-8"))
+    def test_brlaser_profile_is_generic_and_models_are_selected_per_queue(self):
+        profiles = yaml.safe_load((ROOT / "vars/driver_profiles.yml").read_text(encoding="utf-8"))
         self.assertEqual(
-            profiles["package_profiles"]["brlaser"]["cups_model"],
-            "drv:///brlaser.drv/br7360.ppd",
+            profiles["package_profiles"]["brlaser"]["model_prefix"],
+            "drv:///brlaser.drv/",
+        )
+        self.assertNotIn("cups_model", profiles["package_profiles"]["brlaser"])
+
+    def test_queue_reconciliation_uses_the_inventory_model(self):
+        tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
+        reconcile = next(task for task in tasks if task["name"] == "Reconcile managed CUPS queues")
+        self.assertIn(
+            "else item.cups_model",
+            reconcile["ansible.builtin.command"]["argv"][7],
         )
 
 
