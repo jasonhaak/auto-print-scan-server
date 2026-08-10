@@ -257,7 +257,11 @@ source "$root/scripts/lib/onboarding/prompts.sh"
 
 variables="$root/inventories/production/group_vars/print_servers.yml"
 backups="$root/.onboard-backups"
-ONBOARD_PYTHON="$root/.venv/bin/python"
+if [[ -x "$root/.venv/bin/python" ]]; then
+  ONBOARD_PYTHON="$root/.venv/bin/python"
+else
+  ONBOARD_PYTHON=$(command -v python3)
+fi
 
 # socket:// and lpd:// URIs must never trigger an IPP identity probe.
 probe_calls=0
