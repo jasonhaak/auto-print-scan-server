@@ -14,14 +14,14 @@ cli_heading() {
 }
 major_step() {
   local number=$1 title=$2 purpose=$3 recap=${4:-}
-  printf '\n%s\n%s\n%s\n%s\n' "$(cli_heading '══════════════════════════════════════════════')" "$(cli_heading "$number · $title")" "$(cli_heading '══════════════════════════════════════════════')" "$purpose" >&2
+  printf '%s\n%s\n%s\n%s\n' "$(cli_heading '══════════════════════════════════════════════')" "$(cli_heading "$number · $title")" "$(cli_heading '══════════════════════════════════════════════')" "$purpose" >&2
   [[ -n "$recap" ]] && printf 'Context: %s\n\n' "$recap" >&2
   return 0
 }
 detail_block() {
   local title=$1 item key value
   shift
-  printf '\n%s\n' "$(cli_heading "──────────────── $title ────────────────")" >&2
+  printf '%s\n' "$(cli_heading "──────────────── $title ────────────────")" >&2
   for item in "$@"; do
     key=${item%%|*}; value=${item#*|}
     printf '  %-12s %s\n' "$key" "$value" >&2
@@ -30,7 +30,7 @@ detail_block() {
 confirmation_block() {
   local title=$1 item key value
   shift
-  printf '\n%s\n' "$(cli_heading "Confirmed · $title")" >&2
+  printf '%s\n' "$(cli_heading "Confirmed · $title")" >&2
   for item in "$@"; do
     key=${item%%|*}; value=${item#*|}
     printf '  %-12s %s\n' "$key:" "$value" >&2
@@ -60,7 +60,7 @@ stage() {
   return 0
 }
 recommendation() { printf '\n%s\n  %s\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
-subsection() { printf '\n%s\n' "$(cli_heading "──── $1 ────")"; }
+subsection() { printf '%s\n' "$(cli_heading "──── $1 ────")"; }
 input_required() { group_header "$1"; }
 ask() {
   local raw value

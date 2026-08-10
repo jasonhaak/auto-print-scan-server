@@ -161,3 +161,11 @@ printf 'ssh_allow_password_authentication: false\n' >"$workspace/vars-key.yml"
 key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/inventories/production/hosts.yml" playbooks/site.yml -e print_server_commissioning=true 2>&1)
 [[ "$key_command" != *'--ask-pass'* ]]
 [[ "$key_command" == *'--ask-become-pass'* ]]
+
+# Finding 7: ask/yes/yes_default/ask_choice already print a trailing blank line, so
+# major_step/detail_block/confirmation_block/subsection must not also print a leading one --
+# otherwise every prompt-into-block transition shows two blank lines instead of one.
+[[ "$(NO_COLOR=1 major_step '1 of 5' 'Connect' 'purpose' 2>&1 | head -n1)" != '' ]]
+[[ "$(NO_COLOR=1 detail_block 'Title' 'K|V' 2>&1 | head -n1)" != '' ]]
+[[ "$(NO_COLOR=1 confirmation_block 'Title' 'K|V' 2>&1 | head -n1)" != '' ]]
+[[ "$(NO_COLOR=1 subsection 'Title' 2>&1 | head -n1)" != '' ]]
