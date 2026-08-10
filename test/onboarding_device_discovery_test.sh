@@ -111,6 +111,25 @@ deduplicated=$(printf '%s\n' \
   'Printer two|socket|socket://192.0.2.20:9100|' | unique_candidates 3)
 [[ "$deduplicated" == $'Printer one|ipp|ipp://printer.local/ipp/print|\nPrinter two|socket|socket://192.0.2.20:9100|' ]]
 
+ranked=$(printf '%s\n' \
+  'Brother scanner|network|brother||brother:net1;dev0|false' \
+  'AirScan scanner|ipp|sane-airscan||airscan:e0:Office Scanner' \
+  'USB scanner|usb|sane-utils|legacy_usb|genesys:libusb:001:004' | rank_airscan_first)
+[[ "$ranked" == $'AirScan scanner|ipp|sane-airscan||airscan:e0:Office Scanner\nBrother scanner|network|brother||brother:net1;dev0|false\nUSB scanner|usb|sane-utils|legacy_usb|genesys:libusb:001:004' ]]
+
+no_airscan=$(printf '%s\n' \
+  'Brother scanner|network|brother||brother:net1;dev0|false' \
+  'USB scanner|usb|sane-utils|legacy_usb|genesys:libusb:001:004' | rank_airscan_first)
+[[ "$no_airscan" == $'Brother scanner|network|brother||brother:net1;dev0|false\nUSB scanner|usb|sane-utils|legacy_usb|genesys:libusb:001:004' ]]
+
+ipp_usb_ranked=$(printf '%s\n' \
+  'Brother scanner|network|brother||brother:net1;dev0|false' \
+  'IPP-over-USB scanner|usb|sane-airscan|ipp_usb|Office Scanner' | rank_airscan_first)
+[[ "$ipp_usb_ranked" == $'IPP-over-USB scanner|usb|sane-airscan|ipp_usb|Office Scanner\nBrother scanner|network|brother||brother:net1;dev0|false' ]]
+
+grep -q 'rank_airscan_first' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq 'unique_candidates 5 | rank_airscan_first' "$root/scripts/lib/onboarding/device-discovery.sh"
+
 scanner_hints=$(avahi_scanner_hints $'=;eth0;IPv4;Office Scanner;_uscan._tcp;local;scanner.local;192.0.2.40;8080;"rs=eSCL"\n=;eth0;IPv4;Secure Scanner;_uscans._tcp;local;secure.local;192.0.2.41;443;"rs=eSCL"\n=;eth0;IPv4;Legacy Scanner;_scanner._tcp;local;legacy.local;192.0.2.42;6566;')
 [[ "$scanner_hints" == $'Office Scanner at scanner.local:8080 (_uscan._tcp)|scanner.local|8080|_uscan._tcp\nSecure Scanner at secure.local:443 (_uscans._tcp)|secure.local|443|_uscans._tcp\nLegacy Scanner at legacy.local:6566 (_scanner._tcp)|legacy.local|6566|_scanner._tcp' ]]
 

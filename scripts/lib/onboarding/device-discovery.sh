@@ -58,6 +58,16 @@ unique_candidates() {
   awk -F'|' -v key_field="$key_field" 'NF && !seen[$key_field]++'
 }
 
+rank_airscan_first() {
+  awk -F'|' '{
+    if ($3 == "sane-airscan") { preferred[n1++] = $0 } else { rest[n2++] = $0 }
+  }
+  END {
+    for (i = 0; i < n1; i++) print preferred[i]
+    for (i = 0; i < n2; i++) print rest[i]
+  }'
+}
+
 avahi_browse_scan() {
   local status
   remote 'timeout 15s avahi-browse -artp'
@@ -549,7 +559,7 @@ discover_devices() {
     [[ -n "$candidate" ]] && candidate_matches_scope "$candidate" "$discovery_scope" && scanner_candidates+=("$candidate")
   done < <(sane_scanner_candidates "$scanner_output")
   mapfile -t printer_candidates < <(printf '%s\n' "${printer_candidates[@]}" | unique_candidates 3)
-  mapfile -t scanner_candidates < <(printf '%s\n' "${scanner_candidates[@]}" | unique_candidates 5)
+  mapfile -t scanner_candidates < <(printf '%s\n' "${scanner_candidates[@]}" | unique_candidates 5 | rank_airscan_first)
   {
     printf '%s\n%s\n%s\n%s\n' 'Network discovery:' "$network_output" 'USB discovery:' "$usb_output"
     printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' 'IPP-over-USB check:' "$ipp_usb_output" \
