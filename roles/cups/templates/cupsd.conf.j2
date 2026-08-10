@@ -1,8 +1,8 @@
 LogLevel warn
-Listen localhost:631
 {% if device_has_shared_printer %}Port 631
 Browsing Yes
 BrowseLocalProtocols dnssd
+{% else %}Listen localhost:631
 {% endif %}DefaultAuthType Basic
 WebInterface Yes
 PreserveJobFiles No

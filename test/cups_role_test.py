@@ -3,12 +3,30 @@ import unittest
 from pathlib import Path
 
 import yaml
+from jinja2 import Environment, FileSystemLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class CupsRoleTest(unittest.TestCase):
+    def render_cupsd_conf(self, shared):
+        environment = Environment(loader=FileSystemLoader(ROOT / "roles/cups/templates"))
+        return environment.get_template("cupsd.conf.j2").render(
+            device_has_shared_printer=shared,
+            cups_completed_job_history_seconds=86400,
+            trusted_lan_cidrs=["192.168.178.0/24"],
+        )
+
+    def test_shared_cups_listener_does_not_conflict_with_local_listener(self):
+        shared_config = self.render_cupsd_conf(True)
+        local_config = self.render_cupsd_conf(False)
+
+        self.assertIn("Port 631", shared_config)
+        self.assertNotIn("Listen localhost:631", shared_config)
+        self.assertIn("Listen localhost:631", local_config)
+        self.assertNotIn("Port 631", local_config)
+
     def test_starts_and_checks_cups_before_reconciling_queues(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
         names = [task["name"] for task in tasks]
