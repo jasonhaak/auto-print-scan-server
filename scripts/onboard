@@ -622,7 +622,7 @@ done
 # A package profile identifies a generic Debian driver package. The exact PPD/model is
 # deliberately selected from this Raspberry Pi after that package is prepared.
 if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
-  host_tmp=$(mktemp "$inventory.XXXXXX")
+  host_tmp=$(mktemp "${inventory%.yml}.XXXXXX.yml")
   printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '        print-server:' "          ansible_host: $(quote "$host")" "          ansible_user: $(quote "$admin")" '          ansible_become: true' >"$host_tmp"
   legacy_driver_inventory=$host_tmp
   for index in "${!printer_queues[@]}"; do
