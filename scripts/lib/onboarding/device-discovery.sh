@@ -282,6 +282,15 @@ recommend_legacy_profile() {
   done < <("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" --inventory "$variables" --backup-directory "$backups" profiles-for-evidence "$identity_output")
 }
 
+wait_for_cups_ready() {
+  local cups_ready_output=''
+  if ! step_check cups_ready_output 'Wait for the CUPS scheduler to accept commands' 'lpstat -r' \
+    remote 'for attempt in 1 2 3 4 5; do lpstat -r 2>&1 | grep -q "scheduler is running" && exit 0; sleep 1; done; lpstat -r 2>&1; exit 1'; then
+    printf 'CUPS did not report its scheduler running after 5 attempts: %s\n' "$cups_ready_output" >&2
+    return 1
+  fi
+}
+
 verify_cups_job() {
   local queue=$1 submission='' job_id='' state='' attempt=0
   if ! step_action submission "Submit a CUPS test page to $queue" "lp -d $queue /usr/share/cups/data/testprint" \
@@ -514,6 +523,7 @@ discover_devices() {
   remote_tty 'sudo -v'
   step_action command_output 'Start CUPS for endpoint discovery' 'systemctl start cups.service' \
     remote_tty 'sudo systemctl start cups.service' || true
+  wait_for_cups_ready || true
   step_action command_output 'Stop IPP-over-USB for direct endpoint discovery' 'systemctl stop ipp-usb.service' \
     remote_tty 'sudo systemctl stop ipp-usb.service' || true
   step_check lpinfo_before 'CUPS endpoint discovery without ipp-usb' 'lpinfo -v' remote 'timeout 10s lpinfo -v' || true

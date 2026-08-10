@@ -201,6 +201,69 @@ if verify_scanservjs_ready 8080 >/dev/null 2>&1; then
   exit 1
 fi
 
+# systemctl start cups.service returns as soon as the unit starts, not once CUPS is actually
+# ready to answer lpinfo -- unlike the CUPS role's own provisioning path, which polls lpstat -r
+# before touching CUPS. Without the same wait here, lpinfo -v can hit a CUPS that isn't
+# listening yet, hang, and get killed by its 10s timeout, silently producing zero printer
+# candidates on a real Pi even though a printer is connected. wait_for_cups_ready's retry loop
+# runs as a remote shell snippet, so exercise it for real (via remote() { eval "$1"; }, matching
+# the create_scanner_test_pdf tests above) rather than mocking step_check away entirely.
+step_check() {
+  local output_var=$1 purpose=$2 command_label=$3
+  shift 3
+  local output status
+  output=$("$@" 2>&1) && status=0 || status=$?
+  printf -v "$output_var" '%s' "$output"
+  return "$status"
+}
+remote() { eval "$1"; }
+sleep() { :; }
+
+# The retry loop pipes lpstat through grep -q, and the whole snippet runs inside a command
+# substitution, so a plain shell variable can't survive across iterations -- track calls
+# through a file instead, matching scope_recovery_counter_file's pattern further below.
+lpstat_call_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-lpstat-count.XXXXXX")
+printf '0' >"$lpstat_call_counter_file"
+lpstat() {
+  local n
+  n=$(<"$lpstat_call_counter_file")
+  n=$((n + 1))
+  printf '%s' "$n" >"$lpstat_call_counter_file"
+  if (( n >= 3 )); then
+    printf 'scheduler is running\n'
+  else
+    printf 'lpstat: Unable to connect to cupsd\n'
+    return 1
+  fi
+}
+wait_for_cups_ready
+[[ "$(<"$lpstat_call_counter_file")" -eq 3 ]]
+
+printf '0' >"$lpstat_call_counter_file"
+lpstat() {
+  local n
+  n=$(<"$lpstat_call_counter_file")
+  n=$((n + 1))
+  printf '%s' "$n" >"$lpstat_call_counter_file"
+  printf 'lpstat: Unable to connect to cupsd\n'
+  return 1
+}
+never_ready_output=$(wait_for_cups_ready 2>&1) || never_ready_status=$?
+[[ "$never_ready_status" -ne 0 ]]
+# 5 retry attempts plus one final unpiped call to capture the failure output for the error line.
+[[ "$(<"$lpstat_call_counter_file")" -eq 6 ]]
+[[ "$never_ready_output" == *'Unable to connect to cupsd'* ]]
+rm -f "$lpstat_call_counter_file"
+
+unset -f lpstat sleep step_check remote
+grep -q 'wait_for_cups_ready' "$root/scripts/lib/onboarding/device-discovery.sh"
+start_cups_block=$(awk '
+  /Start CUPS for endpoint discovery/ { capturing = 1 }
+  capturing { print }
+  capturing && /CUPS endpoint discovery without ipp-usb/ { exit }
+' "$root/scripts/lib/onboarding/device-discovery.sh")
+[[ "$start_cups_block" == *'wait_for_cups_ready'* ]]
+
 probe_calls=0
 step_check() { probe_calls=$((probe_calls + 1)); return 0; }
 verify_ipp_listener_ready false
