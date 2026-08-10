@@ -175,6 +175,36 @@ if verify_scanservjs_ready 8080 >/dev/null 2>&1; then
   exit 1
 fi
 
+probe_calls=0
+step_check() { probe_calls=$((probe_calls + 1)); return 0; }
+verify_ipp_listener_ready false
+[[ "$probe_calls" -eq 0 ]]
+
+step_check() {
+  local output_var=$1
+  printf -v "$output_var" '%s' "$mock_ipp_listener"
+  return "$mock_ipp_listener_status"
+}
+mock_ipp_listener_status=1
+mock_ipp_listener=''
+not_listening=$(verify_ipp_listener_ready true 2>&1) || true
+[[ "$not_listening" == *'not listening on TCP port 631'* ]]
+
+mock_ipp_listener_status=0
+mock_ipp_listener='LISTEN 0 128 127.0.0.1:631 0.0.0.0:*'
+loopback_only=$(verify_ipp_listener_ready true 2>&1) || true
+[[ "$loopback_only" == *'only on a loopback address'* ]]
+
+mock_ipp_listener='LISTEN 0 128 0.0.0.0:631 0.0.0.0:*'
+lan_facing=$(verify_ipp_listener_ready true)
+[[ "$lan_facing" == *'trusted LAN'* ]]
+
+mock_ipp_listener='LISTEN 0 128 [::]:631 [::]:*'
+lan_facing_v6=$(verify_ipp_listener_ready true)
+[[ "$lan_facing_v6" == *'trusted LAN'* ]]
+
+grep -q 'verify_ipp_listener_ready true' "$root/scripts/onboard"
+
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
 # remote(), enforces test -s on the resulting PDF, and always cleans up its
 # temporary PNG. Mock remote() to actually evaluate the generated command

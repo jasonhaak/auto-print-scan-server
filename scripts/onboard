@@ -719,6 +719,7 @@ while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'a
   exit 1
 done
 printf '%s\n' 'Commissioning completed successfully.'
+verify_ipp_listener_ready true || exit 1
 for driver in "${printer_drivers[@]}"; do
   if [[ "$driver" == package_profile ]]; then
     printf '%s\n' 'Reporting repository package-profile matches for each commissioned legacy (package-profile) printer.'

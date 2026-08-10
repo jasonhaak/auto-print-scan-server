@@ -280,6 +280,21 @@ verify_cups_job() {
   printf 'CUPS job %s is still pending after 30 seconds. The queue and its retry policy were not changed; inspect it with lpstat -W all -l %s.\n' "$job_id" "$job_id"
 }
 
+verify_ipp_listener_ready() {
+  local shared=$1 listener=''
+  [[ "$shared" == true ]] || return 0
+  if ! step_check listener 'Check the CUPS LAN-facing IPP listener' 'ss -ltnH sport = :631' \
+    remote "ss -ltnH 'sport = :631'"; then
+    printf 'CUPS is not listening on TCP port 631. Check systemctl status cups.service before adding this queue from Windows, a phone, or another client.\n' >&2
+    return 1
+  fi
+  if ! grep -Eq '(0\.0\.0\.0|\*|\[::\]):631' <<<"$listener"; then
+    printf 'CUPS is listening on TCP port 631, but only on a loopback address. Shared printers require a LAN-facing listener; check the CUPS configuration before adding this queue from Windows, a phone, or another client.\n' >&2
+    return 1
+  fi
+  printf 'CUPS is listening on TCP port 631 for the trusted LAN.\n'
+}
+
 verify_scanservjs_ready() {
   local port=${1:-8080} listener=''
   if ! step_check listener 'Check ScanservJS local TCP listener' "ss -ltnH sport = :$port" \
