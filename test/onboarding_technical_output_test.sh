@@ -136,6 +136,7 @@ stream_display=$(<"$display_file")
 [[ "$stream_display" == *'line-one'* ]]
 [[ "$stream_display" == *'password=hunter2'* ]]
 [[ "$stream_display" == *'Installing discovery tools'* ]]
+[[ "$stream_display" == *'Action: Installing discovery tools'* ]]
 [[ "$stream_display" == *'[  OK  ]'* ]]
 grep -Fq 'line-one' "$technical_transcript"
 grep -Fq 'password=[REDACTED]' "$technical_transcript"

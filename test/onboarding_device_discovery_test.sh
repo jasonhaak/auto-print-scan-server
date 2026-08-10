@@ -346,6 +346,45 @@ unset -f yes create_scanner_test_pdf
 
 source "$root/scripts/lib/onboarding/prompts.sh"
 
+printer_candidate_output=$(printer_candidate_details \
+  'USB printer (usb://Brother/MFC-7360N?serial=E69717C5N288928)|usb|usb://Brother/MFC-7360N?serial=E69717C5N288928|legacy_usb' \
+  'Network printer (ipp://192.0.2.20/ipp/print)|ipp|ipp://192.0.2.20/ipp/print|' 2>&1)
+[[ "$printer_candidate_output" == *'Candidate 1'* ]]
+[[ "$printer_candidate_output" == *'USB printer (usb://Brother/MFC-7360N?serial=E69717C5N288928)'* ]]
+[[ "$printer_candidate_output" == *'usb://Brother/MFC-7360N?serial=E69717C5N288928'* ]]
+[[ "$printer_candidate_output" == *'legacy_usb'* ]]
+[[ "$printer_candidate_output" == *'Candidate 2'* ]]
+
+scanner_candidate_output=$(scanner_candidate_details 'airscan:e0:Office Scanner (SANE AirScan detected)|ipp|sane-airscan||airscan:e0:Office Scanner' 2>&1)
+[[ "$scanner_candidate_output" == *'Candidate 1'* ]]
+[[ "$scanner_candidate_output" == *'sane-airscan'* ]]
+[[ "$scanner_candidate_output" == *'airscan:e0:Office Scanner'* ]]
+
+grep -q 'printer_candidate_details "\${printer_candidates\[@\]}"' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -q 'scanner_candidate_details "\${scanner_candidates\[@\]}"' "$root/scripts/lib/onboarding/device-discovery.sh"
+
+# Finding 2: the final review screen must recap every collected field through
+# confirmation_block, not a hand-written printf, since it is the last thing shown
+# before production inventory is written and Ansible provisioning starts.
+review_block=$(awk '
+  /^stage .5\/5. .Review and Commission./ { capturing = 1 }
+  capturing { print }
+  capturing && /Write production inventory and commission this Pi/ { exit }
+' "$root/scripts/onboard")
+[[ -n "$review_block" ]]
+[[ "$review_block" == *"confirmation_block 'Server'"* ]]
+[[ "$review_block" == *'confirmation_block "Printer:'* ]]
+[[ "$review_block" == *'confirmation_block "Scanner:'* ]]
+[[ "$review_block" == *"confirmation_block 'ScanservJS'"* ]]
+for field in hostname timezone locale ipv6_cidr direct_ethernet_interface authorized_key \
+  printer_connections printer_uris printer_drivers printer_usb_modes printer_usb_identities \
+  scanner_backends scanner_backend_installs scanner_usb_modes page_splitting; do
+  if [[ "$review_block" != *"\$$field"* && "$review_block" != *"\${$field"* ]]; then
+    printf 'Review screen never references %s\n' "$field" >&2
+    exit 1
+  fi
+done
+
 variables="$root/inventories/production/group_vars/print_servers.yml"
 backups="$root/.onboard-backups"
 if [[ -x "$root/.venv/bin/python" ]]; then

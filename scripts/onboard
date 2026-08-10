@@ -622,6 +622,7 @@ done
 # A package profile identifies a generic Debian driver package. The exact PPD/model is
 # deliberately selected from this Raspberry Pi after that package is prepared.
 if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
+  group_header 'Prepare Legacy Drivers'
   host_tmp=$(mktemp "${inventory%.yml}.XXXXXX.yml")
   printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '        print-server:' "          ansible_host: $(quote "$host")" "          ansible_user: $(quote "$admin")" '          ansible_become: true' >"$host_tmp"
   legacy_driver_inventory=$host_tmp
@@ -634,21 +635,34 @@ if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
     }
     printer_cups_models[$index]=$COLLECTED_PRINTER_CUPS_MODEL
     printer_profiles[$index]=$COLLECTED_PRINTER_PROFILE
+    confirmation_block "Printer: ${printer_queues[$index]}" "Profile|${printer_profiles[$index]}" "Model|${printer_cups_models[$index]}"
   done
   rm -f "$host_tmp"
   host_tmp=''
 fi
 
 stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
-printf 'Pi: %s\nTrusted LAN: %s\nPrinters:\n' "$host" "$cidr"
+direct_ethernet_summary='not configured'
+[[ -n "$direct_ethernet_interface" ]] && direct_ethernet_summary="$direct_ethernet_interface ($direct_ethernet_pi_ipv4_cidr -> $direct_ethernet_device_ipv4)"
+confirmation_block 'Server' \
+  "Pi|$admin@$host" "Hostname|$hostname" "Trusted LAN|$cidr" "Trusted IPv6|${ipv6_cidr:-not configured}" \
+  "Timezone|$timezone" "Locale|$locale" "Direct Ethernet|$direct_ethernet_summary" \
+  "SSH key install|$([[ -n "$authorized_key" ]] && printf yes || printf no)"
 for index in "${!printer_queues[@]}"; do
-  printf '  %s: %s' "${printer_queues[$index]}" "${printer_drivers[$index]}"
-  [[ -n "${printer_profiles[$index]}" ]] && printf ', profile %s, model %s' "${printer_profiles[$index]}" "${printer_cups_models[$index]}"
-  [[ "${printer_dns_sd_names[$index]}" != "${printer_queues[$index]}" ]] && printf ', DNS-SD name %s' "${printer_dns_sd_names[$index]}"
-  printf '\n'
+  confirmation_block "Printer: ${printer_queues[$index]}" \
+    "Connection|${printer_connections[$index]}" "URI|${printer_uris[$index]}" "Driver|${printer_drivers[$index]}" \
+    "Profile|${printer_profiles[$index]:-not applicable}" "Model|${printer_cups_models[$index]:-not applicable}" \
+    "USB mode|${printer_usb_modes[$index]:-not applicable}" "USB ID|${printer_usb_identities[$index]:-not applicable}" \
+    "DNS-SD name|${printer_dns_sd_names[$index]}"
 done
-(( ${#scanner_device_names[@]} > 0 )) && printf 'Scanners: %s, retention %s days, OCR %s, ScanservJS port %s\n' "${scanner_device_names[*]}" "$retention" "$ocr" "$scanservjs_port"
-[[ -n "$authorized_key" ]] && printf '%s\n' 'Future SSH access: install the detected administrator public key'
+if (( ${#scanner_device_names[@]} > 0 )); then
+  for index in "${!scanner_device_names[@]}"; do
+    confirmation_block "Scanner: ${scanner_device_names[$index]}" \
+      "Connection|${scanner_connections[$index]}" "Backend|${scanner_backends[$index]}" \
+      "Backend install|${scanner_backend_installs[$index]}" "USB mode|${scanner_usb_modes[$index]:-not applicable}"
+  done
+  confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
+fi
 printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
 printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or Raspberry Pi services.'
 yes 'Write production inventory and commission this Pi?' || exit 0

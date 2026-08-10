@@ -58,6 +58,24 @@ unique_candidates() {
   awk -F'|' -v key_field="$key_field" 'NF && !seen[$key_field]++'
 }
 
+printer_candidate_details() {
+  local index=0 candidate label connection uri usb_mode
+  for candidate in "$@"; do
+    index=$((index + 1))
+    IFS='|' read -r label connection uri usb_mode <<<"$candidate"
+    detail_block "Candidate $index" "Model|$label" "Connection|$connection" "URI|$uri" "USB mode|${usb_mode:-not applicable}"
+  done
+}
+
+scanner_candidate_details() {
+  local index=0 candidate label connection backend usb_mode identifier
+  for candidate in "$@"; do
+    index=$((index + 1))
+    IFS='|' read -r label connection backend usb_mode identifier _ <<<"$candidate"
+    detail_block "Candidate $index" "Model|$label" "Connection|$connection" "Backend|$backend" "Identifier|$identifier"
+  done
+}
+
 rank_airscan_first() {
   awk -F'|' '{
     if ($3 == "sane-airscan") { preferred[n1++] = $0 } else { rest[n2++] = $0 }
@@ -617,6 +635,7 @@ discover_devices() {
 
   if (( ${#printer_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != scanner ]]; then
     input_required 'Printer selection'
+    printer_candidate_details "${printer_candidates[@]}"
     candidate_count=0
     choice=$(choose_candidate 'Detected printers' "${printer_candidates[@]}")
     if [[ "$choice" != manual ]]; then
@@ -626,6 +645,7 @@ discover_devices() {
   fi
   if (( ${#scanner_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != printer ]]; then
     input_required 'Scanner selection'
+    scanner_candidate_details "${scanner_candidates[@]}"
     candidate_count=0
     choice=$(choose_candidate 'Detected scanners' "${scanner_candidates[@]}")
     if [[ "$choice" != manual ]]; then

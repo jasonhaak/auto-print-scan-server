@@ -64,6 +64,13 @@ if grep -Eq 'mktemp "\$inventory\.XXXXXX"' <<<"$legacy_inventory_block"; then
 fi
 [[ "$legacy_inventory_block" == *'mktemp "${inventory%.yml}.XXXXXX.yml"'* ]]
 
+# Findings A/B: the batch legacy-driver-preparation loop must have its own heading (it can run
+# once per package-profile printer, each showing a full driver-preparation sub-flow, between the
+# Optional Scanner section and stage 5/5) and must confirm the chosen model back to the
+# administrator at the point it is actually chosen, not only in the final review screen.
+[[ "$legacy_inventory_block" == *"group_header 'Prepare Legacy Drivers'"* ]]
+[[ "$legacy_inventory_block" == *'confirmation_block "Printer:'* ]]
+
 workspace=$(mktemp -d "${TMPDIR:-/tmp}/onboarding-retry-inventory-safety-test.XXXXXX")
 trap 'rm -rf "$workspace"' EXIT
 inventory_path="$workspace/hosts.yml"

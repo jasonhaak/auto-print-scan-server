@@ -160,7 +160,7 @@ step_stream() {
   local -n step_output_ref=$output_variable
   shift 3
   local output_file status output
-  printf '%s ...\n' "$purpose"
+  printf '%s %s ...\n' "$(cli_color '1;33' 'Action:')" "$purpose"
   output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-step.XXXXXX")
   if "$@" 2>&1 | tee "$output_file"; then
     status=0
