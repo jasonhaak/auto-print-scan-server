@@ -124,7 +124,7 @@ if candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' lan; then
 fi
 candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' all
 
-grep -q 'recommend_legacy_profile' "$root/scripts/onboard"
+grep -q 'recommend_legacy_profile' "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'verify_cups_job' "$root/scripts/onboard"
 grep -q 'verify_scanservjs_ready' "$root/scripts/onboard"
 grep -q 'create_scanner_test_pdf' "$root/scripts/onboard"
