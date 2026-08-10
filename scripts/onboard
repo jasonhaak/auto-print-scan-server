@@ -107,9 +107,10 @@ printf '%s\n' '' 'This guided setup has five steps:' \
   '  3. Find connected printers and scanners.' \
   '  4. Choose the devices and their settings.' \
   '  5. Review everything before the Raspberry Pi is changed.' \
-  'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Legacy driver inspection can install only its selected driver package before final queue confirmation.'
+  '' \
+  'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Legacy driver inspection can install only its selected driver package before final queue confirmation. Production inventory, queues and services are changed only after final confirmation.'
 
-stage '1/5' 'Connect to Your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
+stage '1 of 5' 'Connect to your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
 host_default=$(saved_host_value ansible_host print-server.local)
 [[ "$host_default" == 192.0.2.10 ]] && host_default=print-server.local
 if step_check administrator_cidr 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' administrator_lan_cidr; then
@@ -198,7 +199,7 @@ while true; do
 done
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
-stage '2/5' 'Confirm Your Trusted Network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
+stage '2 of 5' 'Confirm your trusted network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
 step_check suggested_cidr 'Detect the Raspberry Pi trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
   remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' || true
 step_check timezone 'Detect the Raspberry Pi timezone' 'cat /etc/timezone; timedatectl show --property=Timezone' \
@@ -224,11 +225,11 @@ while true; do
   printf '%s\n' 'Invalid IPv6 CIDR. Use a local IPv6 prefix followed by /0 to /128, or leave it empty.' >&2
 done
 confirmation_block 'Trusted network' "IPv4|$cidr" "IPv6|${ipv6_cidr:-not configured}" "Timezone|$timezone" "Locale|$locale"
-stage '3/5' 'Find Printers and Scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
+stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Discovery scope'
 discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
-stage '4/5' 'Choose Your Devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
+stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Server identity'
 while true; do
   hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
@@ -671,7 +672,7 @@ if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
   host_tmp=''
 fi
 
-stage '5/5' 'Review and Commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
+stage '5 of 5' 'Review and commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
 direct_ethernet_summary='not configured'
 [[ -n "$direct_ethernet_interface" ]] && direct_ethernet_summary="$direct_ethernet_interface ($direct_ethernet_pi_ipv4_cidr -> $direct_ethernet_device_ipv4)"
 confirmation_block 'Server' \

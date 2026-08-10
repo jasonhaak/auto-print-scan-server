@@ -3,7 +3,7 @@
 need() { command -v "$1" >/dev/null || { printf 'Missing command: %s\n' "$1" >&2; exit 1; }; }
 cli_color() {
   local code=$1 text=$2
-  if [[ -t 1 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]]; then
+  if [[ -t 2 && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != dumb ]]; then
     printf '\033[%sm%s\033[0m' "$code" "$text"
   else
     printf '%s' "$text"

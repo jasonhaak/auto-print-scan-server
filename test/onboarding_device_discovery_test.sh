@@ -367,7 +367,7 @@ grep -q 'scanner_candidate_details "\${scanner_candidates\[@\]}"' "$root/scripts
 # confirmation_block, not a hand-written printf, since it is the last thing shown
 # before production inventory is written and Ansible provisioning starts.
 review_block=$(awk '
-  /^stage .5\/5. .Review and Commission./ { capturing = 1 }
+  /^stage .5 of 5. .Review and commission./ { capturing = 1 }
   capturing { print }
   capturing && /Write production inventory and commission this Pi/ { exit }
 ' "$root/scripts/onboard")
@@ -461,6 +461,38 @@ grep -Fq "confirmation_block 'Scanner'" "$root/scripts/onboard"
 grep -Fq "recommendation 'Choose 90 days as a starting point" "$root/scripts/onboard"
 grep -Fq "recommendation 'OCR makes scanned PDFs searchable" "$root/scripts/onboard"
 grep -Fq "recommendation 'The ScanservJS port is the local TCP port" "$root/scripts/onboard"
+
+# Finding 12: cli_color must gate on stderr (the descriptor every caller actually writes to),
+# not stdout.
+grep -Fq -- '-t 2 &&' "$root/scripts/lib/onboarding/prompts.sh"
+if grep -Fq -- '-t 1 &&' "$root/scripts/lib/onboarding/prompts.sh"; then
+  printf 'cli_color still gates on stdout terminal-ness\n' >&2
+  exit 1
+fi
+
+# Finding 14: the step-3 major-step purpose already states discovery covers the trusted LAN
+# and USB devices; device-discovery.sh must not restate the same fact moments later.
+if grep -Fq 'Discovery can find printers and scanners that are visible on the trusted LAN or connected by USB.' "$root/scripts/lib/onboarding/device-discovery.sh"; then
+  printf 'device-discovery.sh restates the step-3 purpose sentence\n' >&2
+  exit 1
+fi
+
+# Finding 15: the five-step intro's caveats must be visually separated from the numbered list,
+# and must restate the explicit guarantee that production inventory/queues/services change
+# only after final confirmation (present in the original wording, dropped when the legacy-driver
+# caveat was added).
+intro_block=$(awk '/This guided setup has five steps/{capturing=1} capturing{print} capturing && /Production inventory/{exit}' "$root/scripts/onboard")
+[[ -n "$intro_block" ]]
+[[ "$intro_block" == *"is changed.' \\"$'\n'"  '' \\"* ]]
+[[ "$intro_block" == *'Production inventory, queues and services are changed only after final confirmation.'* ]]
+
+# Finding 16: step numbering must match the design spec's own wording ('N of 5', sentence
+# case), which is also what test/onboarding_prompts_test.sh already asserts major_step on.
+[[ "$(grep -c "^stage '[0-9] of 5'" "$root/scripts/onboard")" -eq 5 ]]
+if grep -q "^stage '[0-9]/5'" "$root/scripts/onboard"; then
+  printf 'onboard still uses N/5 step numbering instead of the spec wording\n' >&2
+  exit 1
+fi
 
 variables="$root/inventories/production/group_vars/print_servers.yml"
 backups="$root/.onboard-backups"
