@@ -130,6 +130,13 @@ ipp_usb_ranked=$(printf '%s\n' \
 grep -q 'rank_airscan_first' "$root/scripts/lib/onboarding/device-discovery.sh"
 grep -Fq 'unique_candidates 5 | rank_airscan_first' "$root/scripts/lib/onboarding/device-discovery.sh"
 
+grep -q "ask 'Client-visible DNS-SD name'" "$root/scripts/manage-devices"
+grep -q -- '--dns-sd-name' "$root/scripts/manage-devices"
+
+grep -q "ask 'Client-visible DNS-SD name'" "$root/scripts/onboard"
+grep -q 'printer_dns_sd_names' "$root/scripts/onboard"
+grep -q 'dns_sd_name:' "$root/scripts/onboard"
+
 scanner_hints=$(avahi_scanner_hints $'=;eth0;IPv4;Office Scanner;_uscan._tcp;local;scanner.local;192.0.2.40;8080;"rs=eSCL"\n=;eth0;IPv4;Secure Scanner;_uscans._tcp;local;secure.local;192.0.2.41;443;"rs=eSCL"\n=;eth0;IPv4;Legacy Scanner;_scanner._tcp;local;legacy.local;192.0.2.42;6566;')
 [[ "$scanner_hints" == $'Office Scanner at scanner.local:8080 (_uscan._tcp)|scanner.local|8080|_uscan._tcp\nSecure Scanner at secure.local:443 (_uscans._tcp)|secure.local|443|_uscans._tcp\nLegacy Scanner at legacy.local:6566 (_scanner._tcp)|legacy.local|6566|_scanner._tcp' ]]
 
@@ -223,6 +230,32 @@ lan_facing_v6=$(verify_ipp_listener_ready true)
 [[ "$lan_facing_v6" == *'trusted LAN'* ]]
 
 grep -q 'verify_ipp_listener_ready true' "$root/scripts/onboard"
+
+probe_calls=0
+step_check() { probe_calls=$((probe_calls + 1)); return 0; }
+verify_dns_sd_name_advertised false haak-drucker
+[[ "$probe_calls" -eq 0 ]]
+
+step_check() {
+  local output_var=$1
+  printf -v "$output_var" '%s' "$mock_avahi_output"
+  return "$mock_avahi_status"
+}
+mock_avahi_status=1
+mock_avahi_output=''
+query_failed=$(verify_dns_sd_name_advertised true haak-drucker 2>&1) || true
+[[ "$query_failed" == *'Could not query Avahi'* ]]
+
+mock_avahi_status=0
+mock_avahi_output='=;eth0;IPv4;other-queue;_ipp._tcp;local'
+wrong_name=$(verify_dns_sd_name_advertised true haak-drucker 2>&1) || true
+[[ "$wrong_name" == *'did not advertise'* ]]
+
+mock_avahi_output='=;eth0;IPv4;haak-drucker;_ipp._tcp;local'
+advertised=$(verify_dns_sd_name_advertised true haak-drucker)
+[[ "$advertised" == *'haak-drucker'* && "$advertised" == *'advertised'* ]]
+
+grep -q 'verify_dns_sd_name_advertised' "$root/scripts/onboard"
 
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
 # remote(), enforces test -s on the resulting PDF, and always cleans up its

@@ -122,6 +122,37 @@ scanservjs_ocr_languages: [eng]
         self.assertEqual(printers[1]["device_uri"], "socket://labels.local:9100")
         self.assertGreaterEqual(len(list(self.backups.iterdir())), 2)
 
+    def test_printer_dns_sd_name_defaults_to_the_queue_name_when_omitted(self):
+        self.run_helper(
+            "upsert-printer", "--name", "label", "--connection", "socket",
+            "--device-uri", "socket://label.local:9100", "--driver-mode", "driverless",
+            "--shared", "false",
+        )
+
+        printer = next(printer for printer in self.load()["managed_printers"] if printer["name"] == "label")
+        self.assertNotIn("dns_sd_name", printer)
+
+    def test_printer_dns_sd_name_is_persisted_when_supplied(self):
+        self.run_helper(
+            "upsert-printer", "--name", "label", "--connection", "socket",
+            "--device-uri", "socket://label.local:9100", "--driver-mode", "driverless",
+            "--shared", "false", "--dns-sd-name", "haak-drucker",
+        )
+
+        printer = next(printer for printer in self.load()["managed_printers"] if printer["name"] == "label")
+        self.assertEqual(printer["dns_sd_name"], "haak-drucker")
+
+    def test_rejects_an_unsafe_dns_sd_name_without_writing(self):
+        before = self.inventory.read_text(encoding="utf-8")
+        result = self.run_helper(
+            "upsert-printer", "--name", "label", "--connection", "socket",
+            "--device-uri", "socket://label.local:9100", "--driver-mode", "driverless",
+            "--shared", "false", "--dns-sd-name", "bad name!", check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
+
     def test_adds_scanner_settings_when_first_scanner_is_added(self):
         self.run_helper(
             "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",

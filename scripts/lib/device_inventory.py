@@ -144,6 +144,11 @@ def validate_printer(printer: Any) -> None:
     shared = printer.get("shared", True)
     if not isinstance(shared, bool):
         raise InventoryError(f"printer {name!r} shared must be true or false")
+    dns_sd_name = printer.get("dns_sd_name")
+    if dns_sd_name is not None:
+        dns_sd_name = require_text(dns_sd_name, f"printer {name!r} DNS-SD name")
+        if not QUEUE_PATTERN.fullmatch(dns_sd_name):
+            raise InventoryError(f"printer {name!r} DNS-SD name {dns_sd_name!r} is not a safe DNS-SD label")
     if connection == "usb":
         usb_mode = printer.get("usb_mode")
         if usb_mode not in USB_MODES:
@@ -418,6 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
     printer.add_argument("--device-uri", required=True)
     printer.add_argument("--driver-mode", required=True, choices=["driverless", "package_profile"])
     printer.add_argument("--shared", required=True, type=parse_bool)
+    printer.add_argument("--dns-sd-name")
     printer.add_argument("--package-profile")
     printer.add_argument("--cups-model")
     printer.add_argument("--usb-mode", choices=sorted(USB_MODES))
@@ -521,6 +527,8 @@ def main() -> int:
                 replacement["package_profile"] = arguments.package_profile
             if arguments.cups_model:
                 replacement["cups_model"] = arguments.cups_model
+            if arguments.dns_sd_name:
+                replacement["dns_sd_name"] = arguments.dns_sd_name
             if arguments.usb_mode:
                 replacement["usb_mode"] = arguments.usb_mode
             if arguments.usb_identity:

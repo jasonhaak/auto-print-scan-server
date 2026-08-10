@@ -305,6 +305,21 @@ verify_ipp_listener_ready() {
   printf 'CUPS is listening on TCP port 631 for the trusted LAN.\n'
 }
 
+verify_dns_sd_name_advertised() {
+  local shared=$1 dns_sd_name=$2 output=''
+  [[ "$shared" == true ]] || return 0
+  if ! step_check output "Check the advertised DNS-SD name for $dns_sd_name" "avahi-browse -rpt _ipp._tcp" \
+    remote "avahi-browse -rpt _ipp._tcp 2>&1"; then
+    printf 'Could not query Avahi to confirm the DNS-SD advertisement for %s. Check systemctl status avahi-daemon.service.\n' "$dns_sd_name" >&2
+    return 1
+  fi
+  if ! grep -Fq ";$dns_sd_name;_ipp._tcp;" <<<"$output"; then
+    printf 'Avahi did not advertise %s under _ipp._tcp. Check the CUPS printer-dns-sd-name attribute and Avahi state.\n' "$dns_sd_name" >&2
+    return 1
+  fi
+  printf 'Avahi advertised %s as its DNS-SD service name.\n' "$dns_sd_name"
+}
+
 verify_scanservjs_ready() {
   local port=${1:-8080} listener=''
   if ! step_check listener 'Check ScanservJS local TCP listener' "ss -ltnH sport = :$port" \

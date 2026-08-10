@@ -69,6 +69,27 @@ class CupsRoleTest(unittest.TestCase):
             reconcile["ansible.builtin.command"]["argv"][7],
         )
 
+    def test_queue_reconciliation_advertises_the_dns_sd_name(self):
+        tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
+        reconcile = next(task for task in tasks if task["name"] == "Reconcile managed CUPS queues")
+        argv = reconcile["ansible.builtin.command"]["argv"]
+        self.assertTrue(
+            any(
+                "printer-dns-sd-name=" in entry and "item.dns_sd_name" in entry and "default(item.name)" in entry
+                for entry in argv
+            )
+        )
+
+    def test_validate_asserts_the_dns_sd_name_is_a_safe_label(self):
+        tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
+        validate = next(task for task in tasks if task["name"] == "Validate managed printer configuration")
+        self.assertTrue(
+            any(
+                "dns_sd_name" in condition and "default(item.name)" in condition
+                for condition in validate["ansible.builtin.assert"]["that"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
