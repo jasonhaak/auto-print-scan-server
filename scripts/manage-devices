@@ -378,6 +378,7 @@ apply_inventory() {
       printf '%s\n' 'The Raspberry Pi connection failed before inventory could be applied.' >&2
     fi
     printf 'Apply failed. Technical transcript: %s\n' "$technical_transcript" >&2
+    manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e "print_server_commissioning=$commissioning"
     recovery=$(recovery_choice 'Apply recovery (retry, stop)' retry retry stop) || return 1
     [[ "$recovery" == retry ]] || return 1
     ssh_session_cleanup

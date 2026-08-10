@@ -257,6 +257,9 @@ advertised=$(verify_dns_sd_name_advertised true haak-drucker)
 
 grep -q 'verify_dns_sd_name_advertised' "$root/scripts/onboard"
 
+grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e print_server_commissioning=true' "$root/scripts/onboard"
+grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e "print_server_commissioning=$commissioning"' "$root/scripts/manage-devices"
+
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
 # remote(), enforces test -s on the resulting PDF, and always cleans up its
 # temporary PNG. Mock remote() to actually evaluate the generated command

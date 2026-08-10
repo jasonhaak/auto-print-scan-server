@@ -724,6 +724,7 @@ ansible_output=''
 while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
   env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; do
   printf 'Commissioning failed. Technical transcript: %s\n' "$technical_transcript" >&2
+  manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e print_server_commissioning=true
   printf 'Choose manage to exit this wizard and fix device definitions with scripts/manage-devices instead of finishing this setup run.\n' >&2
   recovery=$(recovery_choice 'Commissioning recovery (retry, manage, stop)' retry retry manage stop) || exit 1
   if [[ "$recovery" == retry ]]; then

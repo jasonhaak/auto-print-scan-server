@@ -36,6 +36,21 @@ confirmation_block() {
     printf '  %-12s %s\n' "$key:" "$value" >&2
   done
 }
+manual_recovery_command() {
+  local root=$1 variables=$2 inventory=$3 playbook=$4
+  shift 4
+  local relative_inventory=${inventory#"$root"/} command extra
+  command="cd $(printf '%q' "$root") && ./.venv/bin/ansible-playbook -i $(printf '%q' "$relative_inventory") $(printf '%q' "$playbook")"
+  for extra in "$@"; do
+    command+=" $(printf '%q' "$extra")"
+  done
+  if grep -q '^ssh_allow_password_authentication: true' "$variables" 2>/dev/null; then
+    command+=' --ask-pass --ask-become-pass'
+  else
+    command+=' --ask-become-pass'
+  fi
+  detail_block 'Manual recovery command' "Command|$command"
+}
 setup_status() { printf '%s %s\n' "$(cli_color '32' '✓')" "$1" >&2; }
 setting_group() { group_header "$1"; }
 group_header() { printf '%s\n' "$(cli_heading "──────────────── $1 ────────────────")" >&2; }

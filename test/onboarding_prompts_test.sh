@@ -144,3 +144,20 @@ selected=$(printf '%s' "$existing_menu" | tail -n 1)
 candidate_count=0
 invalid_then_valid=$(choose_existing_candidate 'Select the managed printer.' 'office-printer|office-printer' <<< $'9\n1' 2>&1)
 [[ "$invalid_then_valid" == *'Enter a listed number.'* ]]
+
+workspace=$(mktemp -d "${TMPDIR:-/tmp}/onboarding-prompts-test.XXXXXX")
+trap 'rm -rf "$workspace"' EXIT
+
+printf 'ssh_allow_password_authentication: true\n' >"$workspace/vars-password.yml"
+password_command=$(manual_recovery_command "$root" "$workspace/vars-password.yml" "$root/inventories/production/hosts.yml" playbooks/site.yml -e print_server_commissioning=true 2>&1)
+[[ "$password_command" == *'./.venv/bin/ansible-playbook'* ]]
+[[ "$password_command" == *'-i inventories/production/hosts.yml'* ]]
+[[ "$password_command" == *'playbooks/site.yml'* ]]
+[[ "$password_command" == *'-e print_server_commissioning=true'* ]]
+[[ "$password_command" == *'--ask-pass'* ]]
+[[ "$password_command" == *'--ask-become-pass'* ]]
+
+printf 'ssh_allow_password_authentication: false\n' >"$workspace/vars-key.yml"
+key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/inventories/production/hosts.yml" playbooks/site.yml -e print_server_commissioning=true 2>&1)
+[[ "$key_command" != *'--ask-pass'* ]]
+[[ "$key_command" == *'--ask-become-pass'* ]]
