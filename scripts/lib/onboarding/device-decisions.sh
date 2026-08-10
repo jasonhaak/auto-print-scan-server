@@ -22,6 +22,25 @@ collect_scanner_backend() {
   COLLECTED_SCANNER_BACKEND_INSTALL=$(ask_choice 'Install this backend package with APT' "$install_default" true false)
 }
 
+scanner_usb_mode_guidance() {
+  printf '%s\n' 'Choose ipp_usb only for an IPP-over-USB capable driverless scanner. Choose legacy_usb when the scanner needs a package-provided SANE backend.' >&2
+}
+
+collect_usb_identity_from_lsusb() {
+  local candidate
+  if ! candidate=$(choose_usb_identity "$(remote 'lsusb' 2>&1 || true)"); then
+    printf '%s\n' 'No USB identity could be detected automatically. Enter the four-digit vendor and product values after ID from lsusb, for example ID 04a9:1909 becomes 04a9:1909.' >&2
+    candidate=$(ask 'USB vendor:product identity from lsusb' '')
+  elif [[ "$candidate" == manual ]]; then
+    candidate=$(ask 'USB vendor:product identity from lsusb' '')
+  fi
+  while ! valid_usb_identity "$candidate"; do
+    printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
+    candidate=$(ask 'USB vendor:product identity from lsusb' "$candidate")
+  done
+  printf '%s' "$candidate"
+}
+
 printer_connection_confirmation() {
   confirmation_block 'Printer connection' \
     "Queue|$1" "Connection|$2" "URI|$3" "Driver|$4" \

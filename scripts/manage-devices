@@ -261,8 +261,14 @@ configure_scanner() {
       usb_mode_default=$(field scanner "$original" usb_mode)
       [[ -n "$usb_mode_default" ]] || usb_mode_default=ipp_usb
     fi
+    scanner_usb_mode_guidance
     usb_mode=$(ask_choice 'USB mode' "$usb_mode_default" ipp_usb legacy_usb)
-    usb_identity=$(ask 'Optional USB vendor:product identity' "$([[ -n "$original" ]] && field scanner "$original" usb_identity || true)")
+    usb_identity=$([[ -n "$original" ]] && field scanner "$original" usb_identity || true)
+    while true; do
+      usb_identity=$(ask 'Optional USB vendor:product identity' "$usb_identity")
+      { [[ -z "$usb_identity" ]] || valid_usb_identity "$usb_identity"; } && break
+      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
+    done
   fi
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)

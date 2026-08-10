@@ -110,6 +110,13 @@ selected_usb_identity=$(choose_usb_identity $'Bus 001 Device 002: ID 04a9:1909 C
 manual_usb_identity=$(choose_usb_identity $'Bus 001 Device 002: ID 04a9:1909 Canon, Inc. printer\nBus 001 Device 003: ID 03f0:1234 HP, Inc. printer' <<< '3')
 [[ "$manual_usb_identity" == manual ]]
 
+# Finding 9: choose_usb_identity must filter root-hub/hub entries the same way
+# usb_device_descriptions already does, so a single real device behind two hub entries is
+# still detected automatically instead of forcing a three-way menu the administrator has to
+# read past.
+hub_filtered_identity=$(choose_usb_identity $'Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub\nBus 001 Device 002: ID 2109:3431 VIA Labs, Inc. Hub\nBus 001 Device 004: ID 04f9:0270 Brother Industries, Ltd MFC-7360N' <<< '')
+[[ "$hub_filtered_identity" == 04f9:0270 ]]
+
 yes 'Use discovery?' <<< 'yes'
 if yes 'Use discovery?' <<< 'no'; then
   exit 1

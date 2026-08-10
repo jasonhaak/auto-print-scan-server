@@ -365,11 +365,11 @@ if [[ "$connection" == usb ]]; then
     uri=$(ask 'Printer device URI' 'dnssd://printer._ipp._tcp.local/')
   done
 fi
-printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
 if [[ "$connection" == usb ]]; then
   if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
   printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
 else
+  printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
   driver_default=driverless
   [[ "$connection" == socket || "$connection" == lpd ]] && driver_default=package_profile
   driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
@@ -419,6 +419,7 @@ while yes 'Add another printer?'; do
   if [[ "$extra_topology" == usb ]]; then
     extra_connection=usb
   else
+    printf '%s\n' 'Choose ipp for most modern network printers. Use ipps for encrypted IPP, socket for JetDirect printers (usually port 9100) or lpd for older LPD printers.'
     extra_connection=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket lpd)
   fi
   printf '%s\n' 'For IPP, use the URI from the printer web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
@@ -454,6 +455,7 @@ while yes 'Add another printer?'; do
     if [[ "$extra_usb_mode" == legacy_usb ]]; then extra_driver=package_profile; else extra_driver=driverless; fi
     printf 'Selected %s driver mode to match %s.\n' "$extra_driver" "$extra_usb_mode"
   else
+    printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
     extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
   fi
   extra_profile=''
@@ -473,6 +475,7 @@ while yes 'Add another printer?'; do
   printer_usb_modes+=("$extra_usb_mode")
   printer_usb_identities+=("$extra_usb_identity")
   printer_dns_sd_names+=("$extra_dns_sd_name")
+  printer_connection_confirmation "$extra_queue" "$extra_connection" "$extra_uri" "$extra_driver" "$extra_usb_mode" "$extra_usb_identity"
 done
 
 scanner=false
@@ -485,11 +488,13 @@ if [[ "${discovered_scanner:-false}" == true ]]; then
   scanner_backend_install=${discovered_scanner_backend_install:-true}
   scanner_uri=''
   scanner_usb_mode=${discovered_scanner_usb_mode:-}
+  scanner_usb_identity=''
   input_required 'Scanner backend'
   if [[ "$scanner_backend_install" == false ]]; then
-    printf '%s\n' "Detected preinstalled SANE backend: $scanner_backend. Onboarding will retain this backend but will not install, update or register it."
-    scanner_backend=$(ask 'SANE backend name' "$scanner_backend")
-    scanner_backend_install=$(ask_choice 'Install this backend package with APT' "$scanner_backend_install" true false)
+    printf 'Detected preinstalled SANE backend: %s. By default onboarding keeps it as-is; answer yes below only to have APT (re)install it.\n' "$scanner_backend"
+    collect_scanner_backend "$scanner_connection" "$scanner_backend" "$scanner_backend_install"
+    scanner_backend=$COLLECTED_SCANNER_BACKEND
+    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   else
     printf '%s\n' 'The detected SANE backend package is installed during commissioning.'
     collect_scanner_backend "$scanner_connection" "$scanner_backend" "$scanner_backend_install"
@@ -497,7 +502,9 @@ if [[ "${discovered_scanner:-false}" == true ]]; then
     scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   fi
   if [[ "$scanner_connection" == usb ]]; then
+    scanner_usb_mode_guidance
     scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
+    scanner_usb_identity=$(collect_usb_identity_from_lsusb)
   fi
 else
   if [[ -n "${discovered_unsupported_scanner_device_name:-}" ]]; then
@@ -513,7 +520,12 @@ else
     scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
     scanner_uri=$(ask 'Optional scanner device URI' '')
     scanner_usb_mode=''
-    [[ "$scanner_connection" == usb ]] && scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+    scanner_usb_identity=''
+    if [[ "$scanner_connection" == usb ]]; then
+      scanner_usb_mode_guidance
+      scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+      scanner_usb_identity=$(collect_usb_identity_from_lsusb)
+    fi
   fi
 fi
 if [[ "$scanner" == true ]]; then
@@ -527,19 +539,19 @@ if [[ "$scanner" == true ]]; then
     [[ -n "$scanner_device_name" ]] && break
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
-  printf '%s\n' 'Choose 90 days as a starting point. Completed scans are visible to the trusted LAN until this period expires.'
+  recommendation 'Choose 90 days as a starting point. Completed scans are visible to the trusted LAN until this period expires.'
   while true; do
     retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
     [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
     printf '%s\n' 'Retention must be 1 to 900 days.' >&2
   done
-  printf '%s\n' 'OCR makes scanned PDFs searchable. Use eng for English. Add deu for German, separated with commas. More languages can make OCR slower.'
+  recommendation 'OCR makes scanned PDFs searchable. Use eng for English. Add deu for German, separated with commas. More languages can make OCR slower.'
   while true; do
     ocr=$(ask 'OCR language codes, comma-separated' 'eng')
     valid_ocr_languages "$ocr" && break
     printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
   done
-  printf '%s\n' 'The ScanservJS port is the local TCP port its web interface listens on. Change it only if 8080 conflicts with another service.'
+  recommendation 'The ScanservJS port is the local TCP port its web interface listens on. Change it only if 8080 conflicts with another service.'
   while true; do
     scanservjs_port=$(ask 'ScanservJS port (1-65535, recommended 8080)' "$(saved_scalar scanservjs_port 8080)")
     [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
@@ -547,18 +559,25 @@ if [[ "$scanner" == true ]]; then
   done
   printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
   page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
+  confirmation_block 'Scanner' \
+    "Device name|$scanner_device_name" "Connection|$scanner_connection" "Backend|$scanner_backend" \
+    "Backend install|$scanner_backend_install" "USB mode|${scanner_usb_mode:-not applicable}" \
+    "USB ID|${scanner_usb_identity:-not applicable}" "Retention|$retention days" "OCR|$ocr" \
+    "ScanservJS port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
 scanner_device_names=()
 scanner_connections=()
 scanner_backends=()
 scanner_backend_installs=()
 scanner_usb_modes=()
+scanner_usb_identities=()
 if [[ "$scanner" == true ]]; then
   scanner_device_names+=("$scanner_device_name")
   scanner_connections+=("$scanner_connection")
   scanner_backends+=("$scanner_backend")
   scanner_backend_installs+=("$scanner_backend_install")
   scanner_usb_modes+=("$scanner_usb_mode")
+  scanner_usb_identities+=("$scanner_usb_identity")
 fi
 while yes 'Add another scanner?'; do
   if yes_default 'Search for scanner recommendations before defining it?'; then
@@ -579,12 +598,22 @@ while yes 'Add another scanner?'; do
   extra_scanner_backend=$COLLECTED_SCANNER_BACKEND
   extra_scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   extra_scanner_usb_mode=''
-  [[ "$extra_scanner_connection" == usb ]] && extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+  extra_scanner_usb_identity=''
+  if [[ "$extra_scanner_connection" == usb ]]; then
+    scanner_usb_mode_guidance
+    extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
+    extra_scanner_usb_identity=$(collect_usb_identity_from_lsusb)
+  fi
   scanner_device_names+=("$extra_scanner_name")
   scanner_connections+=("$extra_scanner_connection")
   scanner_backends+=("$extra_scanner_backend")
   scanner_backend_installs+=("$extra_scanner_backend_install")
   scanner_usb_modes+=("$extra_scanner_usb_mode")
+  scanner_usb_identities+=("$extra_scanner_usb_identity")
+  confirmation_block "Scanner: $extra_scanner_name" \
+    "Connection|$extra_scanner_connection" "Backend|$extra_scanner_backend" \
+    "Backend install|$extra_scanner_backend_install" "USB mode|${extra_scanner_usb_mode:-not applicable}" \
+    "USB ID|${extra_scanner_usb_identity:-not applicable}"
 done
 if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
   while true; do
@@ -604,6 +633,7 @@ if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
   done
   printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
   page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
+  confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
 [[ "$connection" != usb || "$usb_mode" == ipp_usb || "$usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid printer USB mode.' >&2; exit 1; }
 [[ "$connection" != usb || "$usb_identity" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || { printf '%s\n' 'USB identity must use vendor:product form.' >&2; exit 1; }
@@ -659,7 +689,8 @@ if (( ${#scanner_device_names[@]} > 0 )); then
   for index in "${!scanner_device_names[@]}"; do
     confirmation_block "Scanner: ${scanner_device_names[$index]}" \
       "Connection|${scanner_connections[$index]}" "Backend|${scanner_backends[$index]}" \
-      "Backend install|${scanner_backend_installs[$index]}" "USB mode|${scanner_usb_modes[$index]:-not applicable}"
+      "Backend install|${scanner_backend_installs[$index]}" "USB mode|${scanner_usb_modes[$index]:-not applicable}" \
+      "USB ID|${scanner_usb_identities[$index]:-not applicable}"
   done
   confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
@@ -704,6 +735,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
         "$(quote "${scanner_device_names[$index]}")" "$(quote "${scanner_connections[$index]}")" "$(quote "${scanner_backends[$index]}")"
       [[ "${scanner_backend_installs[$index]}" == false ]] && printf '%s\n' '    backend_install: false'
       [[ -n "${scanner_usb_modes[$index]}" ]] && printf '    usb_mode: %s\n' "$(quote "${scanner_usb_modes[$index]}")"
+      [[ -n "${scanner_usb_identities[$index]}" ]] && printf '    usb_identity: %s\n' "$(quote "${scanner_usb_identities[$index]}")"
     done
     printf 'scanservjs_retention_days: %s\nscanservjs_ocr_languages: [%s]\nscanservjs_port: %s\n' "$retention" "$languages" "$scanservjs_port"
     printf 'scanservjs_page_splitting: %s\n' "$page_splitting"

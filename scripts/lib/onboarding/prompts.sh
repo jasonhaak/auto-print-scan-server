@@ -321,7 +321,7 @@ choose_usb_identity() {
   while IFS='|' read -r identity description; do
     [[ -n "$identity" ]] || continue
     candidates+=("${description:-USB device} (${identity})|$identity")
-  done < <(printf '%s\n' "$lsusb_output" | sed -nE 's/.*ID ([0-9A-Fa-f]{4}:[0-9A-Fa-f]{4})[[:space:]]*(.*)/\1|\2/p')
+  done < <(printf '%s\n' "$lsusb_output" | sed -nE 's/.*ID ([0-9A-Fa-f]{4}:[0-9A-Fa-f]{4})[[:space:]]*(.*)/\1|\2/p' | awk '!/[Rr]oot hub/ && !/[[:space:]]Hub([[:space:]]|$)/')
   (( ${#candidates[@]} > 0 )) || return 1
   if (( ${#candidates[@]} == 1 )); then
     identity=${candidates[0]##*|}

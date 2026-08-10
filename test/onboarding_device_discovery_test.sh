@@ -378,12 +378,89 @@ review_block=$(awk '
 [[ "$review_block" == *"confirmation_block 'ScanservJS'"* ]]
 for field in hostname timezone locale ipv6_cidr direct_ethernet_interface authorized_key \
   printer_connections printer_uris printer_drivers printer_usb_modes printer_usb_identities \
-  scanner_backends scanner_backend_installs scanner_usb_modes page_splitting; do
+  scanner_backends scanner_backend_installs scanner_usb_modes scanner_usb_identities page_splitting; do
   if [[ "$review_block" != *"\$$field"* && "$review_block" != *"\${$field"* ]]; then
     printf 'Review screen never references %s\n' "$field" >&2
     exit 1
   fi
 done
+
+# Finding 10: the driverless/package_profile explanation only makes sense next to the prompt
+# that actually asks it (the non-USB else branch) -- the USB branch derives driver mode
+# directly from usb_mode and never shows the ask_choice at all.
+driver_mode_block=$(awk '
+  /^if \[\[ "\$connection" == usb \]\]; then$/ { start_count++ }
+  start_count == 2 { capturing = 1 }
+  capturing { print }
+  capturing && /^fi$/ { exit }
+' "$root/scripts/onboard")
+[[ "$driver_mode_block" == *'else'*'Choose driverless first'* ]]
+
+# Finding 11/F: the preinstalled-backend branch must not read as self-contradictory ("will not
+# install... it" immediately followed by a prompt offering to do exactly that), and must route
+# through the same collect_scanner_backend/scanner_backend_guidance helper the other two
+# scanner-backend paths already use, instead of being the one path with no guidance at all.
+preinstalled_backend_block=$(awk '
+  /scanner_backend_install" == false/ { capturing = 1 }
+  capturing { print }
+  capturing && /^  fi$/ { exit }
+' "$root/scripts/onboard")
+[[ "$preinstalled_backend_block" == *'collect_scanner_backend'* ]]
+[[ "$preinstalled_backend_block" != *'will not install, update or register it'* ]]
+
+# Finding C: scanner USB mode must be explained before being asked, in every collection path
+# that asks it -- mirroring the printer path's USB-mode explanation. onboard always spells the
+# scanner prompt 'Scanner USB mode' (distinct from the printer's plain 'USB mode'), so it can be
+# counted precisely; manage-devices' scanner and printer prompts share the literal 'USB mode'
+# text, so check inside configure_scanner specifically instead of counting occurrences.
+grep -q 'scanner_usb_mode_guidance' "$root/scripts/lib/onboarding/device-decisions.sh"
+onboard_scanner_usb_mode_sites=$(grep -c "ask_choice 'Scanner USB mode'" "$root/scripts/onboard")
+onboard_scanner_usb_mode_guidance_calls=$(grep -c 'scanner_usb_mode_guidance' "$root/scripts/onboard")
+[[ "$onboard_scanner_usb_mode_sites" -eq 3 ]]
+[[ "$onboard_scanner_usb_mode_guidance_calls" -ge "$onboard_scanner_usb_mode_sites" ]]
+scanner_config_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
+[[ "$scanner_config_block" == *'scanner_usb_mode_guidance'* ]]
+
+# Finding D: onboard must collect a USB identity for every scanner, matching what
+# manage-devices already does, instead of silently leaving it unset for scanners configured
+# during first-run onboarding.
+grep -q 'scanner_usb_identities' "$root/scripts/onboard"
+grep -Fq '${scanner_usb_identities[$index]}' "$root/scripts/onboard"
+
+# Finding E: manage-devices must validate a scanner's USB identity the same way it already
+# validates a printer's, instead of accepting any string unchecked.
+[[ "$scanner_config_block" == *'valid_usb_identity'* ]]
+
+# Finding 5: the additional-printer and additional-scanner loops must give the same guidance
+# as the primary device before their connection/driver-mode choices, and confirm the finished
+# definition at the end of each iteration -- previously a second/third device got no
+# confirmation anywhere in the run.
+additional_printer_loop=$(awk '
+  /^while yes .Add another printer\?.; do$/ { capturing = 1 }
+  capturing { print }
+  capturing && /^done$/ { exit }
+' "$root/scripts/onboard")
+[[ "$additional_printer_loop" == *'Choose ipp for most modern network printers'* ]]
+[[ "$additional_printer_loop" == *'Choose driverless first'* ]]
+[[ "$additional_printer_loop" == *'printer_connection_confirmation "$extra_queue"'* ]]
+
+additional_scanner_loop=$(awk '
+  /^while yes .Add another scanner\?.; do$/ { capturing = 1 }
+  capturing { print }
+  capturing && /^done$/ { exit }
+' "$root/scripts/onboard")
+[[ "$additional_scanner_loop" == *'confirmation_block "Scanner: $extra_scanner_name"'* ]]
+
+# Finding 6: the primary scanner settings group must end with a confirmation_block, matching
+# every other multi-prompt decision group in the run.
+grep -Fq "confirmation_block 'Scanner'" "$root/scripts/onboard"
+
+# Finding 8: the retention/OCR/port guidance sentences the review named specifically must use
+# the recommendation heading like other suggested-default-with-a-reason guidance, not unmarked
+# prose that a skimming reader can't distinguish from narration.
+grep -Fq "recommendation 'Choose 90 days as a starting point" "$root/scripts/onboard"
+grep -Fq "recommendation 'OCR makes scanned PDFs searchable" "$root/scripts/onboard"
+grep -Fq "recommendation 'The ScanservJS port is the local TCP port" "$root/scripts/onboard"
 
 variables="$root/inventories/production/group_vars/print_servers.yml"
 backups="$root/.onboard-backups"
