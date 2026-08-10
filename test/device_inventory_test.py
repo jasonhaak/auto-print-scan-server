@@ -166,6 +166,31 @@ scanservjs_ocr_languages: [eng]
         self.assertEqual(data["scanservjs_ocr_languages"], ["eng", "deu"])
         self.assertEqual(data["scanservjs_port"], 8080)
 
+    def test_scanservjs_page_splitting_defaults_to_false_and_can_be_enabled(self):
+        self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "8080",
+        )
+        self.assertNotIn("scanservjs_page_splitting", self.load())
+
+        self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Second Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--page-splitting", "true",
+        )
+        self.assertIs(self.load()["scanservjs_page_splitting"], True)
+
+    def test_rejects_a_non_boolean_page_splitting_value_without_writing(self):
+        before = self.inventory.read_text(encoding="utf-8")
+        result = self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--page-splitting", "sometimes", check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.inventory.read_text(encoding="utf-8"), before)
+
     def test_rejects_a_scanner_with_an_out_of_range_port_without_writing(self):
         before = self.inventory.read_text(encoding="utf-8")
         result = self.run_helper(

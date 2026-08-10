@@ -260,6 +260,12 @@ grep -q 'verify_dns_sd_name_advertised' "$root/scripts/onboard"
 grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e print_server_commissioning=true' "$root/scripts/onboard"
 grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e "print_server_commissioning=$commissioning"' "$root/scripts/manage-devices"
 
+grep -q "ask_choice 'Enable page splitting" "$root/scripts/manage-devices"
+grep -q -- '--page-splitting' "$root/scripts/manage-devices"
+
+grep -q "ask_choice 'Enable page splitting" "$root/scripts/onboard"
+grep -q 'scanservjs_page_splitting:' "$root/scripts/onboard"
+
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
 # remote(), enforces test -s on the resulting PDF, and always cleans up its
 # temporary PNG. Mock remote() to actually evaluate the generated command

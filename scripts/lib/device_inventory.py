@@ -249,6 +249,9 @@ def validate_inventory(data: dict[str, Any]) -> None:
             raise InventoryError("scanner inventory requires at least one OCR language")
         if any(not isinstance(item, str) or not OCR_LANGUAGE_PATTERN.fullmatch(item) for item in languages):
             raise InventoryError("OCR languages must contain only letters, numbers and underscores")
+        page_splitting = data.get("scanservjs_page_splitting")
+        if page_splitting is not None and not isinstance(page_splitting, bool):
+            raise InventoryError("scanservjs_page_splitting must be true or false")
 
 
 def devices(data: dict[str, Any], kind: str) -> list[dict[str, Any]]:
@@ -440,6 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     scanner.add_argument("--retention-days", type=int)
     scanner.add_argument("--ocr-languages")
     scanner.add_argument("--port", type=int)
+    scanner.add_argument("--page-splitting", type=parse_bool)
 
     link = commands.add_parser("upsert-link")
     link.add_argument("--original-interface")
@@ -567,6 +571,8 @@ def main() -> int:
                 ]
             if arguments.port is not None:
                 data["scanservjs_port"] = arguments.port
+            if arguments.page_splitting is not None:
+                data["scanservjs_page_splitting"] = arguments.page_splitting
             label = arguments.device_name
         elif arguments.command == "upsert-link":
             replacement = {

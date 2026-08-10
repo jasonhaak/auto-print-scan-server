@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+from jinja2 import Environment, FileSystemLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,40 @@ class ScanservjsRoleTest(unittest.TestCase):
             content = (ROOT / "roles/scanservjs/templates" / template).read_text(encoding="utf-8")
             self.assertIn("df -m --output=avail", content)
             self.assertNotIn("df -Pm --output=avail", content)
+
+
+class ScanservjsPageSplittingTest(unittest.TestCase):
+    def render_config(self, page_splitting):
+        environment = Environment(loader=FileSystemLoader(ROOT / "roles/scanservjs/templates"))
+        return environment.get_template("config.local.js.j2").render(
+            scanservjs_port=8080,
+            scanservjs_data_directory="/var/lib/scanservjs/data",
+            scanservjs_ocr_languages=["eng"],
+            scanservjs_page_splitting=page_splitting,
+        )
+
+    def test_page_splitting_disabled_by_default_omits_after_scan(self):
+        config = self.render_config(False)
+        self.assertNotIn("afterScan", config)
+        self.assertNotIn("pdfseparate", config)
+
+    def test_page_splitting_enabled_adds_after_scan_with_pdfseparate(self):
+        config = self.render_config(True)
+        self.assertIn("afterScan", config)
+        self.assertIn("pdfseparate", config)
+        self.assertIn("-page-", config)
+
+    def test_poppler_utils_is_installed_for_page_splitting(self):
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        task = next(item for item in tasks if item["name"] == "Install ScanservJS runtime dependencies")
+        self.assertIn("poppler-utils", task["ansible.builtin.apt"]["name"])
+
+    def test_validate_asserts_page_splitting_is_boolean(self):
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        validate = next(item for item in tasks if item["name"] == "Validate ScanservJS configuration")
+        self.assertTrue(
+            any("scanservjs_page_splitting" in condition for condition in validate["ansible.builtin.assert"]["that"])
+        )
 
 
 if __name__ == "__main__":

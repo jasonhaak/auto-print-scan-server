@@ -545,6 +545,8 @@ if [[ "$scanner" == true ]]; then
     [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
     printf '%s\n' 'Port must be 1 to 65535.' >&2
   done
+  printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
+  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
 fi
 scanner_device_names=()
 scanner_connections=()
@@ -600,6 +602,8 @@ if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
     [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
     printf '%s\n' 'Port must be 1 to 65535.' >&2
   done
+  printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
+  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
 fi
 [[ "$connection" != usb || "$usb_mode" == ipp_usb || "$usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid printer USB mode.' >&2; exit 1; }
 [[ "$connection" != usb || "$usb_identity" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || { printf '%s\n' 'USB identity must use vendor:product form.' >&2; exit 1; }
@@ -688,6 +692,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
       [[ -n "${scanner_usb_modes[$index]}" ]] && printf '    usb_mode: %s\n' "$(quote "${scanner_usb_modes[$index]}")"
     done
     printf 'scanservjs_retention_days: %s\nscanservjs_ocr_languages: [%s]\nscanservjs_port: %s\n' "$retention" "$languages" "$scanservjs_port"
+    printf 'scanservjs_page_splitting: %s\n' "$page_splitting"
   else
     printf '%s\n' 'managed_scanners: []'
   fi

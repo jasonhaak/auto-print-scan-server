@@ -8,6 +8,7 @@
       - scanservjs_retention_days | int >= 1
       - scanservjs_retention_days | int <= 900
       - scanservjs_ocr_languages | length > 0
+      - scanservjs_page_splitting | default(false) in [true, false]
     fail_msg: Configure a valid package checksum, port, retention period and at least one OCR language.
   tags: scanservjs
 
@@ -17,6 +18,7 @@
       - imagemagick
       - sane-utils
       - tesseract-ocr
+      - poppler-utils
       - "tesseract-ocr-{{ item }}"
     state: present
   loop: "{{ scanservjs_ocr_languages }}"

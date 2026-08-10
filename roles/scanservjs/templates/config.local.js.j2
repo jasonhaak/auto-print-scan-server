@@ -1,3 +1,8 @@
+{% if scanservjs_page_splitting | default(false) %}
+const options = { paths: ['/usr/lib/scanservjs'] };
+const Process = require(require.resolve('./server/classes/process', options));
+
+{% endif %}
 module.exports = {
   afterConfig(config) {
     config.host = '::';
@@ -7,5 +12,24 @@ module.exports = {
     config.thumbnailDirectory = '{{ scanservjs_data_directory }}/thumbnail';
     config.tempDirectory = '{{ scanservjs_data_directory }}/temp';
     config.ocrLanguage = '{{ scanservjs_ocr_languages | join('+') }}';
-  }
+  }{% if scanservjs_page_splitting | default(false) %},
+
+  // Splits a completed multipage PDF into one PDF per page, named
+  // <base>-page-<n>.pdf, alongside the original output file. The original
+  // multipage PDF is left unchanged; the split files are additional files
+  // in the same output directory.
+  async afterScan(fileInfo) {
+    const extension = fileInfo.fullname.slice(fileInfo.fullname.lastIndexOf('.'));
+    if (extension.toLowerCase() !== '.pdf') {
+      return;
+    }
+    const directory = fileInfo.fullname.slice(0, fileInfo.fullname.lastIndexOf('/'));
+    const base = fileInfo.fullname.slice(directory.length + 1, -extension.length);
+    try {
+      await Process.spawn(`pdfseparate '${fileInfo.fullname}' '${directory}/${base}-page-%d.pdf'`);
+    } catch (error) {
+      console.error(`Page splitting failed for ${fileInfo.fullname}: ${error}`);
+    }
+  }{% endif %}
+
 };

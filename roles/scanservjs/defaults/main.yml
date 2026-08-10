@@ -9,4 +9,5 @@ scanservjs_min_free_space_mb: 1024
 scanservjs_ocr_languages:
   - eng
 scanservjs_retention_days: null
+scanservjs_page_splitting: false
 scanservjs_imagemagick_disk_limit: 2GiB
