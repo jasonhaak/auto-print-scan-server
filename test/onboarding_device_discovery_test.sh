@@ -98,8 +98,8 @@ fi
 
 [[ "$(sane_discovery_outcome '')" == 'SANE discovery returned no usable device identifier.' ]]
 [[ "$(sane_discovery_outcome $'device `airscan:e0:Office Scanner\' is a scanner')" == 'SANE discovery returned an exact device identifier.' ]]
-rg -Fq "step_check scanner_output 'Run SANE scanner discovery command'" "$root/scripts/lib/onboarding/device-discovery.sh"
-! rg -Fq "step_check scanner_output 'SANE scanner discovery'" "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq "step_check scanner_output 'Run SANE scanner discovery command'" "$root/scripts/lib/onboarding/device-discovery.sh"
+! grep -Fq "step_check scanner_output 'SANE scanner discovery'" "$root/scripts/lib/onboarding/device-discovery.sh"
 
 no_printer_guidance=$(no_printer_discovery_guidance)
 [[ "$no_printer_guidance" == *'trusted LAN or USB'* ]]
@@ -124,11 +124,11 @@ if candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' lan; then
 fi
 candidate_matches_scope 'USB printer|usb|usb://printer|legacy_usb' all
 
-rg -q 'recommend_legacy_profile' "$root/scripts/onboard"
-rg -q 'verify_cups_job' "$root/scripts/onboard"
-rg -q 'verify_scanservjs_ready' "$root/scripts/onboard"
-rg -q 'create_scanner_test_pdf' "$root/scripts/onboard"
-rg -q 'test -s' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -q 'recommend_legacy_profile' "$root/scripts/onboard"
+grep -q 'verify_cups_job' "$root/scripts/onboard"
+grep -q 'verify_scanservjs_ready' "$root/scripts/onboard"
+grep -q 'create_scanner_test_pdf' "$root/scripts/onboard"
+grep -q 'test -s' "$root/scripts/lib/onboarding/device-discovery.sh"
 
 step_action() {
   local output_var=$1
