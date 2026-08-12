@@ -241,7 +241,7 @@ select_or_collect_printer() {
 }
 
 select_or_collect_scanner() {
-  local choice=$1 device_name
+  local choice=$1 device_name display_name
   if [[ "$choice" != manual ]]; then
     IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$choice"
     printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name" >&2
@@ -254,17 +254,24 @@ select_or_collect_scanner() {
     [[ -n "$device_name" ]] && break
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
+  printf '%s\n' 'The friendly name is shown in the ScanservJS web interface instead of the raw SANE identifier above.' >&2
+  while true; do
+    display_name=$(ask 'Friendly scanner name' "$device_name")
+    [[ -n "$display_name" ]] && break
+    printf '%s\n' 'Friendly scanner name cannot be empty.' >&2
+  done
   input_required 'Scanner connection'
   collect_scanner_definition || {
     printf 'Direct Ethernet setup failed for this scanner. Choose another connection topology or add it again later.\n' >&2
     return 1
   }
   COLLECTED_SCANNER_DEVICE_NAME=$device_name
+  COLLECTED_SCANNER_DISPLAY_NAME=$display_name
   if (( ${#scanner_device_names[@]} == 0 )); then
     collect_scanservjs_settings
   fi
   confirmation_block "Scanner: $device_name" \
-    "Connection|$COLLECTED_SCANNER_CONNECTION" "Backend|$COLLECTED_SCANNER_BACKEND" \
+    "Display name|$display_name" "Connection|$COLLECTED_SCANNER_CONNECTION" "Backend|$COLLECTED_SCANNER_BACKEND" \
     "Backend install|$COLLECTED_SCANNER_BACKEND_INSTALL" "USB mode|${COLLECTED_SCANNER_USB_MODE:-not applicable}" \
     "USB ID|${COLLECTED_SCANNER_USB_IDENTITY:-not applicable}"
 }

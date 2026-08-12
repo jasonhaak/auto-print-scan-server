@@ -2,6 +2,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ONBOARD_PYTHON="$root/.venv/bin/python"
+variables=''
 source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
 source "$root/scripts/lib/onboarding/device-decisions.sh"
@@ -160,5 +161,58 @@ discovered_scanner_usb_mode=''
 collect_scanner_definition
 [[ "$COLLECTED_SCANNER_BACKEND_INSTALL" == false ]] || { printf 'expected the discovered backend_install=false to be kept as the default, got %s\n' "$COLLECTED_SCANNER_BACKEND_INSTALL" >&2; exit 1; }
 unset -f ask_choice ask
+
+# select_or_collect_scanner: a friendly display name is collected and defaults to the exact
+# SANE device name when the operator just presses Enter.
+scanner_candidates=()
+printer_candidates=()
+scanner_device_names=()
+discovered_scanner_connection=''
+discovered_scanner_backend=''
+discovered_scanner_usb_mode=''
+direct_ethernet_interface=''
+ask_choice() {
+  case "$1" in
+    'Scanner connection') printf 'network' ;;
+    'Install this backend package with APT') printf 'true' ;;
+    'Enable page splitting (one PDF per scanned page)') printf 'false' ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+ask() {
+  case "$1" in
+    'Exact SANE device name from scanimage -L') printf 'airscan:e0:Office Scanner' ;;
+    'Friendly scanner name') printf '%s' "$2" ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+confirmation_block() { :; }
+recommendation() { :; }
+select_or_collect_scanner manual
+[[ "$COLLECTED_SCANNER_DEVICE_NAME" == 'airscan:e0:Office Scanner' ]]
+[[ "$COLLECTED_SCANNER_DISPLAY_NAME" == 'airscan:e0:Office Scanner' ]] || { printf 'expected display name to default to the device name, got %s\n' "$COLLECTED_SCANNER_DISPLAY_NAME" >&2; exit 1; }
+unset -f ask_choice ask confirmation_block recommendation
+
+# An explicit, distinct display name is kept as entered.
+ask_choice() {
+  case "$1" in
+    'Scanner connection') printf 'network' ;;
+    'Install this backend package with APT') printf 'true' ;;
+    'Enable page splitting (one PDF per scanned page)') printf 'false' ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+ask() {
+  case "$1" in
+    'Exact SANE device name from scanimage -L') printf 'airscan:e0:Office Scanner' ;;
+    'Friendly scanner name') printf 'Office Scanner' ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+confirmation_block() { :; }
+recommendation() { :; }
+select_or_collect_scanner manual
+[[ "$COLLECTED_SCANNER_DISPLAY_NAME" == 'Office Scanner' ]]
+unset -f ask_choice ask confirmation_block recommendation
 
 printf 'onboarding_device_decisions_test.sh: all checks passed\n'
