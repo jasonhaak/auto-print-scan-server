@@ -471,22 +471,39 @@ discover_direct_ethernet_device() {
 # between attempts (each scanimage -L call already blocks on its own WSD response window, so
 # extra sleep only adds wall-clock time without improving odds), showing the attempt number in
 # the step label so a run needing several attempts doesn't look stuck.
+#
+# This repo is general-purpose, not tuned to any one operator's hardware: an earlier version
+# returned as soon as any candidate was found, which would silently miss a second scanner that
+# only answers a later probe. Always run every attempt and merge (deduplicated) results across
+# them instead, so a device that only answers on attempt 4 is still captured even if a
+# different device already answered on attempt 1.
 scan_for_scanners() {
-  local attempt
+  local attempt combined=''
   for attempt in 1 2 3 4 5; do
     step_check scanner_output "Run SANE scanner discovery command (attempt $attempt/5)" 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
-    [[ -n "$(sane_scanner_candidates "$scanner_output")" ]] && return 0
+    combined+="$scanner_output"$'\n'
   done
-  return 0
+  scanner_output=$(printf '%s' "$combined" | awk '!seen[$0]++')
 }
 
 discover_devices() {
   local discovery_approved=${1:-false}
   local discovery_scope=${2:-all}
+  # Devices already found on a previous pass (newline-separated, as accepted by discover_devices
+  # itself when a rerun is requested). Preserved across a rerun so a device that answered before
+  # but not again is never silently dropped just because a later pass missed it.
+  local previous_printer_candidates=${3:-}
+  local previous_scanner_candidates=${4:-}
   local ipp_usb_started=false
   local discovery_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
   local lpinfo_output_status=0
   local -a printer_candidates=() scanner_candidates=()
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && printer_candidates+=("$candidate")
+  done <<<"$previous_printer_candidates"
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] && scanner_candidates+=("$candidate")
+  done <<<"$previous_scanner_candidates"
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
   input_required 'Discovery tools'
@@ -659,27 +676,24 @@ discover_devices() {
     fi
   fi
 
-  # A partial miss (a printer found but no scanner, or vice versa) on a LAN/all-scope run is
-  # worth offering a rerun for before the operator picks from an incomplete result -- network
-  # discovery can miss a device on one pass and find it on the next (reproduced live for the
-  # scanner side). USB-only scope is excluded: USB enumeration is deterministic, not flaky.
-  # Restricted to a full (both-kinds) discovery pass: when discovery_kind narrows the search to
-  # just one device type (e.g. the "Add another printer?" loop), the other kind is never being
-  # searched at all, so it would spuriously read as "missing" and this would fire on every
-  # not-found run, duplicating the "no usable device was selected" recovery below. A full miss
-  # on both sides in an all-kinds run is already handled by that same recovery, so this only
-  # fires on an exact one-found/one-missing split.
-  if [[ "$discovery_scope" != usb && "${discovery_kind:-all}" == all ]]; then
-    local printer_partial_miss=false scanner_partial_miss=false
-    (( ${#printer_candidates[@]} == 0 )) && printer_partial_miss=true
-    (( ${#scanner_candidates[@]} == 0 )) && scanner_partial_miss=true
-    if [[ "$printer_partial_miss" != "$scanner_partial_miss" ]]; then
-      printf '%s\n' 'Network discovery for a printer or scanner can be unreliable and may find more on a repeat attempt.'
-      if yes_default 'Rerun discovery now before choosing from what was found?'; then
-        rm -f "$discovery_log"
-        discover_devices true "$discovery_scope"
-        return $?
-      fi
+  # Offer to rerun discovery whenever at least one device was found, threading the already-found
+  # candidates forward (as the previous_printer_candidates/previous_scanner_candidates
+  # parameters) so a rerun that finds fewer devices never drops ones already found -- network
+  # discovery (WSD/AirScan in particular) can miss a device on one pass and find it, or find a
+  # different one, on the next (reproduced live for the scanner side). This repo is
+  # general-purpose and must not assume a setup has only one printer or one scanner. USB-only
+  # scope is excluded: USB enumeration is deterministic, not flaky. Restricted to a full
+  # (both-kinds) discovery pass: when discovery_kind narrows the search to just one device type
+  # (e.g. the "Add another printer?" loop), only that kind is ever searched, so this offer would
+  # be meaningless noise about the other kind. A full miss on both sides is left to the existing
+  # "no usable device was selected" recovery below, which already offers its own retry.
+  if [[ "$discovery_scope" != usb && "${discovery_kind:-all}" == all ]] \
+    && (( ${#printer_candidates[@]} > 0 || ${#scanner_candidates[@]} > 0 )); then
+    if yes 'Rerun discovery to search for additional or missed devices? Already-found devices are kept even if a rerun does not find them again.'; then
+      rm -f "$discovery_log"
+      discover_devices true "$discovery_scope" \
+        "$(printf '%s\n' "${printer_candidates[@]}")" "$(printf '%s\n' "${scanner_candidates[@]}")"
+      return $?
     fi
   fi
 
