@@ -178,6 +178,9 @@ def validate_scanner(scanner: Any) -> None:
     identity = scanner.get("usb_identity")
     if identity is not None and not USB_IDENTITY_PATTERN.fullmatch(str(identity)):
         raise InventoryError(f"scanner {name!r} identity must use vendor:product form")
+    display_name = scanner.get("display_name")
+    if display_name is not None:
+        require_text(display_name, f"scanner {name!r} display name")
 
 
 def validate_direct_link(link: Any) -> None:
@@ -378,7 +381,8 @@ def command_list(data: dict[str, Any]) -> None:
     if scanners:
         print("Managed scanners:")
         for scanner in scanners:
-            print(f"  {scanner['device_name']}: {scanner['connection']} via {scanner['backend']}")
+            label = f" ({scanner['display_name']})" if scanner.get("display_name") else ""
+            print(f"  {scanner['device_name']}{label}: {scanner['connection']} via {scanner['backend']}")
     else:
         print("No managed scanners.")
     links = data["direct_ethernet_links"]
@@ -440,6 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
     scanner.add_argument("--backend-install", type=parse_bool, default=True)
     scanner.add_argument("--usb-mode", choices=sorted(USB_MODES))
     scanner.add_argument("--usb-identity")
+    scanner.add_argument("--display-name")
     scanner.add_argument("--retention-days", type=int)
     scanner.add_argument("--ocr-languages")
     scanner.add_argument("--port", type=int)
@@ -558,6 +563,8 @@ def main() -> int:
                 replacement["usb_mode"] = arguments.usb_mode
             if arguments.usb_identity:
                 replacement["usb_identity"] = arguments.usb_identity
+            if arguments.display_name:
+                replacement["display_name"] = arguments.display_name
             action = upsert(data, "scanner", arguments.original_device_name, replacement)
             selected = find_device(data, "scanner", arguments.device_name)
             if selected["connection"] != "usb":

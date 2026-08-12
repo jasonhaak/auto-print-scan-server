@@ -205,6 +205,27 @@ scanservjs_ocr_languages: [eng]
         self.assertEqual(data["scanservjs_ocr_languages"], ["eng", "deu"])
         self.assertEqual(data["scanservjs_port"], 8080)
 
+    def test_scanner_display_name_defaults_to_omitted(self):
+        self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "8080",
+        )
+
+        scanner = next(scanner for scanner in self.load()["managed_scanners"] if scanner["device_name"] == "airscan:e0:Office Scanner")
+        self.assertNotIn("display_name", scanner)
+
+    def test_scanner_display_name_is_persisted_when_supplied(self):
+        self.run_helper(
+            "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
+            "--connection", "ipp", "--backend", "sane-airscan",
+            "--retention-days", "90", "--ocr-languages", "eng", "--port", "8080",
+            "--display-name", "Office Scanner",
+        )
+
+        scanner = next(scanner for scanner in self.load()["managed_scanners"] if scanner["device_name"] == "airscan:e0:Office Scanner")
+        self.assertEqual(scanner["display_name"], "Office Scanner")
+
     def test_scanservjs_page_splitting_defaults_to_false_and_can_be_enabled(self):
         self.run_helper(
             "upsert-scanner", "--device-name", "airscan:e0:Office Scanner",
