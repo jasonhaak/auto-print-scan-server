@@ -405,6 +405,41 @@ direct_ethernet_recovery() {
   esac
 }
 
+collect_direct_ethernet_link() {
+  local active_interface detected_unused_interface direct_ethernet_discovery_status
+  recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
+  active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
+  detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
+  while true; do
+    while true; do
+      direct_ethernet_interface=$(ask_detected 'Unused Raspberry Pi Ethernet interface' "${direct_ethernet_interface:-${detected_unused_interface:-eth0}}" 'Use an Ethernet adapter that is not carrying the trusted LAN connection.')
+      [[ "$direct_ethernet_interface" =~ ^[A-Za-z0-9_.-]+$ && "$direct_ethernet_interface" != "$active_interface" ]] && break
+      printf 'Interface %s is invalid or carries the Raspberry Pi default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
+    done
+    while true; do
+      direct_ethernet_pi_ipv4_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "${direct_ethernet_pi_ipv4_cidr:-192.168.50.1/30}")
+      valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" false && break
+      printf '%s\n' 'Enter a valid IPv4 CIDR, for example 192.168.50.1/30.' >&2
+    done
+    while true; do
+      direct_ethernet_device_ipv4=$(ask 'Device static IPv4 address' "${direct_ethernet_device_ipv4:-192.168.50.2}")
+      same_direct_ipv4_link "$direct_ethernet_pi_ipv4_cidr" "$direct_ethernet_device_ipv4" && break
+      printf '%s\n' 'Enter another address in the same /30 link as the Raspberry Pi, for example 192.168.50.2.' >&2
+    done
+    direct_ethernet_discovery_status=0
+    discover_direct_ethernet_device || direct_ethernet_discovery_status=$?
+    [[ "$direct_ethernet_discovery_status" == 2 ]] || break
+  done
+  if [[ "$direct_ethernet_discovery_status" != 0 ]]; then
+    printf 'The direct Ethernet link could not be configured for this device. Choose another connection topology for it, or fix the cable/interface and try again on the next device.\n' >&2
+    direct_ethernet_interface=''
+    direct_ethernet_pi_ipv4_cidr=''
+    direct_ethernet_device_ipv4=''
+    return 1
+  fi
+  printf '%s\n' 'The direct Ethernet link is recreated permanently only after final confirmation. Commissioning then verifies the declared device before creating its queue or scanner service.'
+}
+
 discover_direct_ethernet_device() {
   local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
@@ -468,9 +503,9 @@ discover_direct_ethernet_device() {
     remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
   candidate=$(direct_scanner_candidate "$scanner_output" "$direct_ethernet_device_ipv4") || true
   if [[ -n "$candidate" ]]; then
-    IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name <<<"$candidate"
-    discovered_scanner=true
-    printf 'Detected a scanner: %s. Its SANE identifier will be recommended in the scanner section.\n' "$discovered_scanner_device_name"
+    IFS='|' read -r _ _ _ _ scanner_identifier_for_message <<<"$candidate"
+    scanner_candidates+=("$candidate")
+    printf 'Detected a scanner: %s. It will be offered as a candidate for scanner selection.\n' "$scanner_identifier_for_message"
   else
     printf 'No scanner identifier was bound to direct device address %s. Enter scanner details manually if this device supports scanning.\n' "$direct_ethernet_device_ipv4" >&2
   fi

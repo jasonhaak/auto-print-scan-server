@@ -421,6 +421,45 @@ if [[ "$end_of_function_block" == *'choose_candidate'* ]]; then
 fi
 [[ "$end_of_function_block" == *'${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} == 0'* ]]
 
+# collect_direct_ethernet_link must exist as a standalone function, not be inlined into
+# scripts/onboard's printer topology branch, so both collect_printer_definition and
+# collect_scanner_definition (Tasks 6/7) can call it.
+grep -q '^collect_direct_ethernet_link() {' "$root/scripts/lib/onboarding/device-discovery.sh"
+
+# A failed direct_ethernet attempt must release direct_ethernet_interface (so another device
+# can still claim the topology) and return non-zero, never exit the whole process -- other
+# devices may already be successfully added to the loop by the time this one fails.
+discover_direct_ethernet_device() { return 1; }
+ask_detected() { printf 'eth1'; }
+ask() { printf '%s' "$2"; }
+valid_ipv4_cidr() { return 0; }
+same_direct_ipv4_link() { return 0; }
+recommendation() { :; }
+direct_ethernet_interface=''
+direct_ethernet_pi_ipv4_cidr=''
+direct_ethernet_device_ipv4=''
+scanner_candidates=()
+printer_candidates=()
+if collect_direct_ethernet_link; then
+  printf 'collect_direct_ethernet_link must return non-zero when the underlying probe fails\n' >&2
+  exit 1
+fi
+[[ -z "$direct_ethernet_interface" ]] || { printf 'a failed direct_ethernet attempt must release direct_ethernet_interface\n' >&2; exit 1; }
+unset -f ask_detected ask valid_ipv4_cidr same_direct_ipv4_link recommendation
+# discover_direct_ethernet_device was shadowed by the mock above; unset -f would remove it
+# entirely rather than restoring the real sourced version, so re-source the library instead.
+source "$root/scripts/lib/onboarding/device-discovery.sh"
+
+# A scanner found as a side effect of a printer's direct_ethernet probe (or vice versa) must
+# land in scanner_candidates[]/printer_candidates[], not a single-slot discovered_scanner_*
+# variable, so it is visible to select_or_collect_device's "offer remaining candidates" step.
+direct_ethernet_scanner_block=$(awk '/^  step_check scanner_output .Probe the direct device for scanning./{capturing=1} capturing{print} capturing && /^  fi$/{exit}' "$root/scripts/lib/onboarding/device-discovery.sh")
+[[ "$direct_ethernet_scanner_block" == *'scanner_candidates+=("$candidate")'* ]]
+if [[ "$direct_ethernet_scanner_block" == *'discovered_scanner=true'* ]]; then
+  printf 'direct_ethernet scanner discovery must append to scanner_candidates, not set discovered_scanner\n' >&2
+  exit 1
+fi
+
 # The primary printer's connection topology (network/direct_ethernet/usb) must never clear a
 # separately-discovered scanner. A multifunction device commonly uses a different connection per
 # function -- e.g. this repo's own tested Brother MFC-7360N prints over USB but scans over the
@@ -1029,16 +1068,17 @@ remote() {
   esac
 }
 mock_scanner_output=$'device `airscan:e0:printer.local\' is a scanner'
-unset discovered_scanner discovered_scanner_device_name
+scanner_candidates=()
+printer_candidates=()
 direct_ethernet_output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-direct-ethernet.XXXXXX")
 # Redirect rather than use $(...): command substitution forks a subshell, and
-# discovered_scanner/discovered_scanner_device_name are set as globals inside
-# discover_direct_ethernet_device, so they must be observed in this shell, not
-# a discarded subshell copy (same pitfall noted above for scope_calls).
+# scanner_candidates is appended to as a global inside discover_direct_ethernet_device, so it
+# must be observed in this shell, not a discarded subshell copy (same pitfall noted above for
+# scope_calls).
 discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
 hostname_bound_output=$(<"$direct_ethernet_output_file")
-[[ "$discovered_scanner" == true ]]
-[[ "$discovered_scanner_device_name" == 'airscan:e0:printer.local' ]]
+[[ "${#scanner_candidates[@]}" -eq 1 ]]
+[[ "${scanner_candidates[0]}" == *'airscan:e0:printer.local'* ]]
 [[ "$hostname_bound_output" == *'Detected a scanner: airscan:e0:printer.local'* ]]
 [[ "$delete_calls" -ge 1 ]]
 
@@ -1050,10 +1090,10 @@ remote() {
     *) return 0 ;;
   esac
 }
-unset discovered_scanner discovered_scanner_device_name
+scanner_candidates=()
 discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
 ambiguous_output=$(<"$direct_ethernet_output_file")
-[[ -z "${discovered_scanner:-}" ]]
+[[ "${#scanner_candidates[@]}" -eq 0 ]]
 [[ "$ambiguous_output" == *'No scanner identifier was bound'* ]]
 
 # Failed resolution: the hostname does not resolve at all, so the candidate
@@ -1064,10 +1104,10 @@ remote() {
     *) return 0 ;;
   esac
 }
-unset discovered_scanner discovered_scanner_device_name
+scanner_candidates=()
 discover_direct_ethernet_device >"$direct_ethernet_output_file" 2>&1
 unresolved_output=$(<"$direct_ethernet_output_file")
-[[ -z "${discovered_scanner:-}" ]]
+[[ "${#scanner_candidates[@]}" -eq 0 ]]
 [[ "$unresolved_output" == *'No scanner identifier was bound'* ]]
 rm -f "$direct_ethernet_output_file"
 
