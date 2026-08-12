@@ -53,6 +53,15 @@ class CupsRoleTest(unittest.TestCase):
         )
         self.assertIn("cups_available_models.stdout", profile_task["ansible.builtin.assert"]["that"])
 
+    def test_printer_assert_does_not_require_at_least_one_printer(self):
+        tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
+        printer_assert = next(
+            task for task in tasks
+            if task["name"] == "Validate managed printer configuration"
+        )
+        conditions = printer_assert["ansible.builtin.assert"]["that"]
+        self.assertFalse(any("managed_printers | length > 0" == condition for condition in conditions))
+
     def test_brlaser_profile_is_generic_and_models_are_selected_per_queue(self):
         profiles = yaml.safe_load((ROOT / "vars/driver_profiles.yml").read_text(encoding="utf-8"))
         self.assertEqual(

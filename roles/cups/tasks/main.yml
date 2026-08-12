@@ -2,7 +2,6 @@
 - name: Validate managed printer configuration
   ansible.builtin.assert:
     that:
-      - managed_printers | length > 0
       - managed_printers | map(attribute='name') | unique | list | length == managed_printers | length
       - item.name is match('^[A-Za-z0-9_.-]+$')
       - item.connection in ['usb', 'ipp', 'ipps', 'socket', 'lpd']
