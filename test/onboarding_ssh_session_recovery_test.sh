@@ -87,3 +87,18 @@ remote_tty 'sudo -v'
 [[ "$captured_command" == *'export PATH='* ]]
 [[ "$captured_command" == *'/usr/sbin'* ]]
 [[ "$captured_command" == *'sudo -v'* ]]
+
+# Finding 13: OpenSSH prints "Shared connection to HOST closed." to stderr when a -tt
+# (pty-allocating) session over a ControlMaster connection tears down. This noise was leaking
+# into every remote_tty step's captured technical output (reproduced live: it appeared as the
+# Output of both "Start CUPS for endpoint discovery" and "Stop IPP-over-USB for direct endpoint
+# discovery"). -q suppresses OpenSSH's own diagnostic/warning chatter without touching the
+# remote command's real output.
+captured_arguments=()
+ssh() { captured_arguments=("$@"); }
+remote_tty 'sudo -v'
+found_quiet_flag=false
+for argument in "${captured_arguments[@]}"; do
+  [[ "$argument" == '-q' ]] && found_quiet_flag=true
+done
+[[ "$found_quiet_flag" == true ]]

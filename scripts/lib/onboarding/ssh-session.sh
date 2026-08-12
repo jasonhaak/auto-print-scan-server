@@ -11,7 +11,7 @@ ssh_session_cleanup() {
 # consistent regardless of how the Raspberry Pi's SSH daemon and PAM configure a bare exec session.
 remote_path_prefix='export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH";'
 remote() { ssh -o ControlPath="$ssh_socket" -o ControlMaster=auto "$admin@$host" "$remote_path_prefix $*"; }
-remote_tty() { ssh -tt -o ControlPath="$ssh_socket" -o ControlMaster=auto "$admin@$host" "$remote_path_prefix $*"; }
+remote_tty() { ssh -tt -q -o ControlPath="$ssh_socket" -o ControlMaster=auto "$admin@$host" "$remote_path_prefix $*"; }
 ssh_session_target_resolves() {
   command -v getent >/dev/null || return 0
   getent ahosts "$host" >/dev/null 2>&1
