@@ -175,7 +175,7 @@ ask_choice() {
   case "$1" in
     'Scanner connection') printf 'network' ;;
     'Install this backend package with APT') printf 'true' ;;
-    'Enable page splitting (one PDF per scanned page)') printf 'false' ;;
+    'Enable page splitting (one PDF per scanned page)? (true, false)') printf 'false' ;;
     *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
   esac
 }
@@ -198,7 +198,7 @@ ask_choice() {
   case "$1" in
     'Scanner connection') printf 'network' ;;
     'Install this backend package with APT') printf 'true' ;;
-    'Enable page splitting (one PDF per scanned page)') printf 'false' ;;
+    'Enable page splitting (one PDF per scanned page)? (true, false)') printf 'false' ;;
     *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
   esac
 }

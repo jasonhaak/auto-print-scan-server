@@ -296,7 +296,7 @@ collect_scanservjs_settings() {
     printf '%s\n' 'Port must be 1 to 65535.' >&2
   done
   printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.' >&2
-  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
+  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)? (true, false)' 'false' true false)
 }
 
 printer_connection_confirmation() {

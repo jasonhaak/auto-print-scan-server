@@ -258,7 +258,7 @@ configure_scanner() {
       [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
       printf '%s\n' 'Port must be 1 to 65535.' >&2
     done
-    page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' "$(saved_scalar scanservjs_page_splitting false)" true false)
+    page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)? (true, false)' "$(saved_scalar scanservjs_page_splitting false)" true false)
     command+=(--retention-days "$retention" --ocr-languages "$ocr" --port "$scanservjs_port" --page-splitting "$page_splitting")
   fi
   step_action command_output 'Save the managed scanner definition' 'device_inventory.py upsert-scanner' "${command[@]}"
