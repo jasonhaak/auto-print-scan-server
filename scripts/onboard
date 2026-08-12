@@ -277,11 +277,6 @@ if [[ "$topology" == direct_ethernet ]]; then
   discovered_printer_connection=''
   discovered_printer_uri=''
   discovered_printer_usb_mode=''
-  discovered_scanner=false
-  discovered_scanner_connection=''
-  discovered_scanner_backend=''
-  discovered_scanner_backend_install=''
-  discovered_scanner_usb_mode=''
   recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
   active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
   detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
@@ -316,15 +311,6 @@ elif [[ "$topology" != usb && "${discovered_printer_connection:-}" == usb ]]; th
   discovered_printer_connection=''
   discovered_printer_uri=''
   discovered_printer_usb_mode=''
-fi
-if [[ "$topology" == usb && "${discovered_scanner_connection:-}" != usb ]] ||
-   [[ "$topology" != usb && "${discovered_scanner_connection:-}" == usb ]]; then
-  discovered_scanner=false
-  discovered_scanner_connection=''
-  discovered_scanner_backend=''
-  discovered_scanner_backend_install=''
-  discovered_scanner_usb_mode=''
-  discovered_scanner_device_name=''
 fi
 if [[ "$topology" == usb ]]; then
   connection=usb

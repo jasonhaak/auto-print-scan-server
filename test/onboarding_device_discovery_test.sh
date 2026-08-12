@@ -392,6 +392,24 @@ seed_block=$(awk '/^discover_devices\(\) \{/{capturing=1} capturing{print} captu
 [[ "$seed_block" == *'previous_printer_candidates'*'printer_candidates+=("$candidate")'* ]]
 [[ "$seed_block" == *'previous_scanner_candidates'*'scanner_candidates+=("$candidate")'* ]]
 
+# The primary printer's connection topology (network/direct_ethernet/usb) must never clear a
+# separately-discovered scanner. A multifunction device commonly uses a different connection per
+# function -- e.g. this repo's own tested Brother MFC-7360N prints over USB but scans over the
+# network via AirScan (docs/guides/brother-scanners.md). Reproduced live: selecting a discovered
+# printer and a discovered scanner during discovery, then choosing "usb" as the printer's
+# topology, silently cleared the already-selected scanner, forcing the operator to reconfigure
+# it from scratch a few prompts later with no memory of what discovery had just found.
+topology_block=$(awk '
+  /^topology=\$\(ask_choice .How is this device connected/ { capturing = 1 }
+  capturing { print }
+  capturing && /^printf .%s\\n. .The device URI tells CUPS/ { exit }
+' "$root/scripts/onboard")
+[[ -n "$topology_block" ]]
+if [[ "$topology_block" == *'discovered_scanner=false'* ]]; then
+  printf 'printer topology selection must not clear a separately-discovered scanner\n' >&2
+  exit 1
+fi
+
 probe_calls=0
 step_check() { probe_calls=$((probe_calls + 1)); return 0; }
 verify_ipp_listener_ready false
