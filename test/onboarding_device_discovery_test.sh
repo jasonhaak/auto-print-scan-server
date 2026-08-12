@@ -538,6 +538,21 @@ grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/sit
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/manage-devices"
 grep -q -- '--page-splitting' "$root/scripts/manage-devices"
 
+# Task 10: manage-devices' configure_printer/configure_scanner adopt the same shared
+# collect_printer_definition/collect_scanner_definition collectors onboard uses, gaining
+# direct_ethernet topology support (previously available only from scripts/onboard's primary
+# printer flow) instead of maintaining their own separate inline connection-collection copy.
+configure_printer_block=$(awk '/^configure_printer\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
+[[ "$configure_printer_block" == *'collect_printer_definition'* ]]
+if [[ "$configure_printer_block" == *"ask_choice 'Printer connection (LAN/direct IP protocol or USB)'"* ]]; then
+  printf 'configure_printer must route connection collection through collect_printer_definition, not its own inline ask_choice\n' >&2
+  exit 1
+fi
+grep -q 'direct_ethernet' "$root/scripts/manage-devices"
+
+configure_scanner_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
+[[ "$configure_scanner_block" == *'collect_scanner_definition'* ]]
+
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'scanservjs_page_splitting:' "$root/scripts/onboard"
 
@@ -695,8 +710,15 @@ if grep -q "ask_choice 'Scanner USB mode'" "$root/scripts/onboard"; then
 fi
 device_decisions_scanner_usb_mode_sites=$(grep -c "ask_choice 'Scanner USB mode'" "$root/scripts/lib/onboarding/device-decisions.sh")
 [[ "$device_decisions_scanner_usb_mode_sites" -eq 1 ]]
+# manage-devices' configure_scanner now delegates connection/backend/USB-mode/USB-identity
+# collection to the same shared collect_scanner_definition (Task 10), so it must not have its
+# own inline copy of the USB-mode prompt or guidance any more.
 scanner_config_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
-[[ "$scanner_config_block" == *'scanner_usb_mode_guidance'* ]]
+[[ "$scanner_config_block" == *'collect_scanner_definition'* ]]
+if [[ "$scanner_config_block" == *"ask_choice 'Scanner connection (network, ipp, ipps or USB)'"* ]]; then
+  printf 'configure_scanner must route connection collection through collect_scanner_definition, not its own inline ask_choice\n' >&2
+  exit 1
+fi
 
 # Finding D: onboard must collect a USB identity for every scanner, matching what
 # manage-devices already does, instead of silently leaving it unset for scanners configured
@@ -705,8 +727,9 @@ grep -q 'scanner_usb_identities' "$root/scripts/onboard"
 grep -Fq '${scanner_usb_identities[$index]}' "$root/scripts/onboard"
 
 # Finding E: manage-devices must validate a scanner's USB identity the same way it already
-# validates a printer's, instead of accepting any string unchecked.
-[[ "$scanner_config_block" == *'valid_usb_identity'* ]]
+# validates a printer's, instead of accepting any string unchecked -- now guaranteed structurally
+# since collect_scanner_definition (device-decisions.sh) is the single site collecting it.
+grep -Fq 'valid_usb_identity' "$root/scripts/lib/onboarding/device-decisions.sh"
 
 # Finding 5/6: every device (first or additional, printer or scanner) must give the same
 # guidance and confirm the finished definition at the end -- the unified loop replaces the old

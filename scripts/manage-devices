@@ -33,6 +33,12 @@ discovery_cups_restore_needed=false
 discovery_ipp_usb_was_enabled='not-found'
 discovery_ipp_usb_was_active='inactive'
 temporary_direct_connection=''
+direct_ethernet_interface=''
+direct_ethernet_pi_ipv4_cidr=''
+direct_ethernet_device_ipv4=''
+printer_candidates=()
+scanner_candidates=()
+discovery_tools_ready=false
 
 cleanup() {
   [[ "$discovery_ipp_usb_restore_needed" == true ]] && restore_ipp_usb_state
@@ -108,19 +114,9 @@ validate_queue() {
   [[ "$1" =~ ^[A-Za-z0-9_.-]+$ ]]
 }
 
-default_printer_uri() {
-  case "$1" in
-    ipp) printf '%s' 'ipp://printer.local/ipp/print' ;;
-    ipps) printf '%s' 'ipps://printer.local/ipp/print' ;;
-    socket) printf '%s' 'socket://printer.local:9100' ;;
-    lpd) printf '%s' 'lpd://printer.local/queue' ;;
-    usb) printf '%s' 'dnssd://printer._ipp._tcp.local/' ;;
-  esac
-}
-
 configure_printer() {
   local original=${1:-} name connection uri driver shared profile cups_model usb_mode usb_identity link_interface link_device_ipv4 command_output
-  local uri_default usb_mode_default profile_default dns_sd_name dns_sd_name_default
+  local profile_default dns_sd_name dns_sd_name_default
   local name_default=printer connection_default=${discovered_printer_connection:-ipp} driver_default=driverless shared_default=true
   if [[ -n "$original" ]]; then
     name_default=$(field printer "$original" name)
@@ -142,46 +138,17 @@ configure_printer() {
     done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names link)
   fi
   input_required 'Printer connection'
-  connection=$(ask_choice 'Printer connection (LAN/direct IP protocol or USB)' "$connection_default" ipp ipps socket lpd usb)
+  discovered_printer_connection=$connection_default
+  discovered_printer_uri=$([[ -n "$original" ]] && field printer "$original" device_uri || true)
+  discovered_printer_usb_mode=$([[ -n "$original" ]] && field printer "$original" usb_mode || true)
+  collect_printer_definition || return 1
+  connection=$COLLECTED_PRINTER_CONNECTION
+  uri=$COLLECTED_PRINTER_URI
+  usb_mode=$COLLECTED_PRINTER_USB_MODE
+  usb_identity=$COLLECTED_PRINTER_USB_IDENTITY
   if [[ -z "$original" && ( "$connection" == socket || "$connection" == lpd ) ]]; then
     driver_default=package_profile
   fi
-  usb_mode=''
-  usb_identity=''
-  if [[ "$connection" == usb ]]; then
-    usb_mode_default=${discovered_printer_usb_mode:-ipp_usb}
-    if [[ -n "$original" ]]; then
-      usb_mode_default=$(field printer "$original" usb_mode)
-      [[ -n "$usb_mode_default" ]] || usb_mode_default=ipp_usb
-    fi
-    usb_mode=$(ask_choice 'USB mode' "$usb_mode_default" ipp_usb legacy_usb)
-    if [[ -n "$original" ]]; then
-      usb_identity=$(field printer "$original" usb_identity)
-    elif [[ -n "$ssh_socket" ]]; then
-      if ! usb_identity=$(choose_usb_identity "$(remote 'lsusb' 2>&1 || true)") || [[ "$usb_identity" == manual ]]; then
-        usb_identity=''
-      fi
-    fi
-    while true; do
-      usb_identity=$(ask 'USB vendor:product identity' "$usb_identity")
-      valid_usb_identity "$usb_identity" && break
-      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
-    done
-  fi
-
-  uri_default=${discovered_printer_uri:-$(default_printer_uri "$connection")}
-  [[ "$connection" == usb && "$usb_mode" == legacy_usb ]] && uri_default=usb://manufacturer/printer
-  [[ -n "$original" && "$connection" == "$connection_default" ]] && uri_default=$(field printer "$original" device_uri)
-  [[ "$connection" == usb && "$usb_mode" == legacy_usb && "$uri_default" != usb://* ]] && uri_default=usb://manufacturer/printer
-  [[ "$connection" == usb && "$usb_mode" == ipp_usb && "$uri_default" == usb://* ]] && uri_default=dnssd://printer._ipp._tcp.local/
-  while true; do
-    uri=$(ask 'Printer device URI' "$uri_default")
-    if valid_printer_uri "$connection" "$uri"; then
-      [[ "$connection" != usb || "$usb_mode" != legacy_usb || "$uri" == usb://* ]] &&
-        [[ "$connection" != usb || "$usb_mode" != ipp_usb || "$uri" != usb://* ]] && break
-    fi
-    printf 'The %s connection requires a matching URI scheme. Try again.\n' "$connection" >&2
-  done
   if [[ "$connection" == usb ]]; then
     if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
     printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
@@ -235,7 +202,7 @@ configure_printer() {
 
 configure_scanner() {
   local original=${1:-} name connection backend backend_install usb_mode usb_identity retention ocr scanservjs_port page_splitting command_output
-  local usb_mode_default connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan} backend_install_default=true
+  local connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan} backend_install_default=true
   if [[ -n "$original" ]]; then
     connection_default=$(field scanner "$original" connection)
     backend_default=$(field scanner "$original" backend)
@@ -248,28 +215,16 @@ configure_scanner() {
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done
   input_required 'Scanner connection'
-  connection=$(ask_choice 'Scanner connection (network, ipp, ipps or USB)' "$connection_default" network ipp ipps usb)
-  [[ "$connection" == usb && "$connection" != "$connection_default" ]] && backend_default=sane-utils
-  collect_scanner_backend "$connection" "$backend_default" "$backend_install_default"
+  discovered_scanner_connection=$connection_default
+  discovered_scanner_backend=$backend_default
+  discovered_scanner_backend_install=$backend_install_default
+  discovered_scanner_usb_mode=$([[ -n "$original" ]] && field scanner "$original" usb_mode || true)
+  collect_scanner_definition || return 1
+  connection=$COLLECTED_SCANNER_CONNECTION
   backend=$COLLECTED_SCANNER_BACKEND
   backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
-  usb_mode=''
-  usb_identity=''
-  if [[ "$connection" == usb ]]; then
-    usb_mode_default=${discovered_scanner_usb_mode:-ipp_usb}
-    if [[ -n "$original" && "$connection" == "$connection_default" ]]; then
-      usb_mode_default=$(field scanner "$original" usb_mode)
-      [[ -n "$usb_mode_default" ]] || usb_mode_default=ipp_usb
-    fi
-    scanner_usb_mode_guidance
-    usb_mode=$(ask_choice 'USB mode' "$usb_mode_default" ipp_usb legacy_usb)
-    usb_identity=$([[ -n "$original" ]] && field scanner "$original" usb_identity || true)
-    while true; do
-      usb_identity=$(ask 'Optional USB vendor:product identity' "$usb_identity")
-      { [[ -z "$usb_identity" ]] || valid_usb_identity "$usb_identity"; } && break
-      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
-    done
-  fi
+  usb_mode=$COLLECTED_SCANNER_USB_MODE
+  usb_identity=$COLLECTED_SCANNER_USB_IDENTITY
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)
   [[ -n "$original" ]] && command+=(--original-device-name "$original")
