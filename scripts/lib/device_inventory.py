@@ -207,8 +207,8 @@ def validate_inventory(data: dict[str, Any]) -> None:
     scanners = data.get("managed_scanners")
     if not isinstance(printers, list) or not isinstance(scanners, list):
         raise InventoryError("managed_printers and managed_scanners must be lists")
-    if not printers:
-        raise InventoryError("inventory must contain at least one managed printer")
+    if not printers and not scanners:
+        raise InventoryError("inventory must contain at least one managed printer or managed scanner")
     for printer in printers:
         validate_printer(printer)
     for scanner in scanners:

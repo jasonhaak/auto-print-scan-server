@@ -64,6 +64,45 @@ scanservjs_ocr_languages: [eng]
     def load(self):
         return yaml.safe_load(self.inventory.read_text(encoding="utf-8"))
 
+    def test_accepts_a_scanner_only_inventory(self):
+        self.inventory.write_text(
+            """---
+common_hostname: print-server
+trusted_lan_cidrs:
+  - 192.168.178.0/24
+managed_printers: []
+managed_scanners:
+  - device_name: "airscan:e0:Office Scanner"
+    connection: network
+    backend: sane-airscan
+direct_ethernet_links: []
+scanservjs_retention_days: 90
+scanservjs_ocr_languages: [eng]
+scanservjs_port: 8080
+""",
+            encoding="utf-8",
+        )
+        result = self.run_helper("list")
+        self.assertIn("Office Scanner", result.stdout)
+
+    def test_rejects_an_inventory_with_neither_printers_nor_scanners(self):
+        self.inventory.write_text(
+            """---
+common_hostname: print-server
+trusted_lan_cidrs:
+  - 192.168.178.0/24
+managed_printers: []
+managed_scanners: []
+direct_ethernet_links: []
+scanservjs_retention_days: null
+scanservjs_ocr_languages: [eng]
+""",
+            encoding="utf-8",
+        )
+        result = self.run_helper("list", check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at least one managed printer or managed scanner", result.stderr)
+
     def test_lists_existing_devices(self):
         result = self.run_helper("list")
         self.assertIn("office", result.stdout)
