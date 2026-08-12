@@ -10,6 +10,9 @@
   register: device_preflight_scanner
   changed_when: false
   failed_when: false
+  retries: 5
+  delay: 1
+  until: device_preflight_scanner.rc == 0 and managed_device.device_name in device_preflight_scanner.stdout
 
 - name: Require scanimage during commissioning
   ansible.builtin.assert:

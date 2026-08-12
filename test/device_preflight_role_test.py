@@ -92,6 +92,22 @@ class DevicePreflightRoleTest(unittest.TestCase):
             names.index("Require available declared printer during commissioning"),
         )
 
+    def test_scanner_query_retries_before_declaring_it_unavailable(self):
+        # WSD/AirScan discovery is inherently variable-timing (see scan_for_scanners in
+        # scripts/lib/onboarding/device-discovery.sh, which already retries up to 5 times for the
+        # same reason) -- a single un-retried scanimage -L call during commissioning can miss a
+        # scanner that is genuinely present, wrongly failing the whole commissioning run.
+        tasks = yaml.safe_load(
+            (ROOT / "roles/device_preflight/tasks/scanner.yml").read_text(encoding="utf-8")
+        )
+        query_task = next(task for task in tasks if task["name"] == "Query declared scanner")
+        self.assertEqual(query_task.get("retries"), 5)
+        self.assertEqual(query_task.get("delay"), 1)
+        self.assertEqual(
+            query_task.get("until"),
+            "device_preflight_scanner.rc == 0 and managed_device.device_name in device_preflight_scanner.stdout",
+        )
+
     def test_scanner_probe_distinguishes_missing_tool_from_unavailable_device(self):
         tasks = yaml.safe_load(
             (ROOT / "roles/device_preflight/tasks/scanner.yml").read_text(encoding="utf-8")
