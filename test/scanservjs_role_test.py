@@ -34,13 +34,14 @@ class ScanservjsRoleTest(unittest.TestCase):
 
 
 class ScanservjsPageSplittingTest(unittest.TestCase):
-    def render_config(self, page_splitting):
+    def render_config(self, page_splitting, managed_scanners=()):
         environment = Environment(loader=FileSystemLoader(ROOT / "roles/scanservjs/templates"))
         return environment.get_template("config.local.js.j2").render(
             scanservjs_port=8080,
             scanservjs_data_directory="/var/lib/scanservjs/data",
             scanservjs_ocr_languages=["eng"],
             scanservjs_page_splitting=page_splitting,
+            managed_scanners=managed_scanners,
         )
 
     def test_page_splitting_disabled_by_default_omits_after_scan(self):
@@ -58,6 +59,23 @@ class ScanservjsPageSplittingTest(unittest.TestCase):
         tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
         task = next(item for item in tasks if item["name"] == "Install ScanservJS runtime dependencies")
         self.assertIn("poppler-utils", task["ansible.builtin.apt"]["name"])
+
+    def test_after_devices_maps_a_display_name_onto_its_matching_device_id(self):
+        config = self.render_config(
+            False,
+            managed_scanners=[
+                {"device_name": "airscan:w0:Brother MFC-7360N", "display_name": "Office Scanner"},
+                {"device_name": "airscan:e0:Other Scanner"},
+            ],
+        )
+        self.assertIn("afterDevices(devices)", config)
+        self.assertIn('"airscan:w0:Brother MFC-7360N": "Office Scanner"', config)
+        self.assertNotIn("airscan:e0:Other Scanner", config)
+
+    def test_after_devices_is_a_no_op_with_no_display_names_configured(self):
+        config = self.render_config(False, managed_scanners=[{"device_name": "airscan:e0:Office Scanner"}])
+        self.assertIn("afterDevices(devices)", config)
+        self.assertNotIn("airscan:e0:Office Scanner", config)
 
     def test_validate_asserts_page_splitting_is_boolean(self):
         tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))

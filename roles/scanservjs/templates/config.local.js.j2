@@ -12,6 +12,25 @@ module.exports = {
     config.thumbnailDirectory = '{{ scanservjs_data_directory }}/thumbnail';
     config.tempDirectory = '{{ scanservjs_data_directory }}/temp';
     config.ocrLanguage = '{{ scanservjs_ocr_languages | join('+') }}';
+  },
+
+  // Maps each detected SANE device id to the operator-chosen display name from inventory, so
+  // the web UI shows a friendly label instead of the raw SANE identifier (e.g.
+  // "airscan:w0:Brother MFC-7360N").
+  afterDevices(devices) {
+    const displayNames = {
+{% for scanner in managed_scanners %}
+{% if scanner.display_name is defined and scanner.display_name %}
+      {{ scanner.device_name | tojson }}: {{ scanner.display_name | tojson }},
+{% endif %}
+{% endfor %}
+    };
+    devices.forEach((device) => {
+      if (displayNames[device.id]) {
+        device.name = displayNames[device.id];
+      }
+    });
+    return devices;
   }{% if scanservjs_page_splitting | default(false) %},
 
   // Splits a completed multipage PDF into one PDF per page, named
