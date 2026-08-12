@@ -152,6 +152,146 @@ collect_scanner_definition() {
   COLLECTED_SCANNER_USB_IDENTITY=$usb_identity
 }
 
+select_or_collect_device() {
+  local kind=$1 choice
+  local -n kind_candidates="${kind}_candidates"
+  while true; do
+    if (( ${#kind_candidates[@]} == 0 )); then
+      if yes_default "Search for $kind recommendations before defining it?"; then
+        discovery_kind=$kind
+        discover_devices true all "${discovery_tools_ready:-false}"
+        unset discovery_kind
+        discovery_tools_ready=true
+        continue
+      fi
+      choice=manual
+      break
+    fi
+    input_required "${kind^} selection"
+    if [[ "$kind" == printer ]]; then
+      printer_candidate_details "${kind_candidates[@]}"
+    else
+      scanner_candidate_details "${kind_candidates[@]}"
+    fi
+    candidate_count=0
+    choice=$(choose_candidate "Detected ${kind}s" "${kind_candidates[@]}")
+    if [[ "$choice" == manual ]] && yes_default "Search for more $kind recommendations instead of entering details manually?"; then
+      discovery_kind=$kind
+      discover_devices true all "${discovery_tools_ready:-false}"
+      unset discovery_kind
+      discovery_tools_ready=true
+      continue
+    fi
+    break
+  done
+  if [[ "$choice" != manual ]]; then
+    remove_candidate "${kind}_candidates" "$choice"
+  fi
+  if [[ "$kind" == printer ]]; then
+    select_or_collect_printer "$choice"
+  else
+    select_or_collect_scanner "$choice"
+  fi
+}
+
+select_or_collect_printer() {
+  local choice=$1 queue dns_sd_name dns_sd_name_default
+  if [[ "$choice" != manual ]]; then
+    IFS='|' read -r _ discovered_printer_connection discovered_printer_uri discovered_printer_usb_mode <<<"$choice"
+  fi
+  input_required 'Printer queue'
+  printf '%s\n' 'The queue name is what phones, computers and tablets will see when choosing this printer.' >&2
+  while true; do
+    queue=$(ask 'CUPS queue name' 'printer')
+    [[ "$queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
+    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+  done
+  dns_sd_name_default=$queue
+  while true; do
+    dns_sd_name=$(ask 'Client-visible DNS-SD name' "$dns_sd_name_default")
+    [[ "$dns_sd_name" =~ ^[A-Za-z0-9_.-]+$ ]] && break
+    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+  done
+  input_required 'Printer connection'
+  collect_printer_definition || {
+    printf 'Direct Ethernet setup failed for this printer. Choose another connection topology or add it again later.\n' >&2
+    return 1
+  }
+  local driver=driverless profile='' printer_identity_evidence=''
+  if [[ "$COLLECTED_PRINTER_CONNECTION" == usb ]]; then
+    if [[ "$COLLECTED_PRINTER_USB_MODE" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
+    printf 'Selected %s driver mode to match %s.\n' "$driver" "$COLLECTED_PRINTER_USB_MODE" >&2
+  else
+    printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.' >&2
+    local driver_default=driverless
+    [[ "$COLLECTED_PRINTER_CONNECTION" == socket || "$COLLECTED_PRINTER_CONNECTION" == lpd ]] && driver_default=package_profile
+    driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
+  fi
+  if [[ "$driver" == package_profile ]]; then
+    collect_legacy_printer_profile "$COLLECTED_PRINTER_URI" ''
+    printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
+    profile=$COLLECTED_PRINTER_PROFILE
+  fi
+  COLLECTED_PRINTER_QUEUE=$queue
+  COLLECTED_PRINTER_DNS_SD_NAME=$dns_sd_name
+  COLLECTED_PRINTER_DRIVER=$driver
+  COLLECTED_PRINTER_PROFILE=$profile
+  COLLECTED_PRINTER_IDENTITY_EVIDENCE=$printer_identity_evidence
+  printer_connection_confirmation "$queue" "$COLLECTED_PRINTER_CONNECTION" "$COLLECTED_PRINTER_URI" "$driver" "$COLLECTED_PRINTER_USB_MODE" "$COLLECTED_PRINTER_USB_IDENTITY"
+}
+
+select_or_collect_scanner() {
+  local choice=$1 device_name
+  if [[ "$choice" != manual ]]; then
+    IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$choice"
+    printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name" >&2
+  else
+    printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
+  fi
+  input_required 'Scanner device name'
+  while true; do
+    device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
+    [[ -n "$device_name" ]] && break
+    printf '%s\n' 'Scanner device name cannot be empty.' >&2
+  done
+  input_required 'Scanner connection'
+  collect_scanner_definition || {
+    printf 'Direct Ethernet setup failed for this scanner. Choose another connection topology or add it again later.\n' >&2
+    return 1
+  }
+  COLLECTED_SCANNER_DEVICE_NAME=$device_name
+  if (( ${#scanner_device_names[@]} == 0 )); then
+    collect_scanservjs_settings
+  fi
+  confirmation_block "Scanner: $device_name" \
+    "Connection|$COLLECTED_SCANNER_CONNECTION" "Backend|$COLLECTED_SCANNER_BACKEND" \
+    "Backend install|$COLLECTED_SCANNER_BACKEND_INSTALL" "USB mode|${COLLECTED_SCANNER_USB_MODE:-not applicable}" \
+    "USB ID|${COLLECTED_SCANNER_USB_IDENTITY:-not applicable}"
+}
+
+collect_scanservjs_settings() {
+  recommendation 'Choose 90 days as a starting point. Completed scans are visible to the trusted LAN until this period expires.'
+  while true; do
+    retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
+    [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
+    printf '%s\n' 'Retention must be 1 to 900 days.' >&2
+  done
+  recommendation 'OCR makes scanned PDFs searchable. Use eng for English. Add deu for German, separated with commas. More languages can make OCR slower.'
+  while true; do
+    ocr=$(ask 'OCR language codes, comma-separated' 'eng')
+    valid_ocr_languages "$ocr" && break
+    printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
+  done
+  recommendation 'The ScanservJS port is the local TCP port its web interface listens on. Change it only if 8080 conflicts with another service.'
+  while true; do
+    scanservjs_port=$(ask 'ScanservJS port (1-65535, recommended 8080)' "$(saved_scalar scanservjs_port 8080)")
+    [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
+    printf '%s\n' 'Port must be 1 to 65535.' >&2
+  done
+  printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.' >&2
+  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
+}
+
 printer_connection_confirmation() {
   confirmation_block 'Printer connection' \
     "Queue|$1" "Connection|$2" "URI|$3" "Driver|$4" \

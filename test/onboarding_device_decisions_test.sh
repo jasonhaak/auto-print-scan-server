@@ -107,4 +107,38 @@ collect_scanner_definition
 [[ "$COLLECTED_SCANNER_USB_IDENTITY" == '04a9:1909' ]]
 unset -f ask_choice ask choose_usb_identity
 
+# select_or_collect_device(printer): a leftover candidate is offered and, once chosen, removed
+# from printer_candidates so it is not offered again on a later loop iteration.
+printer_candidates=('Network printer (ipp://192.0.2.20/ipp/print)|ipp|ipp://192.0.2.20/ipp/print|')
+scanner_candidates=()
+scanner_device_names=()
+discovery_tools_ready=false
+discovered_printer_connection=''
+discovered_printer_uri=''
+discovered_printer_usb_mode=''
+direct_ethernet_interface=''
+choose_candidate() { printf '%s' "$2"; }
+printer_candidate_details() { :; }
+ask_choice() {
+  case "$1" in
+    'How is this device connected to the Raspberry Pi?') printf 'network' ;;
+    'Printer connection') printf 'ipp' ;;
+    'Printer driver mode') printf 'driverless' ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+ask() {
+  case "$1" in
+    'CUPS queue name') printf 'office' ;;
+    'Client-visible DNS-SD name') printf 'office' ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+printer_connection_confirmation() { :; }
+select_or_collect_device printer
+[[ "${#printer_candidates[@]}" -eq 0 ]] || { printf 'selected candidate must be removed from printer_candidates: %s\n' "${printer_candidates[*]}" >&2; exit 1; }
+[[ "$COLLECTED_PRINTER_QUEUE" == office ]]
+[[ "$COLLECTED_PRINTER_URI" == 'ipp://192.0.2.20/ipp/print' ]]
+unset -f choose_candidate printer_candidate_details ask_choice ask printer_connection_confirmation
+
 printf 'onboarding_device_decisions_test.sh: all checks passed\n'
