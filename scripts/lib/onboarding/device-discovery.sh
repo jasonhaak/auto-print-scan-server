@@ -463,6 +463,21 @@ discover_direct_ethernet_device() {
   direct_ethernet_discovery_cleanup
 }
 
+# WSD (used by this repo's own tested Brother MFC-7360N AirScan setup, per
+# docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
+# inherently variable timing -- reproduced live: a standalone scanimage -L found the scanner
+# every time, but a single attempt during discovery found it roughly every other run. Retry a
+# few times before giving up, mirroring the ipp_usb_printer_candidates retry loop below.
+scan_for_scanners() {
+  local attempt
+  for attempt in 1 2 3; do
+    step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
+    [[ -n "$(sane_scanner_candidates "$scanner_output")" ]] && return 0
+    (( attempt < 3 )) && sleep 2
+  done
+  return 0
+}
+
 discover_devices() {
   local discovery_approved=${1:-false}
   local discovery_scope=${2:-all}
@@ -560,7 +575,7 @@ discover_devices() {
     network_output='Skipped by USB-only discovery scope.'
     technical_report 'LAN service discovery' 'avahi-browse -artp' 0 "$network_output"
   fi
-  step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
+  scan_for_scanners
   if [[ "$discovery_scope" == lan ]]; then
     scanner_hardware_output='Skipped by LAN-only discovery scope.'
     technical_report 'Low-level scanner hardware discovery' 'sane-find-scanner -q' 0 "$scanner_hardware_output"

@@ -264,6 +264,46 @@ start_cups_block=$(awk '
 ' "$root/scripts/lib/onboarding/device-discovery.sh")
 [[ "$start_cups_block" == *'wait_for_cups_ready'* ]]
 
+# WSD (the protocol this repo's own tested Brother MFC-7360N uses for AirScan, per
+# docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
+# inherently variable timing. Reproduced live: running scanimage -L standalone on the Pi found
+# the scanner every time, but discover_devices' single attempt found it roughly every other run.
+# scan_for_scanners retries the same command scan-devices already only runs once, mirroring the
+# existing ipp_usb_printer_candidates retry loop a few lines below it in this same file.
+scanner_step_check_calls=0
+step_check() {
+  scanner_step_check_calls=$((scanner_step_check_calls + 1))
+  local output_var=$1
+  if (( scanner_step_check_calls >= 2 )); then
+    printf -v "$output_var" '%s' $'device `airscan:w0:Brother MFC-7360N\' is a WSD Brother MFC-7360N ip=192.168.50.2'
+  else
+    printf -v "$output_var" '%s' ''
+  fi
+  return 0
+}
+sleep() { :; }
+scanner_output=''
+scan_for_scanners
+[[ "$scanner_step_check_calls" -eq 2 ]]
+[[ -n "$(sane_scanner_candidates "$scanner_output")" ]]
+
+scanner_step_check_calls=0
+step_check() {
+  scanner_step_check_calls=$((scanner_step_check_calls + 1))
+  local output_var=$1
+  printf -v "$output_var" '%s' ''
+  return 0
+}
+scanner_output=''
+scan_for_scanners
+[[ "$scanner_step_check_calls" -eq 3 ]]
+
+unset -f sleep step_check
+grep -q 'scan_for_scanners()' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq "step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1'" \
+  "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -q 'scan_for_scanners$' "$root/scripts/lib/onboarding/device-discovery.sh"
+
 probe_calls=0
 step_check() { probe_calls=$((probe_calls + 1)); return 0; }
 verify_ipp_listener_ready false
