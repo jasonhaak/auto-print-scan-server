@@ -466,14 +466,16 @@ discover_direct_ethernet_device() {
 # WSD (used by this repo's own tested Brother MFC-7360N AirScan setup, per
 # docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
 # inherently variable timing -- reproduced live: a standalone scanimage -L found the scanner
-# every time, but a single attempt during discovery found it roughly every other run. Retry a
-# few times before giving up, mirroring the ipp_usb_printer_candidates retry loop below.
+# every time, but a single discovery attempt found it roughly every other run, and even 3
+# retries 2s apart still occasionally came back empty. Retry up to 5 times with no added pause
+# between attempts (each scanimage -L call already blocks on its own WSD response window, so
+# extra sleep only adds wall-clock time without improving odds), showing the attempt number in
+# the step label so a run needing several attempts doesn't look stuck.
 scan_for_scanners() {
   local attempt
-  for attempt in 1 2 3; do
-    step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
+  for attempt in 1 2 3 4 5; do
+    step_check scanner_output "Run SANE scanner discovery command (attempt $attempt/5)" 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1' || true
     [[ -n "$(sane_scanner_candidates "$scanner_output")" ]] && return 0
-    (( attempt < 3 )) && sleep 2
   done
   return 0
 }
@@ -654,6 +656,30 @@ discover_devices() {
       printf '%s\n' 'Scanner-like USB hardware was found, but SANE did not report a usable device identifier. Install the device-compatible SANE backend, then run scanimage -L again.'
     else
       printf '%s\n' 'No scanner was found. Connect it, then run scanimage -L on the Raspberry Pi and copy the reported device line.'
+    fi
+  fi
+
+  # A partial miss (a printer found but no scanner, or vice versa) on a LAN/all-scope run is
+  # worth offering a rerun for before the operator picks from an incomplete result -- network
+  # discovery can miss a device on one pass and find it on the next (reproduced live for the
+  # scanner side). USB-only scope is excluded: USB enumeration is deterministic, not flaky.
+  # Restricted to a full (both-kinds) discovery pass: when discovery_kind narrows the search to
+  # just one device type (e.g. the "Add another printer?" loop), the other kind is never being
+  # searched at all, so it would spuriously read as "missing" and this would fire on every
+  # not-found run, duplicating the "no usable device was selected" recovery below. A full miss
+  # on both sides in an all-kinds run is already handled by that same recovery, so this only
+  # fires on an exact one-found/one-missing split.
+  if [[ "$discovery_scope" != usb && "${discovery_kind:-all}" == all ]]; then
+    local printer_partial_miss=false scanner_partial_miss=false
+    (( ${#printer_candidates[@]} == 0 )) && printer_partial_miss=true
+    (( ${#scanner_candidates[@]} == 0 )) && scanner_partial_miss=true
+    if [[ "$printer_partial_miss" != "$scanner_partial_miss" ]]; then
+      printf '%s\n' 'Network discovery for a printer or scanner can be unreliable and may find more on a repeat attempt.'
+      if yes_default 'Rerun discovery now before choosing from what was found?'; then
+        rm -f "$discovery_log"
+        discover_devices true "$discovery_scope"
+        return $?
+      fi
     fi
   fi
 

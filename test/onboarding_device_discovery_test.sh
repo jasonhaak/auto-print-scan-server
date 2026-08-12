@@ -98,7 +98,7 @@ fi
 
 [[ "$(sane_discovery_outcome '')" == 'SANE discovery returned no usable device identifier.' ]]
 [[ "$(sane_discovery_outcome $'device `airscan:e0:Office Scanner\' is a scanner')" == 'SANE discovery returned an exact device identifier.' ]]
-grep -Fq "step_check scanner_output 'Run SANE scanner discovery command'" "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq 'Run SANE scanner discovery command' "$root/scripts/lib/onboarding/device-discovery.sh"
 ! grep -Fq "step_check scanner_output 'SANE scanner discovery'" "$root/scripts/lib/onboarding/device-discovery.sh"
 
 no_printer_guidance=$(no_printer_discovery_guidance)
@@ -267,13 +267,18 @@ start_cups_block=$(awk '
 # WSD (the protocol this repo's own tested Brother MFC-7360N uses for AirScan, per
 # docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
 # inherently variable timing. Reproduced live: running scanimage -L standalone on the Pi found
-# the scanner every time, but discover_devices' single attempt found it roughly every other run.
-# scan_for_scanners retries the same command scan-devices already only runs once, mirroring the
-# existing ipp_usb_printer_candidates retry loop a few lines below it in this same file.
+# the scanner every time, but discover_devices' single attempt found it roughly every other run
+# -- and even 3 retries (2s apart) still occasionally came back empty in a later live run.
+# scan_for_scanners retries up to 5 times with no added pause between attempts (each
+# scanimage -L invocation already blocks for its own WSD response window, so extra sleep only
+# adds wall-clock time without improving odds), showing the attempt number in the step label so
+# a run that needs several attempts doesn't look stuck.
 scanner_step_check_calls=0
+scanner_step_check_purposes=()
 step_check() {
   scanner_step_check_calls=$((scanner_step_check_calls + 1))
   local output_var=$1
+  scanner_step_check_purposes+=("$2")
   if (( scanner_step_check_calls >= 2 )); then
     printf -v "$output_var" '%s' $'device `airscan:w0:Brother MFC-7360N\' is a WSD Brother MFC-7360N ip=192.168.50.2'
   else
@@ -281,28 +286,60 @@ step_check() {
   fi
   return 0
 }
-sleep() { :; }
+sleep() { printf 'sleep called: %s\n' "$1" >&2; return 0; }
 scanner_output=''
 scan_for_scanners
 [[ "$scanner_step_check_calls" -eq 2 ]]
 [[ -n "$(sane_scanner_candidates "$scanner_output")" ]]
+[[ "${scanner_step_check_purposes[0]}" == *'attempt 1/5'* ]]
+[[ "${scanner_step_check_purposes[1]}" == *'attempt 2/5'* ]]
 
 scanner_step_check_calls=0
+scanner_step_check_purposes=()
+sleep_calls=0
 step_check() {
   scanner_step_check_calls=$((scanner_step_check_calls + 1))
   local output_var=$1
+  scanner_step_check_purposes+=("$2")
   printf -v "$output_var" '%s' ''
   return 0
 }
+sleep() { sleep_calls=$((sleep_calls + 1)); }
 scanner_output=''
 scan_for_scanners
-[[ "$scanner_step_check_calls" -eq 3 ]]
+[[ "$scanner_step_check_calls" -eq 5 ]]
+[[ "${scanner_step_check_purposes[4]}" == *'attempt 5/5'* ]]
+# No added pause between attempts -- each scanimage -L call already blocks on its own WSD
+# response window, so an extra sleep would only add wall-clock time without improving odds.
+[[ "$sleep_calls" -eq 0 ]]
 
 unset -f sleep step_check
 grep -q 'scan_for_scanners()' "$root/scripts/lib/onboarding/device-discovery.sh"
-grep -Fq "step_check scanner_output 'Run SANE scanner discovery command' 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1'" \
+grep -Fq "step_check scanner_output \"Run SANE scanner discovery command (attempt \$attempt/5)\" 'scanimage -L' remote 'airscan-discover 2>&1; scanimage -L 2>&1'" \
   "$root/scripts/lib/onboarding/device-discovery.sh"
 grep -q 'scan_for_scanners$' "$root/scripts/lib/onboarding/device-discovery.sh"
+
+# A LAN/all-scope run that finds a printer but not a scanner (or vice versa) should offer to
+# rerun the whole discovery pass before making the operator pick from a partial result --
+# network discovery (WSD/AirScan in particular) can miss a device on one pass and find it on
+# the next. USB-only scope is excluded since USB enumeration is deterministic, not flaky. A
+# full miss on both is already handled by the existing "no usable device was selected" recovery
+# further down, so this must fire only on an exact one-found/one-missing split.
+partial_miss_block=$(awk '
+  /^  \(\( \$\{#printer_candidates\[@\]\} > 0 \)\) \|\| no_printer_discovery_guidance$/ { capturing = 1 }
+  capturing { print }
+  capturing && /^  if \(\( \$\{#printer_candidates\[@\]\} > 0 \)\) &&/ { exit }
+' "$root/scripts/lib/onboarding/device-discovery.sh")
+[[ -n "$partial_miss_block" ]]
+[[ "$partial_miss_block" == *'discovery_scope" != usb'* ]]
+# Restricted to a full (both-kinds) discovery pass: a discovery_kind-narrowed run (e.g. the
+# "Add another printer?" loop, which only ever searches for a printer) must not spuriously
+# treat the unsearched kind as "missing" and offer a redundant rerun on every not-found run.
+[[ "$partial_miss_block" == *'discovery_kind:-all}" == all'* ]]
+[[ "$partial_miss_block" == *'printer_partial_miss'* && "$partial_miss_block" == *'scanner_partial_miss'* ]]
+[[ "$partial_miss_block" == *'printer_partial_miss" != "$scanner_partial_miss'* ]]
+[[ "$partial_miss_block" == *"yes_default 'Rerun discovery now"* ]]
+[[ "$partial_miss_block" == *'discover_devices true "$discovery_scope"'* ]]
 
 probe_calls=0
 step_check() { probe_calls=$((probe_calls + 1)); return 0; }
