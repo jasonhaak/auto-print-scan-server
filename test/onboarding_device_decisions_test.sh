@@ -62,4 +62,49 @@ collect_printer_definition
 [[ "$COLLECTED_PRINTER_URI" == 'usb://manufacturer/printer' ]]
 unset -f ask_choice ask choose_usb_identity
 
+# collect_scanner_definition: network/ipp scanner, no USB fields collected.
+ask_choice() {
+  case "$1" in
+    'Scanner connection') printf 'network' ;;
+    'Install this backend package with APT') printf 'true' ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+ask() {
+  case "$1" in
+    'SANE backend name') printf '%s' "$2" ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+direct_ethernet_interface=''
+discovered_scanner_connection=''
+discovered_scanner_backend=''
+discovered_scanner_usb_mode=''
+collect_scanner_definition
+[[ "$COLLECTED_SCANNER_CONNECTION" == network ]]
+[[ "$COLLECTED_SCANNER_BACKEND" == sane-airscan ]]
+[[ -z "$COLLECTED_SCANNER_USB_MODE" ]]
+unset -f ask_choice ask
+
+# collect_scanner_definition: usb scanner collects USB mode + identity.
+ask_choice() {
+  case "$1" in
+    'Scanner connection') printf 'usb' ;;
+    'Install this backend package with APT') printf 'true' ;;
+    'Scanner USB mode') printf 'legacy_usb' ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+choose_usb_identity() { printf '04a9:1909'; return 0; }
+ask() { printf '%s' "$2"; }
+direct_ethernet_interface=''
+discovered_scanner_connection=''
+discovered_scanner_backend=''
+discovered_scanner_usb_mode=''
+collect_scanner_definition
+[[ "$COLLECTED_SCANNER_CONNECTION" == usb ]]
+[[ "$COLLECTED_SCANNER_USB_MODE" == legacy_usb ]]
+[[ "$COLLECTED_SCANNER_USB_IDENTITY" == '04a9:1909' ]]
+unset -f ask_choice ask choose_usb_identity
+
 printf 'onboarding_device_decisions_test.sh: all checks passed\n'

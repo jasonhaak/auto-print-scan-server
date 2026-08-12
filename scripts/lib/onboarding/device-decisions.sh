@@ -120,6 +120,38 @@ collect_printer_definition() {
   COLLECTED_PRINTER_USB_IDENTITY=$usb_identity
 }
 
+collect_scanner_definition() {
+  local topology_default=network
+  [[ "${discovered_scanner_connection:-}" == usb ]] && topology_default=usb
+  local -a topology_options=(network ipp ipps usb)
+  [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet ipp ipps usb)
+  local connection
+  connection=$(ask_choice 'Scanner connection' "${discovered_scanner_connection:-$topology_default}" "${topology_options[@]}")
+  if [[ "$connection" == direct_ethernet ]]; then
+    discovered_scanner_connection=''
+    discovered_scanner_backend=''
+    discovered_scanner_usb_mode=''
+    collect_direct_ethernet_link || {
+      COLLECTED_SCANNER_CONNECTION=''
+      return 1
+    }
+    connection=${discovered_scanner_connection:-network}
+  fi
+  collect_scanner_backend "$connection" "${discovered_scanner_backend:-$(scanner_backend_default "$connection")}" true
+  local backend=$COLLECTED_SCANNER_BACKEND backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
+  local usb_mode='' usb_identity=''
+  if [[ "$connection" == usb ]]; then
+    scanner_usb_mode_guidance
+    usb_mode=$(ask_choice 'Scanner USB mode' "${discovered_scanner_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
+    usb_identity=$(collect_usb_identity_from_lsusb)
+  fi
+  COLLECTED_SCANNER_CONNECTION=$connection
+  COLLECTED_SCANNER_BACKEND=$backend
+  COLLECTED_SCANNER_BACKEND_INSTALL=$backend_install
+  COLLECTED_SCANNER_USB_MODE=$usb_mode
+  COLLECTED_SCANNER_USB_IDENTITY=$usb_identity
+}
+
 printer_connection_confirmation() {
   confirmation_block 'Printer connection' \
     "Queue|$1" "Connection|$2" "URI|$3" "Driver|$4" \
