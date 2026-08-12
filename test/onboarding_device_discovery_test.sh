@@ -360,6 +360,29 @@ rerun_offer_block=$(awk '
 [[ "$rerun_offer_block" == *'printf '\''%s\n'\'' "${printer_candidates[@]}"'* ]]
 [[ "$rerun_offer_block" == *'printf '\''%s\n'\'' "${scanner_candidates[@]}"'* ]]
 
+# Discovery tools (apt-get update/install, real non-trivial work) must not be reinstalled on
+# every rerun/retry that continues a pass which already installed them successfully -- only a
+# call starting genuinely fresh, or retrying after an install failure, should attempt install.
+grep -Fq 'local tools_ready=${5:-false}' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq 'if [[ "$tools_ready" != true ]]; then' "$root/scripts/lib/onboarding/device-discovery.sh"
+# The rerun offer and the post-selection "no usable device" retry/scope recovery both continue
+# a pass that already installed tools, so each must explicitly pass tools_ready=true.
+grep -Fq 'printf '\''%s\n'\'' "${scanner_candidates[@]}")" true' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq "discover_devices true \"\$discovery_scope\" '' '' true; return \$? ;;" "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq "discover_devices true \"\$discovery_scope\" '' '' true" "$root/scripts/lib/onboarding/device-discovery.sh"
+# The install-failure retry/scope recovery (a genuine failure, not a continuation) must still
+# attempt a real install -- it must not pass tools_ready=true.
+install_failure_block=$(awk '
+  /Discovery tools could not be installed/ { capturing = 1 }
+  capturing { print }
+  capturing && /^  fi$/ { exit }
+' "$root/scripts/lib/onboarding/device-discovery.sh")
+[[ "$install_failure_block" == *'discover_devices true "$discovery_scope"; return $? ;;'* ]]
+if [[ "$install_failure_block" == *"'' '' true"* ]]; then
+  printf 'install-failure retry/scope must not skip a genuine reinstall attempt\n' >&2
+  exit 1
+fi
+
 # discover_devices must accept previously-found candidates as its 3rd/4th parameters and seed
 # printer_candidates/scanner_candidates from them before this pass's own discovery adds more, so
 # the merge-across-reruns behaviour above actually preserves prior results end to end.

@@ -494,6 +494,10 @@ discover_devices() {
   # but not again is never silently dropped just because a later pass missed it.
   local previous_printer_candidates=${3:-}
   local previous_scanner_candidates=${4:-}
+  # Set when this call is a rerun/retry continuing a pass that already installed discovery
+  # tools successfully -- skips asking again and re-running apt-get, which would otherwise
+  # repeat on every rerun even though the packages are already present.
+  local tools_ready=${5:-false}
   local ipp_usb_started=false
   local discovery_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
   local lpinfo_output_status=0
@@ -506,14 +510,40 @@ discover_devices() {
   done <<<"$previous_scanner_candidates"
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
-  input_required 'Discovery tools'
-  recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
-  if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
-    printf '%s\n' 'Discovery skipped. Device details will be entered manually.'
-    rm -f "$discovery_log"
-    return
+  if [[ "$tools_ready" != true ]]; then
+    input_required 'Discovery tools'
+    recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
+    if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
+      printf '%s\n' 'Discovery skipped. Device details will be entered manually.'
+      rm -f "$discovery_log"
+      return
+    fi
+    printf '%s\n' 'Installing discovery tools. This can take a few minutes on the first run.'
+    # Refresh sudo live, uncaptured, before the install below streams its own output through a
+    # pipe. A captured or piped sudo prompt can leak typed characters; a live prompt here cannot.
+    remote_tty 'sudo -v'
+    if ! step_stream install_output 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' \
+      remote_tty 'sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
+      printf '%s\n' 'Discovery tools could not be installed.' >&2
+      restore_ipp_usb_state
+      restore_cups_state
+      rm -f "$discovery_log"
+      choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
+      case "$choice" in
+        retry) discover_devices true "$discovery_scope"; return $? ;;
+        scope)
+          discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+          discover_devices true "$discovery_scope"
+          return $?
+          ;;
+        manual) printf '%s\n' 'Continue with manual configuration.'; return 0 ;;
+        stop) return 1 ;;
+      esac
+    fi
+    printf '%s\n' 'Discovery tools are ready. Searching local network announcements and connected USB devices for up to 15 seconds.'
+  else
+    printf '%s\n' 'Discovery tools are already installed from earlier in this run. Searching local network announcements and connected USB devices for up to 15 seconds.'
   fi
-  printf '%s\n' 'Installing discovery tools. This can take a few minutes on the first run.'
   discovery_ipp_usb_was_enabled=$(remote 'systemctl is-enabled ipp-usb.service 2>/dev/null' || true)
   discovery_ipp_usb_was_active=$(remote 'systemctl is-active ipp-usb.service 2>/dev/null' || true)
   discovery_cups_was_enabled=$(remote 'systemctl is-enabled cups.service 2>/dev/null' || true)
@@ -524,28 +554,6 @@ discover_devices() {
   discovery_cups_path_was_active=$(remote 'systemctl is-active cups.path 2>/dev/null' || true)
   discovery_ipp_usb_restore_needed=true
   discovery_cups_restore_needed=true
-  # Refresh sudo live, uncaptured, before the install below streams its own output through a pipe.
-  # A captured or piped sudo prompt can leak typed characters; a live prompt here cannot.
-  remote_tty 'sudo -v'
-  if ! step_stream install_output 'Install printer and scanner discovery tools' 'apt-get update; apt-get install avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb' \
-    remote_tty 'sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y avahi-utils cups cups-ipp-utils sane-utils sane-airscan ipp-usb'; then
-    printf '%s\n' 'Discovery tools could not be installed.' >&2
-    restore_ipp_usb_state
-    restore_cups_state
-    rm -f "$discovery_log"
-    choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
-    case "$choice" in
-      retry) discover_devices true "$discovery_scope"; return $? ;;
-      scope)
-        discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
-        discover_devices true "$discovery_scope"
-        return $?
-        ;;
-      manual) printf '%s\n' 'Continue with manual configuration.'; return 0 ;;
-      stop) return 1 ;;
-    esac
-  fi
-  printf '%s\n' 'Discovery tools are ready. Searching local network announcements and connected USB devices for up to 15 seconds.'
 
   if [[ "$discovery_scope" == lan ]]; then
     usb_output='Skipped by LAN-only discovery scope.'
@@ -692,7 +700,7 @@ discover_devices() {
     if yes 'Rerun discovery to search for additional or missed devices? Already-found devices are kept even if a rerun does not find them again.'; then
       rm -f "$discovery_log"
       discover_devices true "$discovery_scope" \
-        "$(printf '%s\n' "${printer_candidates[@]}")" "$(printf '%s\n' "${scanner_candidates[@]}")"
+        "$(printf '%s\n' "${printer_candidates[@]}")" "$(printf '%s\n' "${scanner_candidates[@]}")" true
       return $?
     fi
   fi
@@ -722,11 +730,11 @@ discover_devices() {
     printf 'No usable device was selected. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
     choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
     case "$choice" in
-      retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope"; return $? ;;
+      retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope" '' '' true; return $? ;;
       scope)
         discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
         rm -f "$discovery_log"
-        discover_devices true "$discovery_scope"
+        discover_devices true "$discovery_scope" '' '' true
         return $?
         ;;
       manual) return 0 ;;
