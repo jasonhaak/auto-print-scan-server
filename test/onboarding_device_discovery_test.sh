@@ -338,22 +338,37 @@ grep -Fq "step_check scanner_output \"Run SANE scanner discovery command (attemp
   "$root/scripts/lib/onboarding/device-discovery.sh"
 grep -q 'scan_for_scanners$' "$root/scripts/lib/onboarding/device-discovery.sh"
 
+# discover_devices no longer declares printer_candidates/scanner_candidates locally -- it must
+# append to whatever arrays are already declared in the caller's scope (global in
+# scripts/onboard/scripts/manage-devices), so state (including candidates found by
+# collect_direct_ethernet_link mid-loop) survives across separate top-level calls, not just
+# discover_devices' own internal rerun recursion. The tools_ready parameter shifts from
+# position 5 to position 3 once the previous_printer_candidates/previous_scanner_candidates
+# parameters are removed.
+global_array_block=$(awk '/^discover_devices\(\) \{/{capturing=1} capturing{print} capturing && /^  \[\[ "\$discovery_scope" != skip \]\]/{exit}' "$root/scripts/lib/onboarding/device-discovery.sh")
+if [[ "$global_array_block" == *'local -a printer_candidates'* ]]; then
+  printf "discover_devices must not shadow the caller's printer_candidates/scanner_candidates with local arrays\n" >&2
+  exit 1
+fi
+[[ "$global_array_block" != *'previous_printer_candidates'* ]]
+[[ "$global_array_block" == *'tools_ready=${3:-false}'* ]]
+
 # A LAN/all-scope run that finds at least one device should offer to rerun discovery to look
 # for more -- network discovery (WSD/AirScan in particular) can miss a device on one pass and
 # find it, or a different one, on the next (reproduced live for the scanner side). This repo is
 # general-purpose and must not assume a setup has only one printer or one scanner. USB-only
 # scope is excluded since USB enumeration is deterministic, not flaky. A full miss on both is
-# left to the existing "no usable device was selected" recovery further down.
+# left to the "no devices found" recovery further down.
 rerun_offer_block=$(awk '
-  /^  \(\( \$\{#printer_candidates\[@\]\} > 0 \)\) \|\| no_printer_discovery_guidance$/ { capturing = 1 }
+  /Offer to rerun discovery whenever at least one device was found/ { capturing = 1 }
   capturing { print }
-  capturing && /^  if \(\( \$\{#printer_candidates\[@\]\} > 0 \)\) &&/ { exit }
+  capturing && /^  fi$/ { exit }
 ' "$root/scripts/lib/onboarding/device-discovery.sh")
 [[ -n "$rerun_offer_block" ]]
 [[ "$rerun_offer_block" == *'discovery_scope" != usb'* ]]
-# Restricted to a full (both-kinds) discovery pass: a discovery_kind-narrowed run (e.g. the
-# "Add another printer?" loop, which only ever searches for a printer) must not offer a
-# meaningless rerun for a device kind it never searches for.
+# Restricted to a full (both-kinds) discovery pass: a discovery_kind-narrowed run (e.g.
+# select_or_collect_device's "search for more") must not offer a meaningless rerun for a device
+# kind it never searches for.
 [[ "$rerun_offer_block" == *'discovery_kind:-all}" == all'* ]]
 # Fires whenever at least one device was found (not only on a partial miss), since even a fully
 # successful pass might be missing a second device of the same kind.
@@ -362,22 +377,22 @@ rerun_offer_block=$(awk '
 # prompt on the common case -- rerunning is opt-in.
 [[ "$rerun_offer_block" == *"yes 'Rerun discovery to search for additional or missed devices?"* ]]
 [[ "$rerun_offer_block" != *"yes_default 'Rerun discovery"* ]]
-# The already-found candidates must be threaded into the recursive call so a rerun that finds
-# fewer devices never drops ones already found.
-[[ "$rerun_offer_block" == *'discover_devices true "$discovery_scope"'* ]]
-[[ "$rerun_offer_block" == *'printf '\''%s\n'\'' "${printer_candidates[@]}"'* ]]
-[[ "$rerun_offer_block" == *'printf '\''%s\n'\'' "${scanner_candidates[@]}"'* ]]
+# No positional candidate dump is needed on the recursive self-call any more -- the arrays are
+# already global, so they carry the state forward without being threaded through as arguments.
+[[ "$rerun_offer_block" == *'discover_devices true "$discovery_scope" true'* ]]
+if [[ "$rerun_offer_block" == *'printf '\''%s\n'\'' "${printer_candidates[@]}"'* ]]; then
+  printf 'rerun self-call must not re-pass candidates positionally now that the arrays are global\n' >&2
+  exit 1
+fi
 
 # Discovery tools (apt-get update/install, real non-trivial work) must not be reinstalled on
 # every rerun/retry that continues a pass which already installed them successfully -- only a
 # call starting genuinely fresh, or retrying after an install failure, should attempt install.
-grep -Fq 'local tools_ready=${5:-false}' "$root/scripts/lib/onboarding/device-discovery.sh"
+grep -Fq 'local tools_ready=${3:-false}' "$root/scripts/lib/onboarding/device-discovery.sh"
 grep -Fq 'if [[ "$tools_ready" != true ]]; then' "$root/scripts/lib/onboarding/device-discovery.sh"
-# The rerun offer and the post-selection "no usable device" retry/scope recovery both continue
-# a pass that already installed tools, so each must explicitly pass tools_ready=true.
-grep -Fq 'printf '\''%s\n'\'' "${scanner_candidates[@]}")" true' "$root/scripts/lib/onboarding/device-discovery.sh"
-grep -Fq "discover_devices true \"\$discovery_scope\" '' '' true; return \$? ;;" "$root/scripts/lib/onboarding/device-discovery.sh"
-grep -Fq "discover_devices true \"\$discovery_scope\" '' '' true" "$root/scripts/lib/onboarding/device-discovery.sh"
+# The rerun offer and the "no devices found" retry/scope recovery both continue a pass that
+# already installed tools, so each must explicitly pass tools_ready=true.
+grep -Fq 'discover_devices true "$discovery_scope" true; return $? ;;' "$root/scripts/lib/onboarding/device-discovery.sh"
 # The install-failure retry/scope recovery (a genuine failure, not a continuation) must still
 # attempt a real install -- it must not pass tools_ready=true.
 install_failure_block=$(awk '
@@ -386,19 +401,25 @@ install_failure_block=$(awk '
   capturing && /^  fi$/ { exit }
 ' "$root/scripts/lib/onboarding/device-discovery.sh")
 [[ "$install_failure_block" == *'discover_devices true "$discovery_scope"; return $? ;;'* ]]
-if [[ "$install_failure_block" == *"'' '' true"* ]]; then
+if [[ "$install_failure_block" == *'discover_devices true "$discovery_scope" true'* ]]; then
   printf 'install-failure retry/scope must not skip a genuine reinstall attempt\n' >&2
   exit 1
 fi
 
-# discover_devices must accept previously-found candidates as its 3rd/4th parameters and seed
-# printer_candidates/scanner_candidates from them before this pass's own discovery adds more, so
-# the merge-across-reruns behaviour above actually preserves prior results end to end.
-seed_block=$(awk '/^discover_devices\(\) \{/{capturing=1} capturing{print} capturing && /^  \[\[ "\$discovery_scope" != skip \]\]/{exit}' "$root/scripts/lib/onboarding/device-discovery.sh")
-[[ "$seed_block" == *'previous_printer_candidates=${3:-}'* ]]
-[[ "$seed_block" == *'previous_scanner_candidates=${4:-}'* ]]
-[[ "$seed_block" == *'previous_printer_candidates'*'printer_candidates+=("$candidate")'* ]]
-[[ "$seed_block" == *'previous_scanner_candidates'*'scanner_candidates+=("$candidate")'* ]]
+# Selection ("which detected printer/scanner do you want") is not done inside discover_devices
+# any more -- it belongs to select_or_collect_device, which runs once per loop iteration
+# instead of once per discover_devices call. discover_devices itself only searches and records
+# candidates; the recovery check at the end is "no candidates were found at all", not "nothing
+# was selected".
+end_of_function_block=$(awk '
+  /Discovery completed:.*printer candidate/ { capturing = 1 }
+  capturing { print }
+' "$root/scripts/lib/onboarding/device-discovery.sh")
+if [[ "$end_of_function_block" == *'choose_candidate'* ]]; then
+  printf 'discover_devices must not prompt for device selection; that belongs to select_or_collect_device\n' >&2
+  exit 1
+fi
+[[ "$end_of_function_block" == *'${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} == 0'* ]]
 
 # The primary printer's connection topology (network/direct_ethernet/usb) must never clear a
 # separately-discovered scanner. A multifunction device commonly uses a different connection per
@@ -577,8 +598,9 @@ scanner_candidate_output=$(scanner_candidate_details 'airscan:e0:Office Scanner 
 [[ "$scanner_candidate_output" == *'sane-airscan'* ]]
 [[ "$scanner_candidate_output" == *'airscan:e0:Office Scanner'* ]]
 
-grep -q 'printer_candidate_details "\${printer_candidates\[@\]}"' "$root/scripts/lib/onboarding/device-discovery.sh"
-grep -q 'scanner_candidate_details "\${scanner_candidates\[@\]}"' "$root/scripts/lib/onboarding/device-discovery.sh"
+# printer_candidate_details/scanner_candidate_details are called from select_or_collect_device
+# (device-decisions.sh) now that selection has moved out of discover_devices; see Task 8's
+# coverage in test/onboarding_device_decisions_test.sh.
 
 # Finding 2: the final review screen must recap every collected field through
 # confirmation_block, not a hand-written printf, since it is the last thing shown
@@ -761,12 +783,11 @@ unmatched=$(recommend_legacy_profile 'ipps://printer.local/ipp/print' 2>&1)
 manual_choice=$(choose_package_profile '' <<< 'brlaser')
 [[ "$manual_choice" == brlaser ]]
 
-# Ticket 015: the additional-printer and additional-scanner discovery offers in
-# scripts/onboard now set discovery_kind before calling discover_devices, matching
-# manage-devices' discover_for_add. Drive discover_devices end-to-end with both a
-# printer and a scanner candidate present, and confirm discovery_kind=printer
-# suppresses the scanner candidate menu while discovery_kind=scanner suppresses the
-# printer candidate menu.
+# Ticket 015 / Task 4: discover_devices reports candidates it finds through its global
+# printer_candidates/scanner_candidates arrays and never prompts for a selection itself
+# (that responsibility moved to select_or_collect_device) -- confirmed for a scoped
+# discovery_kind (matching scripts/onboard's/manage-devices' "search for more" calls) and for
+# the unscoped default alike.
 remote() {
   case "$*" in
     *'timeout 10s lpinfo -v'*) printf 'network ipp://printer.local/ipp/print\n'; return 0 ;;
@@ -777,8 +798,7 @@ remote() {
 }
 remote_tty() { return 0; }
 avahi_browse_scan() { return 0; }
-candidate_title_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-candidate-title.XXXXXX")
-choose_candidate() { printf '%s\n' "$1" >>"$candidate_title_file"; printf 'manual'; }
+choose_candidate() { printf 'choose_candidate must not be called from discover_devices\n' >&2; exit 1; }
 recovery_choice() { printf 'manual'; return 0; }
 technical_report() { :; }
 step_check() {
@@ -791,26 +811,27 @@ step_check() {
 step_action() { step_check "$@"; }
 step_stream() { step_check "$@"; }
 
+printer_candidates=()
+scanner_candidates=()
 discovery_kind=printer
 printer_scoped_output=$(discover_devices true all)
 unset discovery_kind
 [[ "$printer_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
-[[ "$(cat "$candidate_title_file")" == 'Detected printers' ]]
-: >"$candidate_title_file"
 
+printer_candidates=()
+scanner_candidates=()
 discovery_kind=scanner
 scanner_scoped_output=$(discover_devices true all)
 unset discovery_kind
 [[ "$scanner_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
-[[ "$(cat "$candidate_title_file")" == 'Detected scanners' ]]
-: >"$candidate_title_file"
 
-# Without discovery_kind set (the default 'all'), both menus are offered.
+# Without discovery_kind set (the default 'all'), discovery still just finds and reports.
+printer_candidates=()
+scanner_candidates=()
 unscoped_output=$(discover_devices true all)
 [[ "$unscoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
-[[ "$(cat "$candidate_title_file")" == $'Detected printers\nDetected scanners' ]]
 
-rm -f "$candidate_title_file" "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
+rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
 
 # Ticket 013: discover_direct_ethernet_device must offer a recovery menu
 # (retry, change settings, continue manually, stop) on every failure branch,
@@ -1105,6 +1126,8 @@ ask_choice() { printf 'usb'; }
 # command substitution would fork a subshell too, and scope_calls (appended
 # inside the discover_devices wrapper above) would never be visible here once
 # that subshell exited.
+printer_candidates=()
+scanner_candidates=()
 discover_devices true all >/dev/null 2>&1
 scope_recovery_calls=$(<"$scope_recovery_counter_file")
 [[ "$scope_recovery_calls" -eq 2 ]]

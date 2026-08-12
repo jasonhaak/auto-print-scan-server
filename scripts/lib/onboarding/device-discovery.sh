@@ -503,25 +503,13 @@ scan_for_scanners() {
 discover_devices() {
   local discovery_approved=${1:-false}
   local discovery_scope=${2:-all}
-  # Devices already found on a previous pass (newline-separated, as accepted by discover_devices
-  # itself when a rerun is requested). Preserved across a rerun so a device that answered before
-  # but not again is never silently dropped just because a later pass missed it.
-  local previous_printer_candidates=${3:-}
-  local previous_scanner_candidates=${4:-}
   # Set when this call is a rerun/retry continuing a pass that already installed discovery
   # tools successfully -- skips asking again and re-running apt-get, which would otherwise
   # repeat on every rerun even though the packages are already present.
-  local tools_ready=${5:-false}
+  local tools_ready=${3:-false}
   local ipp_usb_started=false
   local discovery_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
   local lpinfo_output_status=0
-  local -a printer_candidates=() scanner_candidates=()
-  while IFS= read -r candidate; do
-    [[ -n "$candidate" ]] && printer_candidates+=("$candidate")
-  done <<<"$previous_printer_candidates"
-  while IFS= read -r candidate; do
-    [[ -n "$candidate" ]] && scanner_candidates+=("$candidate")
-  done <<<"$previous_scanner_candidates"
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
   if [[ "$tools_ready" != true ]]; then
@@ -698,57 +686,40 @@ discover_devices() {
     fi
   fi
 
-  # Offer to rerun discovery whenever at least one device was found, threading the already-found
-  # candidates forward (as the previous_printer_candidates/previous_scanner_candidates
-  # parameters) so a rerun that finds fewer devices never drops ones already found -- network
-  # discovery (WSD/AirScan in particular) can miss a device on one pass and find it, or find a
-  # different one, on the next (reproduced live for the scanner side). This repo is
-  # general-purpose and must not assume a setup has only one printer or one scanner. USB-only
-  # scope is excluded: USB enumeration is deterministic, not flaky. Restricted to a full
-  # (both-kinds) discovery pass: when discovery_kind narrows the search to just one device type
-  # (e.g. the "Add another printer?" loop), only that kind is ever searched, so this offer would
-  # be meaningless noise about the other kind. A full miss on both sides is left to the existing
-  # "no usable device was selected" recovery below, which already offers its own retry.
+  # Offer to rerun discovery whenever at least one device was found -- printer_candidates and
+  # scanner_candidates are arrays in the caller's scope (declared once in scripts/onboard /
+  # scripts/manage-devices), so they already carry forward into this recursive call without
+  # being threaded through as parameters. Network discovery (WSD/AirScan in particular) can miss
+  # a device on one pass and find it, or find a different one, on the next (reproduced live for
+  # the scanner side). This repo is general-purpose and must not assume a setup has only one
+  # printer or one scanner. USB-only scope is excluded: USB enumeration is deterministic, not
+  # flaky. Restricted to a full (both-kinds) discovery pass: when discovery_kind narrows the
+  # search to just one device type (e.g. select_or_collect_device's "search for more"), only
+  # that kind is ever searched, so this offer would be meaningless noise about the other kind. A
+  # full miss on both sides is left to the "no devices found" recovery below.
   if [[ "$discovery_scope" != usb && "${discovery_kind:-all}" == all ]] \
     && (( ${#printer_candidates[@]} > 0 || ${#scanner_candidates[@]} > 0 )); then
     if yes 'Rerun discovery to search for additional or missed devices? Already-found devices are kept even if a rerun does not find them again.'; then
       rm -f "$discovery_log"
-      discover_devices true "$discovery_scope" \
-        "$(printf '%s\n' "${printer_candidates[@]}")" "$(printf '%s\n' "${scanner_candidates[@]}")" true
+      discover_devices true "$discovery_scope" true
       return $?
     fi
   fi
 
-  if (( ${#printer_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != scanner ]]; then
-    input_required 'Printer selection'
-    printer_candidate_details "${printer_candidates[@]}"
-    candidate_count=0
-    choice=$(choose_candidate 'Detected printers' "${printer_candidates[@]}")
-    if [[ "$choice" != manual ]]; then
-      IFS='|' read -r selected_printer_label discovered_printer_connection discovered_printer_uri discovered_printer_usb_mode <<<"$choice"
-      printf 'Selected detected printer: %s. Its connection and URI will be suggested below.\n' "$selected_printer_label"
-    fi
-  fi
-  if (( ${#scanner_candidates[@]} > 0 )) && [[ "${discovery_kind:-all}" != printer ]]; then
-    input_required 'Scanner selection'
-    scanner_candidate_details "${scanner_candidates[@]}"
-    candidate_count=0
-    choice=$(choose_candidate 'Detected scanners' "${scanner_candidates[@]}")
-    if [[ "$choice" != manual ]]; then
-      IFS='|' read -r selected_scanner_label discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$choice"
-      discovered_scanner=true
-      printf 'Selected detected scanner: %s. Its detected settings will be suggested below.\n' "$selected_scanner_label"
-    fi
-  fi
-  if [[ -z "${discovered_printer_connection:-}" && "${discovered_scanner:-false}" != true ]]; then
-    printf 'No usable device was selected. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
+  # Device selection ("which detected printer/scanner do you want") is not done here -- it
+  # belongs to select_or_collect_device, which runs once per loop iteration instead of once per
+  # discover_devices call, so a candidate found here can still be offered on a later iteration.
+  # This function only searches and records candidates; a genuine full miss (nothing found on
+  # either side) is still worth its own retry/scope/manual/stop recovery.
+  if (( ${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} == 0 )); then
+    printf 'No devices were found. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
     choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
     case "$choice" in
-      retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope" '' '' true; return $? ;;
+      retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope" true; return $? ;;
       scope)
         discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
         rm -f "$discovery_log"
-        discover_devices true "$discovery_scope" '' '' true
+        discover_devices true "$discovery_scope" true
         return $?
         ;;
       manual) return 0 ;;
