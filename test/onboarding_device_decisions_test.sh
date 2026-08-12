@@ -141,4 +141,24 @@ select_or_collect_device printer
 [[ "$COLLECTED_PRINTER_URI" == 'ipp://192.0.2.20/ipp/print' ]]
 unset -f choose_candidate printer_candidate_details ask_choice ask printer_connection_confirmation
 
+# collect_scanner_definition must offer to keep (not force-reinstall) a discovered scanner's
+# preinstalled backend by passing discovered_scanner_backend_install through as the install
+# default, matching the "Detected preinstalled SANE backend" guidance shown alongside it.
+ask_choice() {
+  case "$1" in
+    'Scanner connection') printf 'network' ;;
+    'Install this backend package with APT') printf '%s' "$2" ;;
+    *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
+  esac
+}
+ask() { printf '%s' "$2"; }
+direct_ethernet_interface=''
+discovered_scanner_connection=network
+discovered_scanner_backend=brother
+discovered_scanner_backend_install=false
+discovered_scanner_usb_mode=''
+collect_scanner_definition
+[[ "$COLLECTED_SCANNER_BACKEND_INSTALL" == false ]] || { printf 'expected the discovered backend_install=false to be kept as the default, got %s\n' "$COLLECTED_SCANNER_BACKEND_INSTALL" >&2; exit 1; }
+unset -f ask_choice ask
+
 printf 'onboarding_device_decisions_test.sh: all checks passed\n'

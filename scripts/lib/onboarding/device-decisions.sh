@@ -137,7 +137,7 @@ collect_scanner_definition() {
     }
     connection=${discovered_scanner_connection:-network}
   fi
-  collect_scanner_backend "$connection" "${discovered_scanner_backend:-$(scanner_backend_default "$connection")}" true
+  collect_scanner_backend "$connection" "${discovered_scanner_backend:-$(scanner_backend_default "$connection")}" "${discovered_scanner_backend_install:-true}"
   local backend=$COLLECTED_SCANNER_BACKEND backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   local usb_mode='' usb_identity=''
   if [[ "$connection" == usb ]]; then
