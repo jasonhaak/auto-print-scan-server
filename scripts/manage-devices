@@ -201,7 +201,7 @@ configure_printer() {
 }
 
 configure_scanner() {
-  local original=${1:-} name connection backend backend_install usb_mode usb_identity retention ocr scanservjs_port page_splitting command_output
+  local original=${1:-} name display_name display_name_default connection backend backend_install usb_mode usb_identity retention ocr scanservjs_port page_splitting command_output
   local connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan} backend_install_default=true
   if [[ -n "$original" ]]; then
     connection_default=$(field scanner "$original" connection)
@@ -213,6 +213,16 @@ configure_scanner() {
     name=$(ask 'Exact SANE device name from scanimage -L' "${original:-${discovered_scanner_device_name:-}}")
     [[ -n "$name" ]] && break
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
+  done
+  display_name_default=$name
+  if [[ -n "$original" ]]; then
+    display_name_default=$(field scanner "$original" display_name)
+    [[ -n "$display_name_default" ]] || display_name_default=$name
+  fi
+  while true; do
+    display_name=$(ask 'Friendly scanner name' "$display_name_default")
+    [[ -n "$display_name" ]] && break
+    printf '%s\n' 'Friendly scanner name cannot be empty.' >&2
   done
   input_required 'Scanner connection'
   discovered_scanner_connection=$connection_default
@@ -231,6 +241,7 @@ configure_scanner() {
   command+=(--device-name "$name" --connection "$connection" --backend "$backend" --backend-install "$backend_install")
   [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
   [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
+  [[ "$display_name" != "$name" ]] && command+=(--display-name "$display_name")
   if [[ -z "$original" ]] && ! "$python" "$helper" --inventory "$variables" --backup-directory "$backups" names scanner | grep -q .; then
     while true; do
       retention=$(ask 'Scan retention days (1-900)' '90')

@@ -553,6 +553,12 @@ grep -q 'direct_ethernet' "$root/scripts/manage-devices"
 configure_scanner_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
 [[ "$configure_scanner_block" == *'collect_scanner_definition'* ]]
 
+# manage-devices' configure_scanner also collects and persists the friendly display name added
+# to select_or_collect_scanner, defaulting to the existing definition's display_name on edit.
+[[ "$configure_scanner_block" == *"ask 'Friendly scanner name'"* ]]
+[[ "$configure_scanner_block" == *'--display-name'* ]]
+[[ "$configure_scanner_block" == *"field scanner \"\$original\" display_name"* ]]
+
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'scanservjs_page_splitting:' "$root/scripts/onboard"
 
