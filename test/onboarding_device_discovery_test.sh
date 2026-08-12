@@ -669,12 +669,29 @@ review_block=$(awk '
 [[ "$review_block" == *"confirmation_block 'ScanservJS'"* ]]
 for field in hostname timezone locale ipv6_cidr direct_ethernet_interface authorized_key \
   printer_connections printer_uris printer_drivers printer_usb_modes printer_usb_identities \
-  scanner_backends scanner_backend_installs scanner_usb_modes scanner_usb_identities page_splitting; do
+  scanner_backends scanner_backend_installs scanner_usb_modes scanner_usb_identities \
+  scanner_display_names page_splitting; do
   if [[ "$review_block" != *"\$$field"* && "$review_block" != *"\${$field"* ]]; then
     printf 'Review screen never references %s\n' "$field" >&2
     exit 1
   fi
 done
+
+# A scanner's friendly display name is written to inventory only when it differs from the exact
+# SANE device name, matching the dns_sd_name-only-if-different convention already used for
+# printers -- writing it unconditionally would duplicate the device name in the common case.
+yaml_write_block=$(awk '
+  /^  if \(\( \$\{#scanner_device_names\[@\]\} > 0 \)\); then$/ { capturing = 1 }
+  capturing { print }
+  capturing && /^  else$/ { exit }
+' "$root/scripts/onboard")
+[[ -n "$yaml_write_block" ]]
+[[ "$yaml_write_block" == *'display_name'* ]]
+[[ "$yaml_write_block" == *'scanner_display_names[$index]'* ]]
+if [[ "$yaml_write_block" != *'!= "${scanner_device_names[$index]}"'* ]]; then
+  printf 'scanner display_name must only be written when it differs from the device name\n' >&2
+  exit 1
+fi
 
 # Finding 10: the driverless/package_profile explanation only makes sense next to the prompt
 # that actually asks it (the non-USB else branch) -- the USB branch derives driver mode

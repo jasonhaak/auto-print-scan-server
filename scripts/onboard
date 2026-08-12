@@ -260,6 +260,7 @@ printer_usb_modes=()
 printer_usb_identities=()
 printer_dns_sd_names=()
 scanner_device_names=()
+scanner_display_names=()
 scanner_connections=()
 scanner_backends=()
 scanner_backend_installs=()
@@ -296,6 +297,7 @@ while true; do
     printer_dns_sd_names+=("$COLLECTED_PRINTER_DNS_SD_NAME")
   else
     scanner_device_names+=("$COLLECTED_SCANNER_DEVICE_NAME")
+    scanner_display_names+=("$COLLECTED_SCANNER_DISPLAY_NAME")
     scanner_connections+=("$COLLECTED_SCANNER_CONNECTION")
     scanner_backends+=("$COLLECTED_SCANNER_BACKEND")
     scanner_backend_installs+=("$COLLECTED_SCANNER_BACKEND_INSTALL")
@@ -353,7 +355,7 @@ done
 if (( ${#scanner_device_names[@]} > 0 )); then
   for index in "${!scanner_device_names[@]}"; do
     confirmation_block "Scanner: ${scanner_device_names[$index]}" \
-      "Connection|${scanner_connections[$index]}" "Backend|${scanner_backends[$index]}" \
+      "Display name|${scanner_display_names[$index]}" "Connection|${scanner_connections[$index]}" "Backend|${scanner_backends[$index]}" \
       "Backend install|${scanner_backend_installs[$index]}" "USB mode|${scanner_usb_modes[$index]:-not applicable}" \
       "USB ID|${scanner_usb_identities[$index]:-not applicable}"
   done
@@ -401,6 +403,7 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
       [[ "${scanner_backend_installs[$index]}" == false ]] && printf '%s\n' '    backend_install: false'
       [[ -n "${scanner_usb_modes[$index]}" ]] && printf '    usb_mode: %s\n' "$(quote "${scanner_usb_modes[$index]}")"
       [[ -n "${scanner_usb_identities[$index]}" ]] && printf '    usb_identity: %s\n' "$(quote "${scanner_usb_identities[$index]}")"
+      [[ "${scanner_display_names[$index]}" != "${scanner_device_names[$index]}" ]] && printf '    display_name: %s\n' "$(quote "${scanner_display_names[$index]}")"
     done
     printf 'scanservjs_retention_days: %s\nscanservjs_ocr_languages: [%s]\nscanservjs_port: %s\n' "$retention" "$languages" "$scanservjs_port"
     printf 'scanservjs_page_splitting: %s\n' "$page_splitting"
