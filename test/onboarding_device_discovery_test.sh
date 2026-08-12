@@ -141,7 +141,7 @@ grep -Fq 'unique_candidates 5 | rank_airscan_first' "$root/scripts/lib/onboardin
 grep -q "ask 'Client-visible DNS-SD name'" "$root/scripts/manage-devices"
 grep -q -- '--dns-sd-name' "$root/scripts/manage-devices"
 
-grep -q "ask 'Client-visible DNS-SD name'" "$root/scripts/onboard"
+grep -q "ask 'Client-visible DNS-SD name'" "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'printer_dns_sd_names' "$root/scripts/onboard"
 grep -q 'dns_sd_name:' "$root/scripts/onboard"
 
@@ -463,18 +463,16 @@ fi
 # The primary printer's connection topology (network/direct_ethernet/usb) must never clear a
 # separately-discovered scanner. A multifunction device commonly uses a different connection per
 # function -- e.g. this repo's own tested Brother MFC-7360N prints over USB but scans over the
-# network via AirScan (docs/guides/brother-scanners.md). Reproduced live: selecting a discovered
-# printer and a discovered scanner during discovery, then choosing "usb" as the printer's
-# topology, silently cleared the already-selected scanner, forcing the operator to reconfigure
-# it from scratch a few prompts later with no memory of what discovery had just found.
-topology_block=$(awk '
-  /^topology=\$\(ask_choice .How is this device connected/ { capturing = 1 }
-  capturing { print }
-  capturing && /^printf .%s\\n. .The device URI tells CUPS/ { exit }
-' "$root/scripts/onboard")
-[[ -n "$topology_block" ]]
-if [[ "$topology_block" == *'discovered_scanner=false'* ]]; then
-  printf 'printer topology selection must not clear a separately-discovered scanner\n' >&2
+# network via AirScan (docs/guides/brother-scanners.md). Topology/connection/URI/USB collection
+# now lives entirely in the shared collect_printer_definition (device-decisions.sh, covered by
+# test/onboarding_device_decisions_test.sh) -- scripts/onboard must not inline its own copy of
+# that logic (which is exactly what produced the original bug) or clear a scanner explicitly.
+if grep -Fq 'discovered_scanner=false' "$root/scripts/onboard"; then
+  printf 'scripts/onboard must not clear a separately-discovered scanner\n' >&2
+  exit 1
+fi
+if grep -Eq "ask_choice 'How is this device connected" "$root/scripts/onboard"; then
+  printf 'printer/scanner topology collection must go through the shared collect_printer_definition/collect_scanner_definition, not an inline copy in scripts/onboard\n' >&2
   exit 1
 fi
 
@@ -540,7 +538,7 @@ grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/sit
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/manage-devices"
 grep -q -- '--page-splitting' "$root/scripts/manage-devices"
 
-grep -q "ask_choice 'Enable page splitting" "$root/scripts/onboard"
+grep -q "ask_choice 'Enable page splitting" "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'scanservjs_page_splitting:' "$root/scripts/onboard"
 
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
@@ -665,37 +663,38 @@ done
 
 # Finding 10: the driverless/package_profile explanation only makes sense next to the prompt
 # that actually asks it (the non-USB else branch) -- the USB branch derives driver mode
-# directly from usb_mode and never shows the ask_choice at all.
-driver_mode_block=$(awk '
-  /^if \[\[ "\$connection" == usb \]\]; then$/ { start_count++ }
-  start_count == 2 { capturing = 1 }
-  capturing { print }
-  capturing && /^fi$/ { exit }
-' "$root/scripts/onboard")
+# directly from usb_mode and never shows the ask_choice at all. This now lives in the shared
+# select_or_collect_printer (device-decisions.sh), the only place that asks it.
+driver_mode_block=$(awk '/^select_or_collect_printer\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/lib/onboarding/device-decisions.sh")
 [[ "$driver_mode_block" == *'else'*'Choose driverless first'* ]]
+if grep -Eq "ask_choice 'Printer driver mode'" "$root/scripts/onboard"; then
+  printf 'printer driver mode collection must go through the shared select_or_collect_printer, not an inline copy in scripts/onboard\n' >&2
+  exit 1
+fi
 
-# Finding 11/F: the preinstalled-backend branch must not read as self-contradictory ("will not
-# install... it" immediately followed by a prompt offering to do exactly that), and must route
-# through the same collect_scanner_backend/scanner_backend_guidance helper the other two
-# scanner-backend paths already use, instead of being the one path with no guidance at all.
-preinstalled_backend_block=$(awk '
-  /scanner_backend_install" == false/ { capturing = 1 }
-  capturing { print }
-  capturing && /^  fi$/ { exit }
-' "$root/scripts/onboard")
-[[ "$preinstalled_backend_block" == *'collect_scanner_backend'* ]]
-[[ "$preinstalled_backend_block" != *'will not install, update or register it'* ]]
+# Finding 11/F: the preinstalled-backend contradiction ("will not install... it" immediately
+# followed by a prompt offering to do exactly that) can no longer exist structurally: every
+# scanner, discovered-preinstalled or not, now routes through the single
+# collect_scanner_definition path, which always calls collect_scanner_backend/
+# scanner_backend_guidance and keeps a discovered backend_install=false as its default rather
+# than special-casing it with different wording.
+if grep -Fq 'will not install, update or register it' "$root/scripts/onboard" "$root/scripts/lib/onboarding/device-decisions.sh"; then
+  printf 'the preinstalled-backend contradiction text must not reappear\n' >&2
+  exit 1
+fi
+grep -Fq 'collect_scanner_backend "$connection"' "$root/scripts/lib/onboarding/device-decisions.sh"
 
 # Finding C: scanner USB mode must be explained before being asked, in every collection path
-# that asks it -- mirroring the printer path's USB-mode explanation. onboard always spells the
-# scanner prompt 'Scanner USB mode' (distinct from the printer's plain 'USB mode'), so it can be
-# counted precisely; manage-devices' scanner and printer prompts share the literal 'USB mode'
-# text, so check inside configure_scanner specifically instead of counting occurrences.
+# that asks it -- mirroring the printer path's USB-mode explanation. USB mode collection now
+# lives entirely in the shared collect_scanner_definition (one site), so scripts/onboard must
+# not have its own copy of the prompt at all.
 grep -q 'scanner_usb_mode_guidance' "$root/scripts/lib/onboarding/device-decisions.sh"
-onboard_scanner_usb_mode_sites=$(grep -c "ask_choice 'Scanner USB mode'" "$root/scripts/onboard")
-onboard_scanner_usb_mode_guidance_calls=$(grep -c 'scanner_usb_mode_guidance' "$root/scripts/onboard")
-[[ "$onboard_scanner_usb_mode_sites" -eq 3 ]]
-[[ "$onboard_scanner_usb_mode_guidance_calls" -ge "$onboard_scanner_usb_mode_sites" ]]
+if grep -q "ask_choice 'Scanner USB mode'" "$root/scripts/onboard"; then
+  printf 'scanner USB mode must be asked only inside the shared collect_scanner_definition, not inline in onboard\n' >&2
+  exit 1
+fi
+device_decisions_scanner_usb_mode_sites=$(grep -c "ask_choice 'Scanner USB mode'" "$root/scripts/lib/onboarding/device-decisions.sh")
+[[ "$device_decisions_scanner_usb_mode_sites" -eq 1 ]]
 scanner_config_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturing{print} capturing && /^\}$/{exit}' "$root/scripts/manage-devices")
 [[ "$scanner_config_block" == *'scanner_usb_mode_guidance'* ]]
 
@@ -709,36 +708,37 @@ grep -Fq '${scanner_usb_identities[$index]}' "$root/scripts/onboard"
 # validates a printer's, instead of accepting any string unchecked.
 [[ "$scanner_config_block" == *'valid_usb_identity'* ]]
 
-# Finding 5: the additional-printer and additional-scanner loops must give the same guidance
-# as the primary device before their connection/driver-mode choices, and confirm the finished
-# definition at the end of each iteration -- previously a second/third device got no
-# confirmation anywhere in the run.
-additional_printer_loop=$(awk '
-  /^while yes .Add another printer\?.; do$/ { capturing = 1 }
+# Finding 5/6: every device (first or additional, printer or scanner) must give the same
+# guidance and confirm the finished definition at the end -- the unified loop replaces the old
+# asymmetric "primary + separate additional loop" and "primary + separate optional scanner"
+# mechanisms with a single call site per device type through select_or_collect_device.
+loop_block=$(awk '
+  /^stage .4 of 5. .Choose your devices./ { capturing = 1 }
   capturing { print }
-  capturing && /^done$/ { exit }
+  capturing && /^stage .5 of 5. .Review and commission./ { exit }
 ' "$root/scripts/onboard")
-[[ "$additional_printer_loop" == *'Choose ipp for most modern network printers'* ]]
-[[ "$additional_printer_loop" == *'Choose driverless first'* ]]
-[[ "$additional_printer_loop" == *'printer_connection_confirmation "$extra_queue"'* ]]
-
-additional_scanner_loop=$(awk '
-  /^while yes .Add another scanner\?.; do$/ { capturing = 1 }
-  capturing { print }
-  capturing && /^done$/ { exit }
-' "$root/scripts/onboard")
-[[ "$additional_scanner_loop" == *'confirmation_block "Scanner: $extra_scanner_name"'* ]]
-
-# Finding 6: the primary scanner settings group must end with a confirmation_block, matching
-# every other multi-prompt decision group in the run.
-grep -Fq "confirmation_block 'Scanner'" "$root/scripts/onboard"
+[[ -n "$loop_block" ]]
+[[ "$loop_block" == *'select_or_collect_device "$action"'* ]]
+[[ "$loop_block" == *"ask_choice 'Add a device?"* ]]
+if [[ "$loop_block" == *"while yes 'Add another printer?'"* ]]; then
+  printf 'the separate "Add another printer?" loop must be replaced by the unified add-a-device loop\n' >&2
+  exit 1
+fi
+if [[ "$loop_block" == *"'Configure a different scanner?'"* ]]; then
+  printf 'the separate optional-scanner gate must be replaced by the unified add-a-device loop\n' >&2
+  exit 1
+fi
+[[ "$loop_block" == *'At least one device is required'* ]]
+grep -q 'printer_connection_confirmation "\$queue"' "$root/scripts/lib/onboarding/device-decisions.sh"
+grep -q 'confirmation_block "Scanner: \$device_name"' "$root/scripts/lib/onboarding/device-decisions.sh"
 
 # Finding 8: the retention/OCR/port guidance sentences the review named specifically must use
 # the recommendation heading like other suggested-default-with-a-reason guidance, not unmarked
-# prose that a skimming reader can't distinguish from narration.
-grep -Fq "recommendation 'Choose 90 days as a starting point" "$root/scripts/onboard"
-grep -Fq "recommendation 'OCR makes scanned PDFs searchable" "$root/scripts/onboard"
-grep -Fq "recommendation 'The ScanservJS port is the local TCP port" "$root/scripts/onboard"
+# prose that a skimming reader can't distinguish from narration. This now lives in the shared
+# collect_scanservjs_settings (device-decisions.sh), the only place that asks it.
+grep -Fq "recommendation 'Choose 90 days as a starting point" "$root/scripts/lib/onboarding/device-decisions.sh"
+grep -Fq "recommendation 'OCR makes scanned PDFs searchable" "$root/scripts/lib/onboarding/device-decisions.sh"
+grep -Fq "recommendation 'The ScanservJS port is the local TCP port" "$root/scripts/lib/onboarding/device-decisions.sh"
 
 # Finding 12: cli_color must gate on stderr (the descriptor every caller actually writes to),
 # not stdout.

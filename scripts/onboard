@@ -20,6 +20,9 @@ direct_ethernet_interface=''
 direct_ethernet_pi_ipv4_cidr=''
 direct_ethernet_device_ipv4=''
 temporary_direct_connection=''
+printer_candidates=()
+scanner_candidates=()
+discovery_tools_ready=false
 discovery_ipp_usb_restore_needed=false
 discovery_cups_restore_needed=false
 discovery_ipp_usb_was_enabled='not-found'
@@ -229,6 +232,7 @@ stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for 
 input_required 'Discovery scope'
 discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
+discovery_tools_ready=true
 stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Server identity'
 while true; do
@@ -245,386 +249,61 @@ for public_key_path in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$H
   fi
 done
 [[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
-subsection 'Printer 1'
-input_required 'Printer queue'
-printf '%s\n' 'The queue name is what phones, computers and tablets will see when choosing this printer.'
-while true; do
-  queue=$(ask 'CUPS queue name' 'printer')
-  [[ "$queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-  printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
-done
-dns_sd_name_default=$queue
-while true; do
-  dns_sd_name=$(ask 'Client-visible DNS-SD name' "$dns_sd_name_default")
-  [[ "$dns_sd_name" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-  printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
-done
-printf 'Timezone and locale are inherited from Raspberry Pi Imager: %s, %s.\n' "$timezone" "$locale"
-input_required 'Printer connection'
-printf '\n'
-printf '%s\n' 'Choose how this device reaches the Raspberry Pi. This controls which discovery and connection settings are used.'
-printf '%s\n' 'Connection preference, when the device supports it:' \
-  '  1. network: Ethernet through the router or switch. This is the simplest path and can support standard printing and scanning.' \
-  '  2. direct_ethernet: Ethernet directly to an unused Raspberry Pi port when the device cannot reach the router.' \
-  '  3. usb: a fallback that often supports printing; scanning needs a usable Linux SANE backend.'
-recommendation 'Choose network for a device on the home LAN. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
-topology_default=network
-if [[ "${discovered_printer_connection:-}" == usb || "${discovered_scanner_connection:-}" == usb ]]; then
-  topology_default=usb
-fi
-topology=$(ask_choice 'How is this device connected to the Raspberry Pi?' "$topology_default" network direct_ethernet usb)
-if [[ "$topology" == direct_ethernet ]]; then
-  discovered_printer_connection=''
-  discovered_printer_uri=''
-  discovered_printer_usb_mode=''
-  recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
-  active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
-  detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
-  while true; do
-    while true; do
-      direct_ethernet_interface=$(ask_detected 'Unused Raspberry Pi Ethernet interface' "${direct_ethernet_interface:-${detected_unused_interface:-eth0}}" 'Use an Ethernet adapter that is not carrying the trusted LAN connection.')
-      [[ "$direct_ethernet_interface" =~ ^[A-Za-z0-9_.-]+$ && "$direct_ethernet_interface" != "$active_interface" ]] && break
-      printf 'Interface %s is invalid or carries the Raspberry Pi default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
-    done
-    while true; do
-      direct_ethernet_pi_ipv4_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "${direct_ethernet_pi_ipv4_cidr:-192.168.50.1/30}")
-      valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" false && break
-      printf '%s\n' 'Enter a valid IPv4 CIDR, for example 192.168.50.1/30.' >&2
-    done
-    while true; do
-      direct_ethernet_device_ipv4=$(ask 'Device static IPv4 address' "${direct_ethernet_device_ipv4:-192.168.50.2}")
-      same_direct_ipv4_link "$direct_ethernet_pi_ipv4_cidr" "$direct_ethernet_device_ipv4" && break
-      printf '%s\n' 'Enter another address in the same /30 link as the Raspberry Pi, for example 192.168.50.2.' >&2
-    done
-    direct_ethernet_discovery_status=0
-    discover_direct_ethernet_device || direct_ethernet_discovery_status=$?
-    [[ "$direct_ethernet_discovery_status" == 2 ]] || break
-  done
-  [[ "$direct_ethernet_discovery_status" == 0 ]] || exit "$direct_ethernet_discovery_status"
-  printf '%s\n' 'The direct Ethernet link is recreated permanently only after final confirmation. Commissioning then verifies the declared device before creating its queue or scanner service.'
-fi
-if [[ "$topology" == usb && "${discovered_printer_connection:-}" != usb ]]; then
-  discovered_printer_connection=''
-  discovered_printer_uri=''
-  discovered_printer_usb_mode=''
-elif [[ "$topology" != usb && "${discovered_printer_connection:-}" == usb ]]; then
-  discovered_printer_connection=''
-  discovered_printer_uri=''
-  discovered_printer_usb_mode=''
-fi
-if [[ "$topology" == usb ]]; then
-  connection=usb
-  printf '%s\n' 'USB was selected for this printer. Its USB identity below identifies the exact device to CUPS. Scanning is configured separately in the Optional Scanner section and is not limited by this choice.'
-else
-  printf '%s\n' 'Choose ipp for most modern network printers. Use ipps for encrypted IPP, socket for JetDirect printers (usually port 9100) or lpd for older LPD printers.'
-  [[ -n "${discovered_printer_connection:-}" && "$topology" == network ]] && recommendation "Keep the detected ${discovered_printer_connection} connection if it matches the intended printer."
-  connection=$(ask_choice 'Printer connection' "${discovered_printer_connection:-ipp}" ipp ipps socket lpd)
-fi
-printf '%s\n' 'The device URI tells CUPS where this printer is. For IPP, a common example is ipp://192.168.178.50/ipp/print. Find the exact URI in the printer web administration page or manual, then keep a discovered value unless it is wrong.'
-[[ -n "${discovered_printer_uri:-}" ]] && printf 'Detected printer URI: %s. Press Enter to keep it if it matches the intended printer.\n' "$discovered_printer_uri"
-uri_default=$(printer_uri_default "$connection" "$topology" "${discovered_printer_uri:-}" "$direct_ethernet_device_ipv4")
-while true; do
-  uri=$(ask 'Printer device URI' "$uri_default")
-  valid_printer_uri "$connection" "$uri" && break
-  printf 'The %s connection requires a matching URI scheme. Check the example and try again.\n' "$connection" >&2
-done
-usb_mode=''
-usb_identity=''
-if [[ "$connection" == usb ]]; then
-  printf '%s\n' 'Choose ipp_usb only for an IPP-over-USB capable driverless printer. Choose legacy_usb for a package-profile printer. The final run checks the connected device before enabling ipp-usb.'
-  usb_mode=$(ask_choice 'USB mode' "${discovered_printer_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
-  if ! usb_identity=$(choose_usb_identity "$(remote 'lsusb' 2>&1 || true)"); then
-    printf '%s\n' 'No USB identity could be detected automatically. Enter the four-digit vendor and product values after ID from lsusb, for example ID 04a9:1909 becomes 04a9:1909.' >&2
-    usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
-  elif [[ "$usb_identity" == manual ]]; then
-    usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
-  fi
-  while ! valid_usb_identity "$usb_identity"; do
-    printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
-    usb_identity=$(ask 'USB vendor:product identity from lsusb' "$usb_identity")
-  done
-  while [[ "$usb_mode" == legacy_usb && "$uri" != usb://* ]]; do
-    printf '%s\n' 'Legacy USB uses the usb:// device URI reported by lpinfo -v.'
-    uri=$(ask 'Printer device URI' 'usb://manufacturer/printer')
-  done
-  while [[ "$usb_mode" == ipp_usb && "$uri" == usb://* ]]; do
-    printf '%s\n' 'IPP-over-USB uses its discovered DNS-SD or IPP endpoint, not a legacy usb:// URI.'
-    uri=$(ask 'Printer device URI' 'dnssd://printer._ipp._tcp.local/')
-  done
-fi
-if [[ "$connection" == usb ]]; then
-  if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
-  printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
-else
-  printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
-  driver_default=driverless
-  [[ "$connection" == socket || "$connection" == lpd ]] && driver_default=package_profile
-  driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
-fi
-profile=''
-printer_identity_evidence=''
-if [[ "$driver" == package_profile ]]; then
-  collect_legacy_printer_profile "$uri" ''
-  printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
-  profile=$COLLECTED_PRINTER_PROFILE
-fi
-printer_queues=("$queue")
-printer_connections=("$connection")
-printer_uris=("$uri")
-printer_drivers=("$driver")
-printer_profiles=("$profile")
-printer_identity_evidences=("$printer_identity_evidence")
-printer_cups_models=('')
-printer_usb_modes=("$usb_mode")
-printer_usb_identities=("$usb_identity")
-printer_dns_sd_names=("$dns_sd_name")
-printer_connection_confirmation "$queue" "$connection" "$uri" "$driver" "$usb_mode" "$usb_identity"
-subsection 'Additional Devices'
-printf '%s\n' 'Add another printer or scanner only when it should be managed separately.'
-while yes 'Add another printer?'; do
-  printf '%s\n' 'This printer will have its own queue in the print dialog.'
-  while true; do
-    extra_queue=$(ask 'Additional CUPS queue name' 'printer-2')
-    [[ "$extra_queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
-  done
-  extra_dns_sd_name_default=$extra_queue
-  while true; do
-    extra_dns_sd_name=$(ask 'Client-visible DNS-SD name' "$extra_dns_sd_name_default")
-    [[ "$extra_dns_sd_name" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
-  done
-  if yes_default 'Search for recommendations before defining this additional printer?'; then
-    discovery_kind=printer
-    discover_devices true all || true
-    unset discovery_kind
-  else
-    printf '%s\n' 'Continuing with manual evidence. The final inventory validation still applies.'
-  fi
-  recommendation 'Choose network for another home-LAN device or usb for another USB-local device. Add further direct Ethernet links later with scripts/manage-devices add link.'
-  extra_topology=$(ask_choice 'Additional device connection topology' 'network' network usb)
-  if [[ "$extra_topology" == usb ]]; then
-    extra_connection=usb
-  else
-    printf '%s\n' 'Choose ipp for most modern network printers. Use ipps for encrypted IPP, socket for JetDirect printers (usually port 9100) or lpd for older LPD printers.'
-    extra_connection=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket lpd)
-  fi
-  printf '%s\n' 'For IPP, use the URI from the printer web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
-  while true; do
-    extra_uri=$(ask 'Printer device URI' "$(case "$extra_connection" in ipp) printf '%s' ipp://printer.local/ipp/print;; ipps) printf '%s' ipps://printer.local/ipp/print;; socket) printf '%s' socket://printer.local:9100;; lpd) printf '%s' lpd://printer.local/queue;; usb) printf '%s' dnssd://printer._ipp._tcp.local/;; esac)")
-    valid_printer_uri "$extra_connection" "$extra_uri" && break
-    printf 'The %s connection requires a matching URI scheme. Try again.\n' "$extra_connection" >&2
-  done
-  extra_usb_mode=''
-  extra_usb_identity=''
-  if [[ "$extra_connection" == usb ]]; then
-    extra_usb_mode=$(ask_choice 'USB mode' 'ipp_usb' ipp_usb legacy_usb)
-    if ! extra_usb_identity=$(choose_usb_identity "$(remote 'lsusb' 2>&1 || true)"); then
-      printf '%s\n' 'No USB identity could be detected automatically. Enter the four-digit vendor and product values after ID from lsusb, for example ID 04a9:1909 becomes 04a9:1909.' >&2
-      extra_usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
-    elif [[ "$extra_usb_identity" == manual ]]; then
-      extra_usb_identity=$(ask 'USB vendor:product identity from lsusb' '')
-    fi
-    while ! valid_usb_identity "$extra_usb_identity"; do
-      printf '%s\n' 'USB identity must use four hexadecimal vendor and product digits, for example 04a9:1909.' >&2
-      extra_usb_identity=$(ask 'USB vendor:product identity from lsusb' "$extra_usb_identity")
-    done
-    while [[ "$extra_usb_mode" == legacy_usb && "$extra_uri" != usb://* ]]; do
-      printf '%s\n' 'Legacy USB uses the usb:// device URI reported by lpinfo -v.'
-      extra_uri=$(ask 'Printer device URI' 'usb://manufacturer/printer')
-    done
-    while [[ "$extra_usb_mode" == ipp_usb && "$extra_uri" == usb://* ]]; do
-      printf '%s\n' 'IPP-over-USB uses its discovered DNS-SD or IPP endpoint, not a legacy usb:// URI.'
-      extra_uri=$(ask 'Printer device URI' 'dnssd://printer._ipp._tcp.local/')
-    done
-  fi
-  if [[ "$extra_connection" == usb ]]; then
-    if [[ "$extra_usb_mode" == legacy_usb ]]; then extra_driver=package_profile; else extra_driver=driverless; fi
-    printf 'Selected %s driver mode to match %s.\n' "$extra_driver" "$extra_usb_mode"
-  else
-    printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.'
-    extra_driver=$(ask_choice 'Printer driver mode' 'driverless' driverless package_profile)
-  fi
-  extra_profile=''
-  extra_printer_identity_evidence=''
-  if [[ "$extra_driver" == package_profile ]]; then
-    collect_legacy_printer_profile "$extra_uri" ''
-    extra_printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
-    extra_profile=$COLLECTED_PRINTER_PROFILE
-  fi
-  printer_queues+=("$extra_queue")
-  printer_connections+=("$extra_connection")
-  printer_uris+=("$extra_uri")
-  printer_drivers+=("$extra_driver")
-  printer_profiles+=("$extra_profile")
-  printer_identity_evidences+=("$extra_printer_identity_evidence")
-  printer_cups_models+=('')
-  printer_usb_modes+=("$extra_usb_mode")
-  printer_usb_identities+=("$extra_usb_identity")
-  printer_dns_sd_names+=("$extra_dns_sd_name")
-  printer_connection_confirmation "$extra_queue" "$extra_connection" "$extra_uri" "$extra_driver" "$extra_usb_mode" "$extra_usb_identity"
-done
-
-scanner=false
-scanner_backend_install=true
-subsection 'Optional Scanner'
-if [[ "${discovered_scanner:-false}" == true ]]; then
-  scanner=true
-  scanner_connection=$discovered_scanner_connection
-  scanner_backend=$discovered_scanner_backend
-  scanner_backend_install=${discovered_scanner_backend_install:-true}
-  scanner_uri=''
-  scanner_usb_mode=${discovered_scanner_usb_mode:-}
-  scanner_usb_identity=''
-  input_required 'Scanner backend'
-  if [[ "$scanner_backend_install" == false ]]; then
-    printf 'Detected preinstalled SANE backend: %s. By default onboarding keeps it as-is; answer yes below only to have APT (re)install it.\n' "$scanner_backend"
-    collect_scanner_backend "$scanner_connection" "$scanner_backend" "$scanner_backend_install"
-    scanner_backend=$COLLECTED_SCANNER_BACKEND
-    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
-  else
-    printf '%s\n' 'The detected SANE backend package is installed during commissioning.'
-    collect_scanner_backend "$scanner_connection" "$scanner_backend" "$scanner_backend_install"
-    scanner_backend=$COLLECTED_SCANNER_BACKEND
-    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
-  fi
-  if [[ "$scanner_connection" == usb ]]; then
-    scanner_usb_mode_guidance
-    scanner_usb_mode=$(ask_choice 'Scanner USB mode' "${scanner_usb_mode:-ipp_usb}" ipp_usb legacy_usb)
-    scanner_usb_identity=$(collect_usb_identity_from_lsusb)
-  fi
-else
-  if [[ -n "${discovered_unsupported_scanner_device_name:-}" ]]; then
-    unsupported_scanner_guidance "$discovered_unsupported_scanner_device_name"
-    printf '%s\n' 'This onboarding run will not install or register an unverified scanner backend.'
-  fi
-  printf '%s\n' 'Choose a scanner only when it is connected. Browser scanning is the normal cross-platform option and lets users choose from configured scanners.'
-  if yes 'Configure a different scanner?'; then
-    scanner=true
-    scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-    collect_scanner_backend "$scanner_connection" "$(scanner_backend_default "$scanner_connection")" true
-    scanner_backend=$COLLECTED_SCANNER_BACKEND
-    scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
-    scanner_uri=$(ask 'Optional scanner device URI' '')
-    scanner_usb_mode=''
-    scanner_usb_identity=''
-    if [[ "$scanner_connection" == usb ]]; then
-      scanner_usb_mode_guidance
-      scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
-      scanner_usb_identity=$(collect_usb_identity_from_lsusb)
-    fi
-  fi
-fi
-if [[ "$scanner" == true ]]; then
-  if [[ -n "${discovered_scanner_device_name:-}" ]]; then
-    printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name"
-  else
-    printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.'
-  fi
-  while true; do
-    scanner_device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
-    [[ -n "$scanner_device_name" ]] && break
-    printf '%s\n' 'Scanner device name cannot be empty.' >&2
-  done
-  recommendation 'Choose 90 days as a starting point. Completed scans are visible to the trusted LAN until this period expires.'
-  while true; do
-    retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
-    [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
-    printf '%s\n' 'Retention must be 1 to 900 days.' >&2
-  done
-  recommendation 'OCR makes scanned PDFs searchable. Use eng for English. Add deu for German, separated with commas. More languages can make OCR slower.'
-  while true; do
-    ocr=$(ask 'OCR language codes, comma-separated' 'eng')
-    valid_ocr_languages "$ocr" && break
-    printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
-  done
-  recommendation 'The ScanservJS port is the local TCP port its web interface listens on. Change it only if 8080 conflicts with another service.'
-  while true; do
-    scanservjs_port=$(ask 'ScanservJS port (1-65535, recommended 8080)' "$(saved_scalar scanservjs_port 8080)")
-    [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
-    printf '%s\n' 'Port must be 1 to 65535.' >&2
-  done
-  printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
-  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
-  confirmation_block 'Scanner' \
-    "Device name|$scanner_device_name" "Connection|$scanner_connection" "Backend|$scanner_backend" \
-    "Backend install|$scanner_backend_install" "USB mode|${scanner_usb_mode:-not applicable}" \
-    "USB ID|${scanner_usb_identity:-not applicable}" "Retention|$retention days" "OCR|$ocr" \
-    "ScanservJS port|$scanservjs_port" "Page splitting|$page_splitting"
-fi
+printer_queues=()
+printer_connections=()
+printer_uris=()
+printer_drivers=()
+printer_profiles=()
+printer_identity_evidences=()
+printer_cups_models=()
+printer_usb_modes=()
+printer_usb_identities=()
+printer_dns_sd_names=()
 scanner_device_names=()
 scanner_connections=()
 scanner_backends=()
 scanner_backend_installs=()
 scanner_usb_modes=()
 scanner_usb_identities=()
-if [[ "$scanner" == true ]]; then
-  scanner_device_names+=("$scanner_device_name")
-  scanner_connections+=("$scanner_connection")
-  scanner_backends+=("$scanner_backend")
-  scanner_backend_installs+=("$scanner_backend_install")
-  scanner_usb_modes+=("$scanner_usb_mode")
-  scanner_usb_identities+=("$scanner_usb_identity")
-fi
-while yes 'Add another scanner?'; do
-  if yes_default 'Search for scanner recommendations before defining it?'; then
-    discovery_kind=scanner
-    discover_devices true all || true
-    unset discovery_kind
+
+subsection 'Devices'
+printf '%s\n' 'Add printers and scanners one at a time. A multifunction device with different connections for printing and scanning (for example USB printing with network scanning) is added as one printer and one scanner.'
+while true; do
+  default_action=done
+  (( ${#printer_candidates[@]} > 0 )) && default_action=printer
+  (( ${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} > 0 )) && default_action=scanner
+  action=$(ask_choice 'Add a device? (printer, scanner, done)' "$default_action" printer scanner done)
+  if [[ "$action" == done ]]; then
+    if (( ${#printer_queues[@]} == 0 && ${#scanner_device_names[@]} == 0 )); then
+      printf '%s\n' 'At least one device is required before continuing.' >&2
+      continue
+    fi
+    break
+  fi
+  if ! select_or_collect_device "$action"; then
+    continue
+  fi
+  if [[ "$action" == printer ]]; then
+    printer_queues+=("$COLLECTED_PRINTER_QUEUE")
+    printer_connections+=("$COLLECTED_PRINTER_CONNECTION")
+    printer_uris+=("$COLLECTED_PRINTER_URI")
+    printer_drivers+=("$COLLECTED_PRINTER_DRIVER")
+    printer_profiles+=("$COLLECTED_PRINTER_PROFILE")
+    printer_identity_evidences+=("$COLLECTED_PRINTER_IDENTITY_EVIDENCE")
+    printer_cups_models+=('')
+    printer_usb_modes+=("$COLLECTED_PRINTER_USB_MODE")
+    printer_usb_identities+=("$COLLECTED_PRINTER_USB_IDENTITY")
+    printer_dns_sd_names+=("$COLLECTED_PRINTER_DNS_SD_NAME")
   else
-    printf '%s\n' 'Continuing with manual scanner evidence. The final inventory validation still applies.'
+    scanner_device_names+=("$COLLECTED_SCANNER_DEVICE_NAME")
+    scanner_connections+=("$COLLECTED_SCANNER_CONNECTION")
+    scanner_backends+=("$COLLECTED_SCANNER_BACKEND")
+    scanner_backend_installs+=("$COLLECTED_SCANNER_BACKEND_INSTALL")
+    scanner_usb_modes+=("$COLLECTED_SCANNER_USB_MODE")
+    scanner_usb_identities+=("$COLLECTED_SCANNER_USB_IDENTITY")
   fi
-  printf '%s\n' 'On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device.'
-  while true; do
-    extra_scanner_name=$(ask 'Exact SANE device name from scanimage -L' '')
-    [[ -n "$extra_scanner_name" ]] && break
-    printf '%s\n' 'Scanner device name cannot be empty.' >&2
-  done
-  extra_scanner_connection=$(ask_choice 'Scanner connection' 'network' network usb ipp ipps)
-  collect_scanner_backend "$extra_scanner_connection" "$(scanner_backend_default "$extra_scanner_connection")" true
-  extra_scanner_backend=$COLLECTED_SCANNER_BACKEND
-  extra_scanner_backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
-  extra_scanner_usb_mode=''
-  extra_scanner_usb_identity=''
-  if [[ "$extra_scanner_connection" == usb ]]; then
-    scanner_usb_mode_guidance
-    extra_scanner_usb_mode=$(ask_choice 'Scanner USB mode' 'ipp_usb' ipp_usb legacy_usb)
-    extra_scanner_usb_identity=$(collect_usb_identity_from_lsusb)
-  fi
-  scanner_device_names+=("$extra_scanner_name")
-  scanner_connections+=("$extra_scanner_connection")
-  scanner_backends+=("$extra_scanner_backend")
-  scanner_backend_installs+=("$extra_scanner_backend_install")
-  scanner_usb_modes+=("$extra_scanner_usb_mode")
-  scanner_usb_identities+=("$extra_scanner_usb_identity")
-  confirmation_block "Scanner: $extra_scanner_name" \
-    "Connection|$extra_scanner_connection" "Backend|$extra_scanner_backend" \
-    "Backend install|$extra_scanner_backend_install" "USB mode|${extra_scanner_usb_mode:-not applicable}" \
-    "USB ID|${extra_scanner_usb_identity:-not applicable}"
 done
-if (( ${#scanner_device_names[@]} > 0 )) && [[ "$scanner" != true ]]; then
-  while true; do
-    retention=$(ask 'Scan retention days (1-900, recommended 90)' '90')
-    [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
-    printf '%s\n' 'Retention must be 1 to 900 days.' >&2
-  done
-  while true; do
-    ocr=$(ask 'OCR language codes, comma-separated' 'eng')
-    valid_ocr_languages "$ocr" && break
-    printf '%s\n' 'Use comma-separated language codes containing letters, numbers or underscores.' >&2
-  done
-  while true; do
-    scanservjs_port=$(ask 'ScanservJS port (1-65535, recommended 8080)' "$(saved_scalar scanservjs_port 8080)")
-    [[ "$scanservjs_port" =~ ^[0-9]+$ ]] && (( scanservjs_port >= 1 && scanservjs_port <= 65535 )) && break
-    printf '%s\n' 'Port must be 1 to 65535.' >&2
-  done
-  printf '%s\n' 'When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF.'
-  page_splitting=$(ask_choice 'Enable page splitting (one PDF per scanned page)' 'false' true false)
-  confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
-fi
-[[ "$connection" != usb || "$usb_mode" == ipp_usb || "$usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid printer USB mode.' >&2; exit 1; }
-[[ "$connection" != usb || "$usb_identity" =~ ^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$ ]] || { printf '%s\n' 'USB identity must use vendor:product form.' >&2; exit 1; }
-[[ "$scanner" != true || -n "$scanner_device_name" ]] || { printf '%s\n' 'Scanner device name is required.' >&2; exit 1; }
+
 for index in "${!printer_queues[@]}"; do
   for other_index in "${!printer_queues[@]}"; do
     (( other_index >= index )) && continue
@@ -634,7 +313,6 @@ for index in "${!printer_queues[@]}"; do
     }
   done
 done
-[[ "$scanner" != true || "$scanner_connection" != usb || "$scanner_usb_mode" == ipp_usb || "$scanner_usb_mode" == legacy_usb ]] || { printf '%s\n' 'Invalid scanner USB mode.' >&2; exit 1; }
 
 # A package profile identifies a generic Debian driver package. The exact PPD/model is
 # deliberately selected from this Raspberry Pi after that package is prepared.
