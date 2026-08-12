@@ -4,6 +4,14 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$root/scripts/lib/onboarding/device-discovery.sh"
 
+candidates=(alpha beta gamma beta)
+remove_candidate candidates beta
+[[ "${candidates[*]}" == 'alpha gamma beta' ]] || { printf 'remove_candidate did not remove exactly the first match: %s\n' "${candidates[*]}" >&2; exit 1; }
+
+candidates=(solo)
+remove_candidate candidates missing
+[[ "${candidates[*]}" == 'solo' ]] || { printf 'remove_candidate must leave the array unchanged when there is no match\n' >&2; exit 1; }
+
 candidates=$(ipp_usb_printer_candidates \
   $'network ipp://printer.local/ipp/print\nnetwork dnssd://Office%20Printer._ipp._tcp.local/\nnetwork dnssd://Scanner._uscan._tcp.local/' \
   'network ipp://printer.local/ipp/print')

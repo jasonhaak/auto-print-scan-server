@@ -29,6 +29,20 @@ restore_cups_state() {
   discovery_cups_restore_needed=false
 }
 
+remove_candidate() {
+  local -n array_ref=$1
+  local target=$2 index found=false
+  local -a remaining=()
+  for index in "${!array_ref[@]}"; do
+    if [[ "$found" == false && "${array_ref[$index]}" == "$target" ]]; then
+      found=true
+      continue
+    fi
+    remaining+=("${array_ref[$index]}")
+  done
+  array_ref=("${remaining[@]}")
+}
+
 cups_printer_candidates() {
   local output=$1 class uri connection
   while read -r class uri _; do
