@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ScanservjsRoleTest(unittest.TestCase):
+    def test_every_task_is_gated_on_managed_scanners_present(self):
+        # playbooks/site.yml now includes this role exactly once, unconditionally, so its own
+        # tasks must carry the present/absent branching that used to live on the role-level
+        # `when:` in the (now removed) duplicate role entry.
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        for task in tasks:
+            if task["name"] == "Remove ScanservJS when no scanner is managed":
+                continue
+            self.assertIn(
+                "managed_scanners | length > 0", task.get("when") or "", task["name"]
+            )
+
+    def test_dispatches_to_absent_tasks_when_no_scanner_is_managed(self):
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        task = next(item for item in tasks if item["name"] == "Remove ScanservJS when no scanner is managed")
+        self.assertEqual(task["ansible.builtin.include_tasks"], "absent.yml")
+        self.assertEqual(task.get("when"), "managed_scanners | length == 0")
+
     def test_disk_cache_replacement_uses_unambiguous_backreferences(self):
         tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
         task = next(item for item in tasks if item["name"] == "Set the managed ImageMagick disk-cache limit")

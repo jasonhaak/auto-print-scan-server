@@ -33,9 +33,4 @@
     - role: device_preflight
       tags: device_preflight
     - role: scanservjs
-      when: managed_scanners | length > 0
-      tags: scanservjs
-    - role: scanservjs
-      tasks_from: absent
-      when: managed_scanners | length == 0
       tags: scanservjs

@@ -11,6 +11,7 @@
       - scanservjs_page_splitting | default(false) in [true, false]
     fail_msg: Configure a valid package checksum, port, retention period and at least one OCR language.
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Install ScanservJS runtime dependencies
   ansible.builtin.apt:
@@ -23,6 +24,7 @@
     state: present
   loop: "{{ scanservjs_ocr_languages }}"
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Download the pinned ScanservJS package
   ansible.builtin.get_url:
@@ -31,12 +33,14 @@
     checksum: "sha256:{{ scanservjs_package_sha256 }}"
     mode: '0644'
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Install the verified ScanservJS package
   ansible.builtin.apt:
     deb: "/var/tmp/scanservjs_{{ scanservjs_version }}.deb"
     state: present
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Find ImageMagick policy files changed by the upstream package
   ansible.builtin.stat:
@@ -46,6 +50,7 @@
     - /etc/ImageMagick-7/policy.xml
   register: scanservjs_imagemagick_policy_files
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Restore conservative ImageMagick PDF policy
   ansible.builtin.replace:
@@ -53,7 +58,7 @@
     regexp: '(<policy domain="coder" rights=")[^"]+(" pattern="PDF"/>)'
     replace: '\1write\2'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists
+  when: item.stat.exists and managed_scanners | length > 0
   tags: scanservjs
 
 - name: Restore conservative ImageMagick indirect-read policy
@@ -62,7 +67,7 @@
     regexp: '(<policy domain="path" rights=")[^"]+(" pattern="@"/>)'
     replace: '\1none\2'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists
+  when: item.stat.exists and managed_scanners | length > 0
   tags: scanservjs
 
 - name: Set the managed ImageMagick disk-cache limit
@@ -71,7 +76,7 @@
     regexp: '(<policy domain="resource" name="disk" value=")[^"]+("/>)'
     replace: '\g<1>{{ scanservjs_imagemagick_disk_limit }}\g<2>'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists
+  when: item.stat.exists and managed_scanners | length > 0
   tags: scanservjs
 
 - name: Create ScanservJS data directories
@@ -87,6 +92,7 @@
     - thumbnail
     - temp
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure ScanservJS
   ansible.builtin.template:
@@ -97,6 +103,7 @@
     mode: '0644'
   notify: Restart ScanservJS
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure scan-file retention service
   ansible.builtin.template:
@@ -105,6 +112,7 @@
     mode: '0644'
   notify: Reload systemd
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure scan-file retention timer
   ansible.builtin.template:
@@ -113,6 +121,7 @@
     mode: '0644'
   notify: Reload systemd
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Install the scan-storage check command
   ansible.builtin.template:
@@ -122,6 +131,7 @@
     group: root
     mode: '0755'
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure scan-storage check service
   ansible.builtin.template:
@@ -130,6 +140,7 @@
     mode: '0644'
   notify: Reload systemd
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure scan-storage check timer
   ansible.builtin.template:
@@ -138,6 +149,7 @@
     mode: '0644'
   notify: Reload systemd
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Configure SSH low-space warning
   ansible.builtin.template:
@@ -147,6 +159,7 @@
     group: root
     mode: '0644'
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Check available scan storage during maintenance
   ansible.builtin.command:
@@ -158,6 +171,7 @@
   register: scanservjs_free_space
   changed_when: false
   tags: scanservjs
+  when: managed_scanners | length > 0
 
 - name: Warn when scan storage is low during maintenance
   ansible.builtin.debug:
@@ -167,6 +181,7 @@
   when: >-
     scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim | int
     < scanservjs_min_free_space_mb | int
+    and managed_scanners | length > 0
   tags: scanservjs
 
 - name: Enable ScanservJS and scan-file retention
@@ -178,4 +193,10 @@
     - scanservjs.service
     - scanservjs-retention.timer
     - scanservjs-storage-check.timer
+  tags: scanservjs
+  when: managed_scanners | length > 0
+
+- name: Remove ScanservJS when no scanner is managed
+  ansible.builtin.include_tasks: absent.yml
+  when: managed_scanners | length == 0
   tags: scanservjs
