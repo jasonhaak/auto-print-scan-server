@@ -2,6 +2,7 @@
 - name: Commission the print and scan server
   hosts: print_servers
   become: true
+  force_handlers: true
   vars_files:
     - ../vars/driver_profiles.yml
   roles:
