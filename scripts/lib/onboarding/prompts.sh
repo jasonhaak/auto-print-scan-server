@@ -59,7 +59,7 @@ stage() {
   major_step "$1" "$2" "$3" "$recap"
   return 0
 }
-recommendation() { printf '\n%s\n  %s\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
+recommendation() { printf '%s\n  %s\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
 subsection() { printf '%s\n' "$(cli_heading "──── $1 ────")"; }
 input_required() { group_header "$1"; }
 ask() {

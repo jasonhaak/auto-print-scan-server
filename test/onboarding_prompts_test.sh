@@ -176,3 +176,4 @@ key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/i
 [[ "$(NO_COLOR=1 detail_block 'Title' 'K|V' 2>&1 | head -n1)" != '' ]]
 [[ "$(NO_COLOR=1 confirmation_block 'Title' 'K|V' 2>&1 | head -n1)" != '' ]]
 [[ "$(NO_COLOR=1 subsection 'Title' 2>&1 | head -n1)" != '' ]]
+[[ "$(NO_COLOR=1 recommendation 'Choose the default.' 2>&1 | head -n1)" != '' ]]
