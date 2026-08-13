@@ -97,30 +97,39 @@ class CupsRoleTest(unittest.TestCase):
         # in-place `lpadmin -D` update on an existing queue changes the on-disk Info value but
         # never re-triggers DNS-SD registration, even across a cupsd restart -- confirmed live
         # against production hardware. Only lpadmin -x followed by a fresh -p actually updates
-        # what's advertised over Bonjour, so a changed dns_sd_name must delete the queue first.
+        # what's advertised over Bonjour, so a mismatched dns_sd_name must delete the queue first.
+        #
+        # This compares against CUPS's own *live* Info value (via `lpstat -l -p`) rather than a
+        # saved previous-inventory snapshot, so it's self-healing regardless of why the live value
+        # drifted (an inventory change, a role-template change, or a manual lpadmin edit) --
+        # confirmed live that comparing against saved history alone misses the role-template-change
+        # case: today's -D fix landed but an already-existing queue with the old generic
+        # description was untouched by a routine re-apply, and needed a manual delete+recreate.
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
         names = [task["name"] for task in tasks]
 
-        index_task = next(
+        query_task = next(
             task for task in tasks
-            if task["name"] == "Index previously applied CUPS queue DNS-SD names"
+            if task["name"] == "Query current managed CUPS queue descriptions"
         )
-        self.assertEqual(index_task["loop"], "{{ cups_previous_queue_specs }}")
+        self.assertEqual(query_task["ansible.builtin.command"]["argv"], ["lpstat", "-l", "-p", "{{ item.name }}"])
+        self.assertEqual(query_task["register"], "cups_current_queue_descriptions")
+        self.assertEqual(query_task.get("failed_when"), False)
 
         delete_task = next(
             task for task in tasks
             if task["name"] == "Remove a managed queue whose DNS-SD name changed so CUPS re-registers it"
         )
         self.assertEqual(delete_task["ansible.builtin.command"]["argv"], ["lpadmin", "-x", "{{ item.name }}"])
-        self.assertIn("cups_previous_dns_sd_names[item.name] is defined", delete_task["when"])
-        self.assertIn(
-            "cups_previous_dns_sd_names[item.name] != (item.dns_sd_name | default(item.name))",
-            delete_task["when"],
-        )
+        self.assertEqual(delete_task.get("failed_when"), False)
+        when = delete_task["when"]
+        self.assertIn("cups_current_queue_descriptions.results[cups_queue_index].stdout_lines", when)
+        self.assertIn("'Description: ' ~ (item.dns_sd_name | default(item.name))", when)
 
-        self.assertLess(names.index("Decode previously applied CUPS queue definitions"), names.index(index_task["name"]))
-        self.assertLess(names.index(index_task["name"]), names.index(delete_task["name"]))
+        self.assertLess(names.index(query_task["name"]), names.index(delete_task["name"]))
         self.assertLess(names.index(delete_task["name"]), names.index("Reconcile managed CUPS queues"))
+        self.assertNotIn("Index previously applied CUPS queue DNS-SD names", names)
+        self.assertNotIn("Initialise the previously applied CUPS queue DNS-SD name index", names)
 
     def test_validate_asserts_the_dns_sd_name_is_a_safe_label(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))

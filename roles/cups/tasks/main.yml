@@ -115,19 +115,6 @@
       {{ (cups_managed_queue_specs.content | default('W10=')) | b64decode | from_json }}
   tags: cups
 
-- name: Initialise the previously applied CUPS queue DNS-SD name index
-  ansible.builtin.set_fact:
-    cups_previous_dns_sd_names: {}
-  tags: cups
-
-- name: Index previously applied CUPS queue DNS-SD names
-  ansible.builtin.set_fact:
-    cups_previous_dns_sd_names: "{{ cups_previous_dns_sd_names | combine({item.name: item.dns_sd_name | default(item.name)}) }}"
-  loop: "{{ cups_previous_queue_specs }}"
-  loop_control:
-    label: "{{ item.name }}"
-  tags: cups
-
 - name: Query current managed CUPS queue endpoints
   ansible.builtin.command:
     argv:
@@ -142,6 +129,21 @@
   changed_when: false
   tags: cups
 
+- name: Query current managed CUPS queue descriptions
+  ansible.builtin.command:
+    argv:
+      - lpstat
+      - -l
+      - -p
+      - "{{ item.name }}"
+  loop: "{{ managed_printers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: cups_current_queue_descriptions
+  failed_when: false
+  changed_when: false
+  tags: cups
+
 - name: Remove a managed queue whose DNS-SD name changed so CUPS re-registers it
   ansible.builtin.command:
     argv:
@@ -151,9 +153,12 @@
   loop: "{{ managed_printers }}"
   loop_control:
     label: "{{ item.name }}"
+    index_var: cups_queue_index
   when: >-
-    cups_previous_dns_sd_names[item.name] is defined
-    and cups_previous_dns_sd_names[item.name] != (item.dns_sd_name | default(item.name))
+    (cups_current_queue_descriptions.results[cups_queue_index].stdout_lines
+     | map('trim')
+     | select('equalto', 'Description: ' ~ (item.dns_sd_name | default(item.name)))
+     | list | length) == 0
   changed_when: true
   failed_when: false
   tags: cups
