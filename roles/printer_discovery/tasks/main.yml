@@ -9,6 +9,7 @@
   register: printer_discovery_result
   changed_when: false
   failed_when: false
+  when: item.device_uri is match('^ipps?://')
   loop: "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}"
   loop_control:
     label: "{{ item.name }}"
@@ -17,8 +18,13 @@
 - name: Report legacy printer discovery results
   ansible.builtin.debug:
     msg: >-
+      {% if item.skipped | default(false) -%}
+      Printer {{ item.item.name }} uses a {{ item.item.device_uri.split('://')[0] }}:// endpoint,
+      which ipptool cannot query directly. Package-profile selection remains operator-approved.
+      {%- else -%}
       Printer {{ item.item.name }} query {{ 'succeeded' if item.rc == 0 else 'was unavailable' }}.
       Package-profile selection remains operator-approved.
+      {%- endif %}
   loop: "{{ printer_discovery_result.results | default([]) }}"
   tags: printer_discovery
 
@@ -33,6 +39,7 @@
   loop_control:
     label: "{{ item.0.item.name }} -> {{ item.1.key }}"
   when:
+    - not (item.0.skipped | default(false))
     - item.0.rc == 0
     - item.0.stdout is search(item.1.value.make_model_pattern | default('a^'))
   tags: printer_discovery
