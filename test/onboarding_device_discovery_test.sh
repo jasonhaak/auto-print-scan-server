@@ -530,6 +530,17 @@ mock_avahi_output='=;eth0;IPv4;haak-drucker;_ipp._tcp;local'
 advertised=$(verify_dns_sd_name_advertised true haak-drucker)
 [[ "$advertised" == *'haak-drucker'* && "$advertised" == *'advertised'* ]]
 
+# CUPS always appends " @ <hostname>" to the advertised DNS-SD service name -- confirmed live,
+# it never advertises the bare dns_sd_name on its own -- so an exact-match-only check against
+# ";$dns_sd_name;" can never succeed and always reports a false "did not advertise".
+mock_avahi_output='=;eth0;IPv4;haak-drucker @ haak-print-scan-server;_ipp._tcp;local'
+advertised_with_hostname=$(verify_dns_sd_name_advertised true haak-drucker)
+[[ "$advertised_with_hostname" == *'haak-drucker'* && "$advertised_with_hostname" == *'advertised'* ]]
+
+mock_avahi_output='=;eth0;IPv4;other-queue @ haak-print-scan-server;_ipp._tcp;local'
+wrong_name_with_hostname=$(verify_dns_sd_name_advertised true haak-drucker 2>&1) || true
+[[ "$wrong_name_with_hostname" == *'did not advertise'* ]]
+
 grep -q 'verify_dns_sd_name_advertised' "$root/scripts/onboard"
 
 grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e print_server_commissioning=true' "$root/scripts/onboard"

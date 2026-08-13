@@ -354,7 +354,7 @@ verify_dns_sd_name_advertised() {
     printf 'Could not query Avahi to confirm the DNS-SD advertisement for %s. Check systemctl status avahi-daemon.service.\n' "$dns_sd_name" >&2
     return 1
   fi
-  if ! grep -Fq ";$dns_sd_name;_ipp._tcp;" <<<"$output"; then
+  if ! grep -Eq ";${dns_sd_name}(;| @ [^;]*;)_ipp\._tcp;" <<<"$output"; then
     printf 'Avahi did not advertise %s under _ipp._tcp. Check the CUPS printer-dns-sd-name attribute and Avahi state.\n' "$dns_sd_name" >&2
     return 1
   fi
