@@ -177,3 +177,8 @@ key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/i
 [[ "$(NO_COLOR=1 confirmation_block 'Title' 'K|V' 2>&1 | head -n1)" != '' ]]
 [[ "$(NO_COLOR=1 subsection 'Title' 2>&1 | head -n1)" != '' ]]
 [[ "$(NO_COLOR=1 recommendation 'Choose the default.' 2>&1 | head -n1)" != '' ]]
+
+# The design spec's own worked example shows a blank line on both sides of a Recommendation
+# block, not just before it: recommendation() must end with a trailing blank line so its
+# guidance text doesn't run straight into whatever prompt or content follows.
+[[ "$(NO_COLOR=1 recommendation 'Choose the default.' 2>&1 | tail -n1)" == '' ]]

@@ -549,6 +549,7 @@ discover_devices() {
   discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
   if [[ "$tools_ready" != true ]]; then
     input_required 'Discovery tools'
+    printf '\n' >&2
     recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
     if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
       printf '%s\n' 'Discovery skipped. Device details will be entered manually.'

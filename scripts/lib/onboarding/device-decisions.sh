@@ -49,6 +49,7 @@ collect_printer_definition() {
     '  1. network: Ethernet through the router or switch. This is the simplest path and can support standard printing and scanning.' \
     '  2. direct_ethernet: Ethernet directly to an unused Raspberry Pi port when the device cannot reach the router.' \
     '  3. usb: a fallback that often supports printing; scanning needs a usable Linux SANE backend.' >&2
+  printf '\n' >&2
   recommendation 'Choose network for a device on the home LAN. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
   local -a topology_options=(network usb)
   [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet usb)
@@ -78,7 +79,10 @@ collect_printer_definition() {
     printf '%s\n' 'USB was selected for this printer. Its USB identity below identifies the exact device to CUPS.' >&2
   else
     printf '%s\n' 'Choose ipp for most modern network printers. Use ipps for encrypted IPP, socket for JetDirect printers (usually port 9100) or lpd for older LPD printers.' >&2
-    [[ -n "${discovered_printer_connection:-}" && "$topology" == network ]] && recommendation "Keep the detected ${discovered_printer_connection} connection if it matches the intended printer."
+    if [[ -n "${discovered_printer_connection:-}" && "$topology" == network ]]; then
+      printf '\n' >&2
+      recommendation "Keep the detected ${discovered_printer_connection} connection if it matches the intended printer."
+    fi
     connection=$(ask_choice 'Printer connection' "${discovered_printer_connection:-ipp}" ipp ipps socket lpd)
   fi
   printf '%s\n' 'The device URI tells CUPS where this printer is. For IPP, a common example is ipp://192.168.178.50/ipp/print. Find the exact URI in the printer web administration page or manual, then keep a discovered value unless it is wrong.' >&2
@@ -173,6 +177,8 @@ select_or_collect_device() {
     else
       scanner_candidate_details "${kind_candidates[@]}"
     fi
+    printf '\n' >&2
+    recommendation "Option 1 matches the discovery evidence shown above. Choose it unless it isn't the intended $kind."
     candidate_count=0
     choice=$(choose_candidate "Detected ${kind}s" "${kind_candidates[@]}")
     if [[ "$choice" == manual ]] && yes_default "Search for more $kind recommendations instead of entering details manually?"; then
@@ -300,7 +306,7 @@ collect_scanservjs_settings() {
 }
 
 printer_connection_confirmation() {
-  confirmation_block 'Printer connection' \
+  confirmation_block "Printer connection: $1" \
     "Queue|$1" "Connection|$2" "URI|$3" "Driver|$4" \
     "USB mode|${5:-not applicable}" "USB ID|${6:-not applicable}"
 }

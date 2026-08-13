@@ -59,7 +59,7 @@ stage() {
   major_step "$1" "$2" "$3" "$recap"
   return 0
 }
-recommendation() { printf '%s\n  %s\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
+recommendation() { printf '%s\n  %s\n\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
 subsection() { printf '%s\n' "$(cli_heading "──── $1 ────")"; }
 input_required() { group_header "$1"; }
 ask() {
@@ -234,8 +234,13 @@ choose_cups_model() {
   }
   input_required 'Exact CUPS model'
   printf '%s\n' 'Choose the exact model advertised by CUPS. This is saved for this queue and verified again during commissioning.' >&2
-  [[ -n "$recommended" ]] && recommendation "Recommended from detected printer identity: $recommended. Confirm it explicitly below."
-  printf '\n%-4s %-46s %s\n' 'No.' 'Model' 'Description' >&2
+  if [[ -n "$recommended" ]]; then
+    printf '\n' >&2
+    recommendation "Recommended from detected printer identity: $recommended. Confirm it explicitly below."
+  else
+    printf '\n' >&2
+  fi
+  printf '%-4s %-46s %s\n' 'No.' 'Model' 'Description' >&2
   for index in "${!candidates[@]}"; do
     model=${candidates[$index]##*|}
     description=${candidates[$index]%%|*}
@@ -280,7 +285,7 @@ quote() { local value=$1; value=${value//\\/\\\\}; value=${value//\"/\\\"}; prin
 choose_candidate() {
   local title=$1 selection index
   shift
-  printf '\n%s\n' "$title" >&2
+  printf '%s\n' "$title" >&2
   for index in "$@"; do
     printf '  %d) %s\n' "$((++candidate_count))" "${index%%|*}" >&2
   done

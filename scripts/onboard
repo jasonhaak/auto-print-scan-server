@@ -284,6 +284,7 @@ while true; do
   if ! select_or_collect_device "$action"; then
     continue
   fi
+  printf '\n' >&2
   if [[ "$action" == printer ]]; then
     printer_queues+=("$COLLECTED_PRINTER_QUEUE")
     printer_connections+=("$COLLECTED_PRINTER_CONNECTION")
@@ -346,6 +347,7 @@ confirmation_block 'Server' \
   "Timezone|$timezone" "Locale|$locale" "Direct Ethernet|$direct_ethernet_summary" \
   "SSH key install|$([[ -n "$authorized_key" ]] && printf yes || printf no)"
 for index in "${!printer_queues[@]}"; do
+  printf '\n' >&2
   confirmation_block "Printer: ${printer_queues[$index]}" \
     "Connection|${printer_connections[$index]}" "URI|${printer_uris[$index]}" "Driver|${printer_drivers[$index]}" \
     "Profile|${printer_profiles[$index]:-not applicable}" "Model|${printer_cups_models[$index]:-not applicable}" \
@@ -354,11 +356,13 @@ for index in "${!printer_queues[@]}"; do
 done
 if (( ${#scanner_device_names[@]} > 0 )); then
   for index in "${!scanner_device_names[@]}"; do
+    printf '\n' >&2
     confirmation_block "Scanner: ${scanner_device_names[$index]}" \
       "Display name|${scanner_display_names[$index]}" "Connection|${scanner_connections[$index]}" "Backend|${scanner_backends[$index]}" \
       "Backend install|${scanner_backend_installs[$index]}" "USB mode|${scanner_usb_modes[$index]:-not applicable}" \
       "USB ID|${scanner_usb_identities[$index]:-not applicable}"
   done
+  printf '\n' >&2
   confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
 printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
