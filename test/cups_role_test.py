@@ -92,6 +92,36 @@ class CupsRoleTest(unittest.TestCase):
         self.assertIn("item.dns_sd_name", description)
         self.assertIn("default(item.name)", description)
 
+    def test_a_changed_dns_sd_name_deletes_the_queue_before_recreating_it(self):
+        # CUPS only registers printer-dns-sd-name with Avahi at queue *creation* time. An
+        # in-place `lpadmin -D` update on an existing queue changes the on-disk Info value but
+        # never re-triggers DNS-SD registration, even across a cupsd restart -- confirmed live
+        # against production hardware. Only lpadmin -x followed by a fresh -p actually updates
+        # what's advertised over Bonjour, so a changed dns_sd_name must delete the queue first.
+        tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
+        names = [task["name"] for task in tasks]
+
+        index_task = next(
+            task for task in tasks
+            if task["name"] == "Index previously applied CUPS queue DNS-SD names"
+        )
+        self.assertEqual(index_task["loop"], "{{ cups_previous_queue_specs }}")
+
+        delete_task = next(
+            task for task in tasks
+            if task["name"] == "Remove a managed queue whose DNS-SD name changed so CUPS re-registers it"
+        )
+        self.assertEqual(delete_task["ansible.builtin.command"]["argv"], ["lpadmin", "-x", "{{ item.name }}"])
+        self.assertIn("cups_previous_dns_sd_names[item.name] is defined", delete_task["when"])
+        self.assertIn(
+            "cups_previous_dns_sd_names[item.name] != (item.dns_sd_name | default(item.name))",
+            delete_task["when"],
+        )
+
+        self.assertLess(names.index("Decode previously applied CUPS queue definitions"), names.index(index_task["name"]))
+        self.assertLess(names.index(index_task["name"]), names.index(delete_task["name"]))
+        self.assertLess(names.index(delete_task["name"]), names.index("Reconcile managed CUPS queues"))
+
     def test_validate_asserts_the_dns_sd_name_is_a_safe_label(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
         validate = next(task for task in tasks if task["name"] == "Validate managed printer configuration")
