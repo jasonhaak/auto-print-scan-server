@@ -105,11 +105,11 @@ The wizard asks for the Raspberry Pi address and bootstrap administrator, then o
 
 The wizard walks through the following process:
 
-1. **Connect to Raspberry Pi**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the Raspberry Pi. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
-2. **Read Raspberry Pi Settings**: reports the connected IPv4 route with its actual prefix, timezone and locale, then validates trusted IPv4 and optional IPv6 input.
-3. **Discover Devices**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected. A failed install or an empty result offers retry, a changed search scope, manual entry or stop.
-4. **Configure Devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link; a discovered scanner is only recommended when its identifier or hostname resolution is bound to that exact direct device address, never to an unrelated LAN scanner. A failed link, interface or ping offers retry, corrected settings, manual entry or stop. ScanservJS retention, OCR and port settings are shared by all scanners.
-5. **Review and Commission**: shows a non-secret summary before writing production inventory or provisioning services. Confirmation then creates timestamped local backups in `.onboard-backups/`, writes production inventory and runs Ansible with normal progress output. A failed collection install or commissioning run offers retry, switching to `scripts/manage-devices` or stop, with the committed inventory and backup left untouched either way. It then offers confirmed printer and scanner tests: the printer test tracks the actual CUPS job and polls for a bounded, reported outcome without claiming paper output; the scanner test requires non-empty output and checks that ScanservJS has a real local listener, not only that its service is enabled.
+1. **Connect to your Raspberry Pi**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the Raspberry Pi. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
+2. **Confirm your trusted network**: reports the connected IPv4 route with its actual prefix, timezone and locale, then validates trusted IPv4 and optional IPv6 input.
+3. **Find printers and scanners**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected. A failed install or an empty result offers retry, a changed search scope, manual entry or stop.
+4. **Choose your devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link; a discovered scanner is only recommended when its identifier or hostname resolution is bound to that exact direct device address, never to an unrelated LAN scanner. A failed link, interface or ping offers retry, corrected settings, manual entry or stop. ScanservJS retention, OCR and port settings are shared by all scanners.
+5. **Review and commission**: shows a non-secret summary before writing production inventory or provisioning services. Confirmation then creates timestamped local backups in `.onboard-backups/`, writes production inventory and runs Ansible with normal progress output. A failed collection install or commissioning run offers retry, switching to `scripts/manage-devices` or stop, with the committed inventory and backup left untouched either way. It then offers confirmed printer and scanner tests: the printer test tracks the actual CUPS job and polls for a bounded, reported outcome without claiming paper output; the scanner test requires non-empty output and checks that ScanservJS has a real local listener, not only that its service is enabled.
 
 SSH and sudo passwords are requested interactively and are never stored in inventory or backups. When a standard local SSH public key exists, onboarding installs it for the managed administrator so later maintenance can connect without the account password. If commissioning or a real device test fails, the generated inventory remains available for correction and rerunning.
 
@@ -153,10 +153,11 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 | `trusted_lan_cidrs` | Yes | None | IPv4 and optional IPv6 CIDRs allowed to reach Raspberry Pi-hosted services. |
 | `direct_ethernet_links` | No | `[]` | Private Pi-to-device NetworkManager links. These are never trusted client networks. |
 | `managed_printers` | Yes | None | List of unique queue names, connections, device URIs and driver modes. |
-| `managed_scanners` | No | `[]` | List of SANE device names, connections and backend packages. |
+| `managed_scanners` | No | `[]` | List of SANE device names, connections, backend packages and optional friendly display names. |
 | `scanservjs_retention_days` | With scanner | None | Completed-scan retention period from 1 to 900 days. |
 | `scanservjs_ocr_languages` | With scanner | `[eng]` | Selected Tesseract languages, for example `[eng, deu]`. |
 | `scanservjs_port` | With scanner | `8080` | Local TCP port ScanservJS listens on, from 1 to 65535. |
+| `scanservjs_page_splitting` | No | `false` | When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF. |
 | `enable_remote_sane` | No | `false` | Enables SANE-native access for trusted-LAN Linux clients. |
 | `enable_unattended_upgrades` | No | `false` | Enables unattended security updates without automatic reboot. |
 
@@ -195,6 +196,8 @@ Scanner connection `network` represents an exact SANE identifier reached over IP
 
 Set `backend_install: false` for a scanner backend installed and maintained outside this repository. The deployment still installs `sane-utils` and uses the configured identifier for validation, but does not install, update or register that backend. Use this only after `scanimage -L` has reported the exact device and a real test scan has succeeded.
 
+Set `display_name` to show a friendly label in the ScanservJS web interface instead of the raw SANE identifier (for example `airscan:w0:Brother MFC-7360N`). It defaults to the exact SANE device name when omitted.
+
 `scanservjs_ocr_languages` accepts one or more Tesseract language codes. Selecting `[eng, deu]` installs English and German OCR data and configures combined OCR for PDF scans.
 
 ### Example Configuration
@@ -219,9 +222,11 @@ managed_scanners:
   - device_name: airscan:e0:Office Scanner
     connection: ipp
     backend: sane-airscan
+    display_name: Office Scanner
 scanservjs_retention_days: 90
 scanservjs_ocr_languages: [eng, deu]
 scanservjs_port: 8080
+scanservjs_page_splitting: false
 enable_remote_sane: false
 ```
 
