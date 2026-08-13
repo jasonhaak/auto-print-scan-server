@@ -25,6 +25,15 @@ class CommonRoleTest(unittest.TestCase):
         self.assertTrue(any("distribution ==" in condition for condition in conditions))
         self.assertTrue(any("architecture in common_supported_architectures" in condition for condition in conditions))
 
+    def test_hostname_change_restarts_avahi_daemon(self):
+        # avahi-daemon reads the system hostname once at its own startup and does not notice a
+        # later hostname change on its own -- confirmed live: avahi-daemon had been running since
+        # before a hostname rename and kept advertising every service (including CUPS printers)
+        # under the old hostname indefinitely, with no restart to force it to pick up the new one.
+        tasks = yaml.safe_load((ROOT / "roles/common/tasks/main.yml").read_text(encoding="utf-8"))
+        hostname_task = next(task for task in tasks if task["name"] == "Set the system hostname")
+        self.assertEqual(hostname_task.get("notify"), "Restart avahi-daemon")
+
 
 if __name__ == "__main__":
     unittest.main()

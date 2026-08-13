@@ -1,0 +1,6 @@
+---
+- name: Restart avahi-daemon
+  ansible.builtin.service:
+    name: avahi-daemon
+    state: restarted
+  when: device_has_shared_printer | bool

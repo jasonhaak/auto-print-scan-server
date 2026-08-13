@@ -47,4 +47,5 @@
 - name: Set the system hostname
   ansible.builtin.hostname:
     name: "{{ common_hostname }}"
+  notify: Restart avahi-daemon
   tags: common
