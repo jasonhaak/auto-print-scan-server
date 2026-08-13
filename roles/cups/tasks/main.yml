@@ -141,11 +141,9 @@
       - -m
       - "{{ 'everywhere' if item.driver_mode == 'driverless' else item.cups_model }}"
       - -D
-      - Ansible-managed print server queue
+      - "{{ item.dns_sd_name | default(item.name) }}"
       - -o
       - "printer-is-shared={{ item.shared | default(true) | lower }}"
-      - -o
-      - "printer-dns-sd-name={{ item.dns_sd_name | default(item.name) }}"
       - -o
       - printer-error-policy=retry-current-job
   loop: "{{ managed_printers }}"

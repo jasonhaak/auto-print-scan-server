@@ -79,15 +79,18 @@ class CupsRoleTest(unittest.TestCase):
         )
 
     def test_queue_reconciliation_advertises_the_dns_sd_name(self):
+        # printer-dns-sd-name is a read-only, CUPS-reported attribute, not a settable lpadmin -o
+        # option -- setting it via -o silently does nothing. CUPS actually derives the advertised
+        # Bonjour/DNS-SD service name from printer-info (-D) plus the hostname, so -D is the only
+        # lever that actually controls what a client sees.
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
         reconcile = next(task for task in tasks if task["name"] == "Reconcile managed CUPS queues")
         argv = reconcile["ansible.builtin.command"]["argv"]
-        self.assertTrue(
-            any(
-                "printer-dns-sd-name=" in entry and "item.dns_sd_name" in entry and "default(item.name)" in entry
-                for entry in argv
-            )
-        )
+        self.assertFalse(any("printer-dns-sd-name=" in entry for entry in argv))
+        description_index = argv.index("-D") + 1
+        description = argv[description_index]
+        self.assertIn("item.dns_sd_name", description)
+        self.assertIn("default(item.name)", description)
 
     def test_validate_asserts_the_dns_sd_name_is_a_safe_label(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
