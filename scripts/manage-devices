@@ -138,9 +138,20 @@ configure_printer() {
     done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names link)
   fi
   input_required 'Printer connection'
-  discovered_printer_connection=$connection_default
-  discovered_printer_uri=$([[ -n "$original" ]] && field printer "$original" device_uri || true)
-  discovered_printer_usb_mode=$([[ -n "$original" ]] && field printer "$original" usb_mode || true)
+  if [[ -n "$original" ]]; then
+    discovered_printer_connection=$(field printer "$original" connection)
+    discovered_printer_uri=$(field printer "$original" device_uri)
+    discovered_printer_usb_mode=$(field printer "$original" usb_mode)
+  elif (( ${#printer_candidates[@]} > 0 )); then
+    pick_candidate printer
+    if [[ "$PICKED_CANDIDATE" != manual ]]; then
+      IFS='|' read -r _ discovered_printer_connection discovered_printer_uri discovered_printer_usb_mode <<<"$PICKED_CANDIDATE"
+    else
+      discovered_printer_connection=$connection_default
+    fi
+  else
+    discovered_printer_connection=$connection_default
+  fi
   collect_printer_definition || return 1
   connection=$COLLECTED_PRINTER_CONNECTION
   uri=$COLLECTED_PRINTER_URI
@@ -208,6 +219,14 @@ configure_scanner() {
     backend_default=$(field scanner "$original" backend)
     backend_install_default=$(field scanner "$original" backend_install)
     [[ -n "$backend_install_default" ]] || backend_install_default=true
+  elif (( ${#scanner_candidates[@]} > 0 )); then
+    pick_candidate scanner
+    if [[ "$PICKED_CANDIDATE" != manual ]]; then
+      IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$PICKED_CANDIDATE"
+      connection_default=$discovered_scanner_connection
+      backend_default=$discovered_scanner_backend
+      backend_install_default=$discovered_scanner_backend_install
+    fi
   fi
   while true; do
     name=$(ask 'Exact SANE device name from scanimage -L' "${original:-${discovered_scanner_device_name:-}}")
@@ -228,7 +247,9 @@ configure_scanner() {
   discovered_scanner_connection=$connection_default
   discovered_scanner_backend=$backend_default
   discovered_scanner_backend_install=$backend_install_default
-  discovered_scanner_usb_mode=$([[ -n "$original" ]] && field scanner "$original" usb_mode || true)
+  if [[ -n "$original" ]]; then
+    discovered_scanner_usb_mode=$(field scanner "$original" usb_mode)
+  fi
   collect_scanner_definition || return 1
   connection=$COLLECTED_SCANNER_CONNECTION
   backend=$COLLECTED_SCANNER_BACKEND
