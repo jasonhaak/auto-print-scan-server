@@ -26,6 +26,7 @@ prepare_and_choose_cups_model() {
       LEGACY_SELECTED_PACKAGE_PROFILE=$profile
       return 0
     fi
+    printf 'Choose retry to re-read this profile'"'"'s CUPS models, or profile to choose a different package profile.\n' >&2
     recovery=$(recovery_choice 'Legacy model recovery (retry, profile, stop)' retry retry profile stop) || return 1
     case "$recovery" in
       retry) unset 'LEGACY_PROFILE_MODELS[$profile]' ;;

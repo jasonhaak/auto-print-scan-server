@@ -19,21 +19,29 @@ major_step() {
   return 0
 }
 detail_block() {
-  local title=$1 item key value
+  local title=$1 item key value width=12
   shift
   printf '%s\n' "$(cli_heading "──────────────── $title ────────────────")" >&2
   for item in "$@"; do
+    key=${item%%|*}
+    (( ${#key} > width )) && width=${#key}
+  done
+  for item in "$@"; do
     key=${item%%|*}; value=${item#*|}
-    printf '  %-12s %s\n' "$key" "$value" >&2
+    printf "  %-${width}s %s\n" "$key" "$value" >&2
   done
 }
 confirmation_block() {
-  local title=$1 item key value
+  local title=$1 item key label value width=12
   shift
   printf '%s\n' "$(cli_heading "Confirmed · $title")" >&2
   for item in "$@"; do
+    label="${item%%|*}:"
+    (( ${#label} > width )) && width=${#label}
+  done
+  for item in "$@"; do
     key=${item%%|*}; value=${item#*|}
-    printf '  %-12s %s\n' "$key:" "$value" >&2
+    printf "  %-${width}s %s\n" "$key:" "$value" >&2
   done
 }
 manual_recovery_command() {
@@ -121,8 +129,10 @@ recovery_choice() {
 }
 
 ask_choice() {
-  local prompt=$1 default=$2 raw value option
+  local prompt=$1 default=$2 raw value option options_list
   shift 2
+  options_list=$(printf '%s, ' "$@")
+  printf 'Options: %s\n' "${options_list%, }" >&2
   while true; do
     read -r -p "$prompt [$default]: " raw
     value=${raw:-$default}

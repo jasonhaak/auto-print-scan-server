@@ -549,7 +549,7 @@ grep -q 'manual_recovery_command "$root" "$variables" "$inventory" playbooks/sit
 
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/manage-devices"
 grep -q -- '--page-splitting' "$root/scripts/manage-devices"
-grep -Fq "ask_choice 'Enable page splitting (one PDF per scanned page)? (true, false)'" "$root/scripts/manage-devices"
+grep -Fq "ask_choice 'Enable page splitting (one PDF per scanned page)?'" "$root/scripts/manage-devices"
 
 # Task 10: manage-devices' configure_printer/configure_scanner adopt the same shared
 # collect_printer_definition/collect_scanner_definition collectors onboard uses, gaining
@@ -574,7 +574,7 @@ configure_scanner_block=$(awk '/^configure_scanner\(\) \{/{capturing=1} capturin
 
 grep -q "ask_choice 'Enable page splitting" "$root/scripts/lib/onboarding/device-decisions.sh"
 grep -q 'scanservjs_page_splitting:' "$root/scripts/onboard"
-grep -Fq "ask_choice 'Enable page splitting (one PDF per scanned page)? (true, false)'" "$root/scripts/lib/onboarding/device-decisions.sh"
+grep -Fq "ask_choice 'Enable page splitting (one PDF per scanned page)?'" "$root/scripts/lib/onboarding/device-decisions.sh"
 
 # Ticket 017: create_scanner_test_pdf drives scanimage and convert through
 # remote(), enforces test -s on the resulting PDF, and always cleans up its

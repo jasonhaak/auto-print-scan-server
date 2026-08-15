@@ -396,6 +396,7 @@ direct_ethernet_recovery() {
   local failure_message=$1 choice
   printf '%s\n' "$failure_message" >&2
   direct_ethernet_discovery_cleanup
+  printf 'Choose change to re-enter the link settings, or manual to skip further probing and enter connection details by hand.\n' >&2
   choice=$(recovery_choice 'Direct link recovery (retry, change, manual, stop)' retry retry change manual stop) || return 1
   case "$choice" in
     retry) discover_direct_ethernet_device; return $? ;;
@@ -566,11 +567,12 @@ discover_devices() {
       restore_ipp_usb_state
       restore_cups_state
       rm -f "$discovery_log"
+      printf 'Choose scope to change which connections are searched, or manual to skip discovery and enter details by hand.\n' >&2
       choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
       case "$choice" in
         retry) discover_devices true "$discovery_scope"; return $? ;;
         scope)
-          discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+          discovery_scope=$(ask_choice 'Which connections to search?' "$discovery_scope" all lan usb skip)
           discover_devices true "$discovery_scope"
           return $?
           ;;
@@ -752,11 +754,12 @@ discover_devices() {
   # either side) is still worth its own retry/scope/manual/stop recovery.
   if (( ${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} == 0 )); then
     printf 'No devices were found. Continue with manual configuration. Discovery log: %s. Full transcript: %s\n' "$discovery_log" "${technical_transcript:-not available}" >&2
+    printf 'Choose scope to change which connections are searched, or manual to skip discovery and enter details by hand.\n' >&2
     choice=$(recovery_choice 'Discovery recovery (retry, scope, manual, stop)' retry retry scope manual stop) || return 1
     case "$choice" in
       retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope" true; return $? ;;
       scope)
-        discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+        discovery_scope=$(ask_choice 'Which connections to search?' "$discovery_scope" all lan usb skip)
         rm -f "$discovery_log"
         discover_devices true "$discovery_scope" true
         return $?

@@ -124,9 +124,9 @@ fi
 printf '\n'
 input_required 'Network search'
 if [[ -n "$administrator_cidr" ]]; then
-  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (detected, other, skip)' 'detected' detected other skip)
+  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for?' 'detected' detected other skip)
 else
-  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (other, skip)' 'other' other skip)
+  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for?' 'other' other skip)
 fi
 if [[ "$search_choice" != skip ]]; then
   while true; do
@@ -175,7 +175,7 @@ while true; do
   printf '%s\n' 'That Raspberry Pi address could not be resolved to an IPv4 address on this computer.' >&2
   printf '%s\n' 'Use the DHCP-reserved IPv4 address, for example 192.168.178.33, or a stable local name such as print-server.local.' >&2
 done
-printf '%s\n' 'Use the administrator account created in Raspberry Pi Imager. It is the account that installs and maintains printing services.'
+printf '%s\n' 'Use the Raspberry Pi Imager bootstrap user. It is the account that installs and maintains printing services.'
 while true; do
   admin=$(ask 'Raspberry Pi Imager bootstrap user' "$(saved_host_value ansible_user printadmin)")
   [[ "$admin" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] && break
@@ -191,6 +191,7 @@ while true; do
     break
   fi
   printf '%s\n' 'The Raspberry Pi connection or sudo check failed. Check the address, bootstrap user, password and SSH settings.' >&2
+  printf 'Choose retry to try the same address and user again, or correct to re-enter them.\n' >&2
   recovery=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop) || exit 1
   case "$recovery" in
     retry) ssh_session_cleanup ;;
@@ -248,7 +249,7 @@ done
 [[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
 stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Discovery scope'
-discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' 'all' all lan usb skip)
+discovery_scope=$(ask_choice 'Which connections to search?' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
 discovery_tools_ready=true
 stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
@@ -276,7 +277,7 @@ while true; do
   default_action=done
   (( ${#printer_candidates[@]} > 0 )) && default_action=printer
   (( ${#printer_candidates[@]} == 0 && ${#scanner_candidates[@]} > 0 )) && default_action=scanner
-  action=$(ask_choice 'Add a device? (printer, scanner, done)' "$default_action" printer scanner done)
+  action=$(ask_choice 'Add a device?' "$default_action" printer scanner done)
   if [[ "$action" == done ]]; then
     if (( ${#printer_queues[@]} == 0 && ${#scanner_device_names[@]} == 0 )); then
       printf '%s\n' 'At least one device is required before continuing.' >&2
