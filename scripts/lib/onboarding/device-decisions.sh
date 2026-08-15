@@ -240,6 +240,7 @@ select_or_collect_printer() {
     driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
   fi
   if [[ "$driver" == package_profile ]]; then
+    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the Raspberry Pi. That happens in its own step, after every device has been added and before the final review.' >&2
     collect_legacy_printer_profile "$COLLECTED_PRINTER_URI" ''
     printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
     profile=$COLLECTED_PRINTER_PROFILE

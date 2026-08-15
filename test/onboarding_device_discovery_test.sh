@@ -680,7 +680,7 @@ scanner_candidate_output=$(scanner_candidate_details 'airscan:e0:Office Scanner 
 review_block=$(awk '
   /^stage .5 of 5. .Review and commission./ { capturing = 1 }
   capturing { print }
-  capturing && /Write production inventory and commission this Pi/ { exit }
+  capturing && /Write production inventory and commission the Raspberry Pi/ { exit }
 ' "$root/scripts/onboard")
 [[ -n "$review_block" ]]
 [[ "$review_block" == *"confirmation_block 'Server'"* ]]

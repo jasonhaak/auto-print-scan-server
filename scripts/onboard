@@ -202,8 +202,7 @@ while true; do
     stop) exit 1 ;;
   esac
 done
-printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
-printf '%s\n' 'Sudo access succeeded. The password is not stored.'
+printf '%s\n' 'The password is not stored.'
 printf '\n'
 stage '2 of 5' 'Confirm your trusted network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
 step_check suggested_cidr 'Detect the Raspberry Pi trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
@@ -231,12 +230,7 @@ while true; do
   printf '%s\n' 'Invalid IPv6 CIDR. Use a local IPv6 prefix followed by /0 to /128, or leave it empty.' >&2
 done
 confirmation_block 'Trusted network' "IPv4|$cidr" "IPv6|${ipv6_cidr:-not configured}" "Timezone|$timezone" "Locale|$locale"
-stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
-input_required 'Discovery scope'
-discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' 'all' all lan usb skip)
-discover_devices false "$discovery_scope"
-discovery_tools_ready=true
-stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
+printf '\n' >&2
 input_required 'Server identity'
 while true; do
   hostname=$(ask 'Server hostname' "$(saved_scalar common_hostname print-server)")
@@ -252,6 +246,12 @@ for public_key_path in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$H
   fi
 done
 [[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
+stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
+input_required 'Discovery scope'
+discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' 'all' all lan usb skip)
+discover_devices false "$discovery_scope"
+discovery_tools_ready=true
+stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
 printer_queues=()
 printer_connections=()
 printer_uris=()
@@ -368,9 +368,10 @@ if (( ${#scanner_device_names[@]} > 0 )); then
   printf '\n' >&2
   confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
+printf '\n' >&2
 printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
 printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or Raspberry Pi services.'
-yes 'Write production inventory and commission this Pi?' || exit 0
+yes 'Write production inventory and commission the Raspberry Pi?' || exit 0
 
 host_tmp=$(mktemp "$inventory.XXXXXX")
 vars_tmp=$(mktemp "$variables.XXXXXX")
@@ -463,14 +464,19 @@ while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'a
 done
 printf '%s\n' 'Commissioning completed successfully.'
 verify_ipp_listener_ready true || exit 1
+dns_sd_advertised_count=0
 for index in "${!printer_queues[@]}"; do
-  verify_dns_sd_name_advertised true "${printer_dns_sd_names[$index]}" || true
+  verify_dns_sd_name_advertised true "${printer_dns_sd_names[$index]}" && ((++dns_sd_advertised_count)) || true
 done
+if (( ${#printer_queues[@]} > 0 )); then
+  printf '%d of %d printer(s) advertised their DNS-SD name.\n' "$dns_sd_advertised_count" "${#printer_queues[@]}"
+fi
 for driver in "${printer_drivers[@]}"; do
   if [[ "$driver" == package_profile ]]; then
     printf '%s\n' 'Reporting repository package-profile matches for each commissioned legacy (package-profile) printer.'
-    ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" \
-      ansible-playbook -i "$inventory" "$root/playbooks/discover-printer.yml"
+    discover_printer_output=''
+    step_check discover_printer_output 'Report repository package-profile matches' 'ansible-playbook playbooks/discover-printer.yml' \
+      env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook -i "$inventory" "$root/playbooks/discover-printer.yml" || true
     break
   fi
 done
@@ -489,3 +495,16 @@ if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now? T
   done
   printf 'Created %d of %d scanner test PDF(s) under /var/tmp on %s.\n' "$scanner_test_pdfs_created" "${#scanner_device_names[@]}" "$host"
 fi
+printf '\n' >&2
+group_header 'Onboarding complete'
+printf '%s\n' "Raspberry Pi: $admin@$host (hostname $hostname)" >&2
+for index in "${!printer_queues[@]}"; do
+  printf '  Printer: %s (DNS-SD name %s)\n' "${printer_queues[$index]}" "${printer_dns_sd_names[$index]}" >&2
+done
+if (( ${#scanner_device_names[@]} > 0 )); then
+  for index in "${!scanner_device_names[@]}"; do
+    printf '  Scanner: %s\n' "${scanner_display_names[$index]}" >&2
+  done
+  printf '  ScanservJS: http://%s:%s (retention %s days)\n' "$host" "$scanservjs_port" "$retention" >&2
+fi
+printf '%s\n' 'Run ./scripts/manage-devices to add, edit or remove a device later.' >&2
