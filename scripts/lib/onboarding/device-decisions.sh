@@ -157,7 +157,7 @@ collect_scanner_definition() {
   COLLECTED_SCANNER_USB_IDENTITY=$usb_identity
 }
 
-select_or_collect_device() {
+pick_candidate() {
   local kind=$1 choice search_prompt
   local -n kind_candidates="${kind}_candidates"
   while true; do
@@ -199,6 +199,13 @@ select_or_collect_device() {
   if [[ "$choice" != manual ]]; then
     remove_candidate "${kind}_candidates" "$choice"
   fi
+  PICKED_CANDIDATE=$choice
+}
+
+select_or_collect_device() {
+  local kind=$1 choice
+  pick_candidate "$kind"
+  choice=$PICKED_CANDIDATE
   if [[ "$kind" == printer ]]; then
     select_or_collect_printer "$choice"
   else
