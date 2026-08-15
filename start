@@ -56,7 +56,7 @@ run_command() {
 
 interactive_menu() {
   intro
-  printf '\n'
+  printf '\n' >&2
   command_reference
   local default_command reason
   if is_commissioned; then
@@ -68,9 +68,9 @@ interactive_menu() {
   fi
   printf '\n' >&2
   recommendation "$reason"
-  printf '%s\n' 'Run ./start help for the full first-time order and use-case guide.'
+  printf '%s\n' 'Run ./start help for the full first-time order and use-case guide.' >&2
   local choice
-  choice=$(ask_choice 'What would you like to do?' "$default_command" setup onboard reconfigure manage-devices qa)
+  choice=$(ask_choice 'What would you like to do?' "$default_command" setup onboard reconfigure manage-devices)
   run_command "$choice"
 }
 
