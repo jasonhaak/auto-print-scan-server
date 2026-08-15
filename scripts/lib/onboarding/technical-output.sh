@@ -63,6 +63,7 @@ technical_transcript_write() {
     printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$purpose"
     printf 'Command: %s\nStatus: %s\n' "$command_label" "$status"
     [[ -n "$output" ]] && printf 'Output:\n%s\n' "$output"
+    true
   } >>"$technical_transcript"
 }
 
@@ -125,7 +126,9 @@ step_action() {
   shift 3
   printf '%s %s\n' "$(cli_color '1;33' 'Action:')" "$purpose" >&2
   step_run "$output_variable" "$purpose" "$command_label" "$@"
-  technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output" Action
+  if [[ -n "$step_run_output" || "$step_run_status" != 0 || "${TECHNICAL_VERBOSE:-false}" == true ]]; then
+    technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output" Action
+  fi
   return "$step_run_status"
 }
 

@@ -340,7 +340,7 @@ verify_ipp_listener_ready() {
     return 1
   fi
   if ! grep -Eq '(0\.0\.0\.0|\*|\[::\]):631' <<<"$listener"; then
-    printf 'CUPS is listening on TCP port 631, but only on a loopback address. Shared printers require a LAN-facing listener; check the CUPS configuration before adding this queue from Windows, a phone, or another client.\n' >&2
+    printf '%s %s\n' "$(cli_status 1)" 'CUPS is listening on TCP port 631, but only on a loopback address. Shared printers require a LAN-facing listener; check the CUPS configuration before adding this queue from Windows, a phone, or another client.' >&2
     return 1
   fi
   printf 'CUPS is listening on TCP port 631 for the trusted LAN.\n'
@@ -355,7 +355,7 @@ verify_dns_sd_name_advertised() {
     return 1
   fi
   if ! grep -Eq ";${dns_sd_name}(;| @ [^;]*;)_ipp\._tcp;" <<<"$output"; then
-    printf 'Avahi did not advertise %s under _ipp._tcp. Check the CUPS printer-dns-sd-name attribute and Avahi state.\n' "$dns_sd_name" >&2
+    printf '%s %s\n' "$(cli_status 1)" "Avahi did not advertise $dns_sd_name under _ipp._tcp. Check the CUPS printer-dns-sd-name attribute and Avahi state." >&2
     return 1
   fi
   printf 'Avahi advertised %s as its DNS-SD service name.\n' "$dns_sd_name"
@@ -443,7 +443,7 @@ collect_direct_ethernet_link() {
 discover_direct_ethernet_device() {
   local scanner_output candidate snmp_output command_output carrier carrier_status
   recommendation 'Temporarily configure the private Ethernet link now. It is removed after discovery; the same link is recreated only after final confirmation.'
-  yes 'Temporarily configure the direct Ethernet link and search this device?' || return
+  yes_default 'Temporarily configure the direct Ethernet link and search this device?' || return
   if ! step_check command_output 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" \
     remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")"; then
     direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the Raspberry Pi."

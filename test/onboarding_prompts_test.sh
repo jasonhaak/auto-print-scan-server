@@ -182,3 +182,11 @@ key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/i
 # block, not just before it: recommendation() must end with a trailing blank line so its
 # guidance text doesn't run straight into whatever prompt or content follows.
 [[ "$(NO_COLOR=1 recommendation 'Choose the default.' 2>&1 | tail -n1)" == '' ]]
+
+# CLI audit F16: a recommendation() right before choose_candidate always names "Option 1" as
+# the best match, so pressing Enter must accept candidate 1, not "Enter details manually" -- a
+# wizard that trains the user to press Enter for twenty prompts straight must not make the one
+# highest-stakes prompt in the flow do the opposite of what its own recommendation just said.
+candidate_count=0
+default_choice=$(choose_candidate 'Detected printers' 'Candidate one|a' 'Candidate two|b' <<< '' 2>/dev/null)
+[[ "$default_choice" == 'Candidate one|a' ]]

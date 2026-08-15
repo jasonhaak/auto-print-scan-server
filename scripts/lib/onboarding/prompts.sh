@@ -291,7 +291,7 @@ choose_candidate() {
   done
   printf '  %d) Enter details manually\n' "$((candidate_count + 1))" >&2
   while true; do
-    selection=$(ask 'Choose a number' "$((candidate_count + 1))")
+    selection=$(ask 'Choose a number' 1)
     [[ "$selection" =~ ^[0-9]+$ ]] || { printf '%s\n' 'Enter a listed number.' >&2; continue; }
     if (( selection == candidate_count + 1 )); then
       printf '%s' manual

@@ -109,6 +109,18 @@ action_display=$(<"$display_file")
 [[ "$action_display" == *'action-output'* ]]
 grep -Fq 'action-output' "$technical_transcript"
 
+# CLI audit F19: a successful action with no output still always gets the Action: label and its
+# [  OK  ] result line, but the six-line "Technical details" box (divider, Command:, Result:,
+# "Output: (none)", divider) is skipped -- there's nothing in it, and unconditionally showing an
+# empty box for every trivial action (e.g. `systemctl start cups.service`) trains the eye to skim
+# past boxes right before the one that actually has something to say.
+out=''
+step_action out 'Starting a quiet service' 'systemctl start demo-quiet' bash -c 'exit 0' 2>"$display_file"
+quiet_action_display=$(<"$display_file")
+[[ "$quiet_action_display" == *'Action: Starting a quiet service'* ]]
+[[ "$quiet_action_display" == *'[  OK  ]'* ]]
+[[ "$quiet_action_display" != *'Technical details'* ]]
+
 out=''
 action_fail_status=0
 step_action out 'Restarting a failing service' 'systemctl restart demo-fail' bash -c 'printf action-fail-output; exit 4' 2>"$display_file" || action_fail_status=$?
