@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$root/scripts/lib/onboarding/prompts.sh"
+
+intro() {
+  printf '%s\n' 'Raspberry Pi print and scan server'
+  printf '%s\n' 'This repository turns a Raspberry Pi into a shared LAN print and scan server: it commissions printers through CUPS and scanners through ScanservJS, favouring driverless standards with isolated vendor support for older hardware.'
+}
+
+command_reference() {
+  group_header 'Commands'
+  printf '  %-16s %s\n' 'setup' 'Prepare this machine (Python venv, Ansible). Run once per administrator machine.'
+  printf '  %-16s %s\n' 'onboard' 'First-time guided setup: connect to the Pi, discover devices, commission it. Run once per Pi.'
+  printf '  %-16s %s\n' 'reconfigure' 'Rebuild server-level settings (target host, trusted LAN, direct Ethernet links).'
+  printf '  %-16s %s\n' 'manage-devices' 'Add, edit, delete or list printers, scanners and links without full onboarding.'
+  printf '  %-16s %s\n' 'qa' 'Run the full repository check suite.'
+}
+
+is_commissioned() {
+  [[ -f "$root/inventories/production/hosts.yml" ]] || return 1
+  ! grep -q '192\.0\.2\.10' "$root/inventories/production/hosts.yml"
+}
+
+show_help() {
+  intro
+  printf '\n'
+  command_reference
+  printf '\n'
+  group_header 'Use case'
+  printf '  %-38s %s\n' 'First time, no Pi commissioned yet' '-> setup, then onboard'
+  printf '  %-38s %s\n' 'Add, edit, delete or list a device' '-> manage-devices'
+  printf '  %-38s %s\n' 'Change the target host or trusted LAN' '-> reconfigure'
+  printf '  %-38s %s\n' 'Add or change a direct Ethernet link' '-> reconfigure'
+  printf '  %-38s %s\n' 'Verify your own changes to this repo' '-> qa'
+  printf '\n'
+  printf '%s\n' 'onboard accepts --reconfigure (same as running reconfigure) and --verbose (show every check in full).'
+  printf '%s\n' 'manage-devices also accepts list, add|edit|delete printer|scanner|link [IDENTITY], and apply directly.'
+  printf '\n'
+  printf '%s\n' 'Usage: ./start COMMAND [ARGS...]'
+  printf '%s\n' 'Run ./start with no command for an interactive menu (or this reference when not on a terminal). Run a command with no further arguments for its own detailed usage.'
+}
+
+run_command() {
+  local command=$1
+  shift
+  case "$command" in
+    setup) exec "$root/scripts/setup" "$@" ;;
+    onboard) exec "$root/scripts/onboard" "$@" ;;
+    reconfigure) exec "$root/scripts/onboard" --reconfigure "$@" ;;
+    manage-devices) exec "$root/scripts/manage-devices" "$@" ;;
+    qa) exec "$root/scripts/qa" "$@" ;;
+  esac
+}
+
+interactive_menu() {
+  intro
+  printf '\n'
+  command_reference
+  local default_command reason
+  if is_commissioned; then
+    default_command=manage-devices
+    reason='A Pi is already commissioned in this checkout. Use manage-devices to add, edit or remove printers, scanners and links.'
+  else
+    default_command=onboard
+    reason='No Pi has been commissioned yet in this checkout. Run onboard first to connect, discover devices and commission it.'
+  fi
+  printf '\n' >&2
+  recommendation "$reason"
+  printf '%s\n' 'Run ./start help for the full first-time order and use-case guide.'
+  local choice
+  choice=$(ask_choice 'What would you like to do?' "$default_command" setup onboard reconfigure manage-devices qa)
+  run_command "$choice"
+}
+
+if (( $# == 0 )); then
+  if interactive_terminal; then
+    interactive_menu
+  else
+    show_help
+  fi
+  exit 0
+fi
+
+case "$1" in
+  help|-h|--help)
+    show_help
+    ;;
+  setup|onboard|reconfigure|manage-devices|qa)
+    run_command "$@"
+    ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$1" >&2
+    show_help >&2
+    exit 2
+    ;;
+esac
