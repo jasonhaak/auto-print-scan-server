@@ -2,6 +2,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$root/scripts/lib/onboarding/prompts.sh"
+
 if [[ ! -x "$root/.venv/bin/ansible-lint" ]]; then
   "$root/scripts/setup"
 fi
@@ -12,23 +14,32 @@ export ANSIBLE_REMOTE_TEMP="${TMPDIR:-/tmp}/raspberry-print-server-ansible-remot
 export XDG_CACHE_HOME="${TMPDIR:-/tmp}/raspberry-print-server-cache"
 mkdir -p "$ANSIBLE_LOCAL_TEMP" "$ANSIBLE_REMOTE_TEMP" "$XDG_CACHE_HOME"
 
-printf '%s\n' 'Checking Bash syntax and module tests.'
-bash -n "$root/scripts/onboard" "$root/scripts/manage-devices" "$root/scripts/setup" \
+printf '%s\n' 'Repository checks'
+
+group_header 'Bash syntax and module tests'
+bash -n "$root/start" "$root/scripts/onboard" "$root/scripts/manage-devices" "$root/scripts/setup" \
   "$root/scripts/qa" "$root/scripts/lib/onboarding/"*.sh "$root/test/"*.sh
 for test_script in "$root/test/"*.sh; do
   bash "$test_script"
 done
-python "$root/test/device_inventory_test.py"
-python "$root/test/device_preflight_role_test.py"
-python "$root/test/cups_role_test.py"
+for python_test in "$root/test/"*_test.py; do
+  python "$python_test"
+done
+setup_status 'Bash syntax and module tests passed'
 
-printf '%s\n' 'Checking YAML and Ansible conventions.'
+printf '\n'
+group_header 'YAML and Ansible conventions'
 cd "$root"
 yamllint .
 ansible-lint
+setup_status 'YAML and Ansible conventions passed'
 
-printf '%s\n' 'Checking every playbook.'
+printf '\n'
+group_header 'Playbook syntax'
 for playbook in playbooks/*.yml; do
   ansible-playbook "$playbook" --syntax-check
 done
+setup_status 'Every playbook passed its syntax check'
+
+printf '\n'
 printf '%s\n' 'All repository checks passed.'
