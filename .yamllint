@@ -6,6 +6,7 @@ ignore: |
   .onboard-backups/
   .venv/
   collections/
+  inventories/production/
 
 rules:
   braces:
