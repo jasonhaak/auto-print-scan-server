@@ -157,11 +157,16 @@ collect_scanner_definition() {
 }
 
 select_or_collect_device() {
-  local kind=$1 choice
+  local kind=$1 choice search_prompt
   local -n kind_candidates="${kind}_candidates"
   while true; do
     if (( ${#kind_candidates[@]} == 0 )); then
-      if yes_default "Search for $kind recommendations before defining it?"; then
+      if [[ "${discovery_tools_ready:-false}" == true ]]; then
+        search_prompt="Search again for $kind recommendations?"
+      else
+        search_prompt="Search for $kind recommendations before defining it?"
+      fi
+      if yes_default "$search_prompt"; then
         discovery_kind=$kind
         discover_devices true all "${discovery_tools_ready:-false}"
         unset discovery_kind

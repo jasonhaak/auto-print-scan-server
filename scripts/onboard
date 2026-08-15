@@ -233,7 +233,7 @@ done
 confirmation_block 'Trusted network' "IPv4|$cidr" "IPv6|${ipv6_cidr:-not configured}" "Timezone|$timezone" "Locale|$locale"
 stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
 input_required 'Discovery scope'
-discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
+discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
 discovery_tools_ready=true
 stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"

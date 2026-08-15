@@ -314,7 +314,7 @@ open_inventory_ssh_session() {
 discover_for_add() {
   local kind=$1 discovery_scope
   input_required 'Discovery scope'
-  discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' 'all' all lan usb skip)
+  discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' 'all' all lan usb skip)
   if [[ "$discovery_scope" == skip ]]; then
     return
   fi

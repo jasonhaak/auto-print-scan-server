@@ -570,7 +570,7 @@ discover_devices() {
       case "$choice" in
         retry) discover_devices true "$discovery_scope"; return $? ;;
         scope)
-          discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+          discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
           discover_devices true "$discovery_scope"
           return $?
           ;;
@@ -756,7 +756,7 @@ discover_devices() {
     case "$choice" in
       retry) rm -f "$discovery_log"; discover_devices true "$discovery_scope" true; return $? ;;
       scope)
-        discovery_scope=$(ask_choice 'Search which connections? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
+        discovery_scope=$(ask_choice 'Which connections to search? (all, lan, usb, skip)' "$discovery_scope" all lan usb skip)
         rm -f "$discovery_log"
         discover_devices true "$discovery_scope" true
         return $?
