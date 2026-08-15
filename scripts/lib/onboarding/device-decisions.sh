@@ -226,7 +226,7 @@ select_or_collect_printer() {
   local driver=driverless profile='' printer_identity_evidence=''
   if [[ "$COLLECTED_PRINTER_CONNECTION" == usb ]]; then
     if [[ "$COLLECTED_PRINTER_USB_MODE" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
-    printf 'Selected %s driver mode to match %s.\n' "$driver" "$COLLECTED_PRINTER_USB_MODE" >&2
+    printf 'Using %s driver mode to match %s.\n' "$driver" "$COLLECTED_PRINTER_USB_MODE" >&2
   else
     printf '%s\n' 'Choose driverless first. It uses the printer built-in IPP support and needs no manufacturer driver. Choose package_profile only for an older printer that needs an installed driver package.' >&2
     local driver_default=driverless
@@ -306,7 +306,7 @@ collect_scanservjs_settings() {
 }
 
 printer_connection_confirmation() {
-  confirmation_block "Printer connection: $1" \
-    "Queue|$1" "Connection|$2" "URI|$3" "Driver|$4" \
+  confirmation_block "Printer: $1" \
+    "Connection|$2" "URI|$3" "Driver|$4" \
     "USB mode|${5:-not applicable}" "USB ID|${6:-not applicable}"
 }

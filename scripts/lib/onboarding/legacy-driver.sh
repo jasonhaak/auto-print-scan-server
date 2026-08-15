@@ -9,7 +9,7 @@ prepare_and_choose_cups_model() {
     if [[ -z "${LEGACY_PROFILE_MODELS[$profile]:-}" ]]; then
       subsection 'Prepare Legacy Printer Driver'
       printf 'Profile %s installs its generic Debian driver package, starts CUPS, then reads its advertised models. It does not write production inventory or create a print queue.\n' "$profile" >&2
-      yes_default "Install this driver package and inspect its CUPS models?" || return 1
+      yes_default 'Install this driver package and inspect its CUPS models?' || return 1
       local -a arguments=(-i "$legacy_driver_inventory" "$root/playbooks/prepare-printer-profile.yml" -e "{\"selected_package_profiles\":[\"$profile\"]}")
       if ! remote 'sudo -n true' >/dev/null 2>&1; then
         printf '%s\n' 'Ansible needs the Raspberry Pi sudo password to prepare this driver package.' >&2

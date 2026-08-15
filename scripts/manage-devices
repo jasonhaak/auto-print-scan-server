@@ -151,7 +151,7 @@ configure_printer() {
   fi
   if [[ "$connection" == usb ]]; then
     if [[ "$usb_mode" == legacy_usb ]]; then driver=package_profile; else driver=driverless; fi
-    printf 'Selected %s driver mode to match %s.\n' "$driver" "$usb_mode"
+    printf 'Using %s driver mode to match %s.\n' "$driver" "$usb_mode" >&2
   else
     driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
   fi
