@@ -23,7 +23,7 @@ collect_scanner_backend() {
 }
 
 scanner_usb_mode_guidance() {
-  printf '%s\n' 'Choose ipp_usb only for an IPP-over-USB capable driverless scanner. Choose legacy_usb when the scanner needs a package-provided SANE backend.' >&2
+  printf '%s\n' 'Choose ipp_usb only for an IPP-over-USB capable driverless scanner. Choose legacy_usb when the scanner needs a package-provided SANE backend. The final run checks the connected device before enabling ipp-usb.' >&2
 }
 
 collect_usb_identity_from_lsusb() {
@@ -129,6 +129,7 @@ collect_scanner_definition() {
   [[ "${discovered_scanner_connection:-}" == usb ]] && topology_default=usb
   local -a topology_options=(network ipp ipps usb)
   [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet ipp ipps usb)
+  printf '\n%s\n' 'Choose how this device reaches the Raspberry Pi. network is an exact SANE identifier reached over IP (including a preinstalled backend'"'"'s own net: identifier); ipp/ipps request a driverless eSCL/AirScan endpoint explicitly; usb is a fallback that needs a usable Linux SANE backend for the device.' >&2
   local connection
   connection=$(ask_choice 'Scanner connection' "${discovered_scanner_connection:-$topology_default}" "${topology_options[@]}")
   if [[ "$connection" == direct_ethernet ]]; then
@@ -225,7 +226,7 @@ select_or_collect_printer() {
   done
   input_required 'Printer connection'
   collect_printer_definition || {
-    printf 'Direct Ethernet setup failed for this printer. Choose another connection topology or add it again later.\n' >&2
+    printf 'Direct Ethernet setup failed for %s. Choose another connection topology or add it again later.\n' "$queue" >&2
     return 1
   }
   local driver=driverless profile='' printer_identity_evidence=''
@@ -255,11 +256,13 @@ select_or_collect_scanner() {
   local choice=$1 device_name display_name
   if [[ "$choice" != manual ]]; then
     IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$choice"
+  fi
+  input_required 'Scanner device name'
+  if [[ "$choice" != manual ]]; then
     printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name" >&2
   else
     printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
   fi
-  input_required 'Scanner device name'
   while true; do
     device_name=$(ask 'Exact SANE device name from scanimage -L' "${discovered_scanner_device_name:-}")
     [[ -n "$device_name" ]] && break
@@ -273,7 +276,7 @@ select_or_collect_scanner() {
   done
   input_required 'Scanner connection'
   collect_scanner_definition || {
-    printf 'Direct Ethernet setup failed for this scanner. Choose another connection topology or add it again later.\n' >&2
+    printf 'Direct Ethernet setup failed for %s. Choose another connection topology or add it again later.\n' "$device_name" >&2
     return 1
   }
   COLLECTED_SCANNER_DEVICE_NAME=$device_name
