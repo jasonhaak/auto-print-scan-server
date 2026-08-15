@@ -121,6 +121,7 @@ if step_check administrator_cidr 'Detect the local network containing the Raspbe
 else
   printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the Raspberry Pi address manually.'
 fi
+printf '\n'
 input_required 'Network search'
 if [[ -n "$administrator_cidr" ]]; then
   search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for? (detected, other, skip)' 'detected' detected other skip)
@@ -155,6 +156,7 @@ if [[ "$search_choice" != skip ]]; then
     elif (( ${#ssh_hosts[@]} == 1 )); then
       host_default=${ssh_hosts[0]}
       printf 'Detected one possible Raspberry Pi SSH server: %s. Press Enter below if this is the Raspberry Pi.\n' "$host_default"
+      printf '\n'
     else
       printf '%s\n' 'Detected multiple SSH servers. Select the Raspberry Pi explicitly; the list can include other computers or network appliances.'
       candidate_count=0
@@ -202,6 +204,7 @@ while true; do
 done
 printf 'SSH connection succeeded: %s@%s.\n' "$admin" "$host"
 printf '%s\n' 'Sudo access succeeded. The password is not stored.'
+printf '\n'
 stage '2 of 5' 'Confirm your trusted network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
 step_check suggested_cidr 'Detect the Raspberry Pi trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
   remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' || true
