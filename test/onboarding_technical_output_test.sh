@@ -14,7 +14,7 @@ trap cleanup EXIT
 
 TECHNICAL_VERBOSE=false
 technical_transcript_start "$workspace" test
-short_display=$(technical_report 'Find printers' 'lpinfo -v' 0 $'direct usb://printer\nnetwork ipp')
+short_display=$(technical_report 'Find printers' 'lpinfo -v' 0 $'direct usb://printer\nnetwork ipp' 2>&1)
 [[ "$short_display" == *'Check: Find printers'* ]]
 [[ "$short_display" == *'[  OK  ] success'* ]]
 [[ "$short_display" == *'direct usb://printer'* ]]
@@ -22,25 +22,25 @@ short_display=$(technical_report 'Find printers' 'lpinfo -v' 0 $'direct usb://pr
 [[ "$(stat -c '%a' "$technical_transcript")" == 600 ]]
 grep -Fq 'Command: lpinfo -v' "$technical_transcript"
 
-technical_report 'Redaction' 'probe' 1 'password=not-for-the-log' >/dev/null
+technical_report 'Redaction' 'probe' 1 'password=not-for-the-log' >/dev/null 2>&1
 if grep -Fq 'not-for-the-log' "$technical_transcript"; then
   exit 1
 fi
 grep -Fq 'password=[REDACTED]' "$technical_transcript"
 
 long_output=$(for number in {1..60}; do printf 'line-%02d\n' "$number"; done)
-failure_display=$(technical_report 'Install tools' 'apt-get install' 9 "$long_output")
+failure_display=$(technical_report 'Install tools' 'apt-get install' 9 "$long_output" 2>&1)
 [[ "$failure_display" == *'line-60'* ]]
 [[ "$failure_display" != *'line-01'* ]]
 grep -Fq 'line-01' "$technical_transcript"
 
 TECHNICAL_VERBOSE=true
-verbose_display=$(technical_report 'Verbose probe' 'scanimage -L' 0 "$long_output")
+verbose_display=$(technical_report 'Verbose probe' 'scanimage -L' 0 "$long_output" 2>&1)
 [[ "$verbose_display" == *'line-01'* ]]
 [[ "$verbose_display" == *'line-60'* ]]
 
 captured=''
-technical_capture captured 'Capture command' 'printf result' bash -c 'printf result'
+technical_capture captured 'Capture command' 'printf result' bash -c 'printf result' >/dev/null 2>&1
 [[ "$captured" == result ]]
 
 state_from_capture=''
@@ -48,10 +48,10 @@ set_state_from_capture() {
   state_from_capture=retained
   printf 'state retained'
 }
-technical_capture captured 'Capture state' 'set state' set_state_from_capture
+technical_capture captured 'Capture state' 'set state' set_state_from_capture >/dev/null 2>&1
 [[ "$state_from_capture" == retained ]]
 
-finished=$(technical_transcript_finish)
+finished=$(technical_transcript_finish 2>&1)
 [[ "$finished" == *"$technical_transcript"* ]]
 
 # --- step_check / step_action / step_stream ---
@@ -62,11 +62,11 @@ technical_transcript_start "$workspace" step-test
 # step_line_open only prints a pending marker on a real terminal, since a non-terminal
 # consumer (a pipe, a log file, this test's own command substitution) can never render the
 # carriage-return overwrite that step_line_close relies on to replace it.
-[[ -z "$(step_line_open 'Checking sudo access')" ]]
+[[ -z "$(step_line_open 'Checking sudo access' 2>&1)" ]]
 
 # step_line_close puts the status tag first, then the label, and a real terminal writes a
 # leading carriage return so the tag overwrites the pending marker in place.
-[[ "$(step_line_close 0 'Checking sudo access')" == '[  OK  ] Checking sudo access' ]]
+[[ "$(step_line_close 0 'Checking sudo access' 2>&1)" == '[  OK  ] Checking sudo access' ]]
 
 # step_check/step_action/step_stream write their captured output through a nameref,
 # which command substitution (running the call in a subshell) would silently lose.
@@ -74,7 +74,7 @@ technical_transcript_start "$workspace" step-test
 display_file="$workspace/display.log"
 
 out=''
-step_check out 'Checking sudo access' 'sudo -v' bash -c 'printf remote-output' >"$display_file"
+step_check out 'Checking sudo access' 'sudo -v' bash -c 'printf remote-output' 2>"$display_file"
 check_display=$(<"$display_file")
 [[ "$out" == remote-output ]]
 [[ "$check_display" == *'Checking sudo access'* ]]
@@ -84,14 +84,14 @@ grep -Fq 'Checking sudo access' "$technical_transcript"
 grep -Fq 'remote-output' "$technical_transcript"
 
 out=''
-TECHNICAL_VERBOSE=true step_check out 'Checking sudo access verbosely' 'sudo -v' bash -c 'printf remote-output' >"$display_file"
+TECHNICAL_VERBOSE=true step_check out 'Checking sudo access verbosely' 'sudo -v' bash -c 'printf remote-output' 2>"$display_file"
 TECHNICAL_VERBOSE=false
 check_verbose_display=$(<"$display_file")
 [[ "$check_verbose_display" == *'Technical details'* ]]
 
 out=''
 fail_status=0
-step_check out 'Checking a failing thing' 'false-check' bash -c 'printf fail-output; exit 3' >"$display_file" || fail_status=$?
+step_check out 'Checking a failing thing' 'false-check' bash -c 'printf fail-output; exit 3' 2>"$display_file" || fail_status=$?
 check_fail_display=$(<"$display_file")
 [[ "$fail_status" == 3 ]]
 [[ "$check_fail_display" == *'[FAILED]'* ]]
@@ -101,7 +101,7 @@ check_fail_display=$(<"$display_file")
 # A passing action is always visible: it is labelled as a state-changing operation and its
 # captured raw output is shown. Checks remain compact unless they fail or verbose mode is set.
 out=''
-step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
+step_action out 'Restarting a service' 'systemctl restart demo' bash -c 'printf action-output' 2>"$display_file"
 action_display=$(<"$display_file")
 [[ "$action_display" == *'[  OK  ]'* ]]
 [[ "$action_display" == *'Action: Restarting a service'* ]]
@@ -111,7 +111,7 @@ grep -Fq 'action-output' "$technical_transcript"
 
 out=''
 action_fail_status=0
-step_action out 'Restarting a failing service' 'systemctl restart demo-fail' bash -c 'printf action-fail-output; exit 4' >"$display_file" || action_fail_status=$?
+step_action out 'Restarting a failing service' 'systemctl restart demo-fail' bash -c 'printf action-fail-output; exit 4' 2>"$display_file" || action_fail_status=$?
 action_fail_display=$(<"$display_file")
 [[ "$action_fail_status" == 4 ]]
 [[ "$action_fail_display" == *'[FAILED]'* ]]
@@ -119,7 +119,7 @@ action_fail_display=$(<"$display_file")
 [[ "$action_fail_display" == *'action-fail-output'* ]]
 
 out=''
-TECHNICAL_VERBOSE=true step_action out 'Restarting a service verbosely' 'systemctl restart demo' bash -c 'printf action-output' >"$display_file"
+TECHNICAL_VERBOSE=true step_action out 'Restarting a service verbosely' 'systemctl restart demo' bash -c 'printf action-output' 2>"$display_file"
 TECHNICAL_VERBOSE=false
 action_verbose_display=$(<"$display_file")
 [[ "$action_verbose_display" == *'Technical details'* ]]
@@ -130,7 +130,7 @@ stream_fixture() {
   printf 'line-two\n'
 }
 out=''
-step_stream out 'Installing discovery tools' 'apt-get install' stream_fixture >"$display_file"
+step_stream out 'Installing discovery tools' 'apt-get install' stream_fixture >"$display_file" 2>&1
 stream_display=$(<"$display_file")
 [[ "$out" == *'line-one'* && "$out" == *'password=hunter2'* && "$out" == *'line-two'* ]]
 [[ "$stream_display" == *'line-one'* ]]
@@ -147,7 +147,7 @@ fi
 out=''
 stream_fail_status=0
 stream_fail_fixture() { printf 'stream-fail-output\n'; return 5; }
-step_stream out 'Installing a failing tool' 'apt-get install fails' stream_fail_fixture >"$display_file" || stream_fail_status=$?
+step_stream out 'Installing a failing tool' 'apt-get install fails' stream_fail_fixture >"$display_file" 2>&1 || stream_fail_status=$?
 stream_fail_display=$(<"$display_file")
 [[ "$stream_fail_status" == 5 ]]
 [[ "$stream_fail_display" == *'[FAILED]'* ]]
@@ -160,7 +160,7 @@ stream_fail_display=$(<"$display_file")
 # what must NOT happen is that output landing in the saved transcript or in a re-displayed
 # technical block, which is where step_check/step_action/step_stream deliberately keep a copy.
 live_fixture() { printf 'live-output'; }
-step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' live_fixture >"$display_file"
+step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' live_fixture >"$display_file" 2>&1
 live_display=$(<"$display_file")
 [[ "$live_display" == *'live-output'* ]]
 [[ "$live_display" == *'Verify Raspberry Pi administrator privileges'* ]]
@@ -172,7 +172,7 @@ fi
 
 live_fail_status=0
 live_fail_fixture() { return 7; }
-step_check_live 'Failing live check' 'false-live' live_fail_fixture >"$display_file" || live_fail_status=$?
+step_check_live 'Failing live check' 'false-live' live_fail_fixture >"$display_file" 2>&1 || live_fail_status=$?
 live_fail_display=$(<"$display_file")
 [[ "$live_fail_status" == 7 ]]
 [[ "$live_fail_display" == *'[FAILED]'* ]]

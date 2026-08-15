@@ -60,7 +60,7 @@ stage() {
   return 0
 }
 recommendation() { printf '%s\n  %s\n\n' "$(cli_color '1;33' 'Recommendation')" "$1" >&2; }
-subsection() { printf '%s\n' "$(cli_heading "──── $1 ────")"; }
+subsection() { printf '%s\n' "$(cli_heading "──── $1 ────")" >&2; }
 input_required() { group_header "$1"; }
 ask() {
   local raw value

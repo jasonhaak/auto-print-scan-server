@@ -251,22 +251,22 @@ sane_hardware_detected() {
 
 sane_discovery_outcome() {
   if [[ -n "$(first_sane_scanner_identifier "$1")" ]]; then
-    printf '%s\n' 'SANE discovery returned an exact device identifier.'
+    printf '%s\n' 'SANE discovery returned an exact device identifier.' >&2
   else
-    printf '%s\n' 'SANE discovery returned no usable device identifier.'
+    printf '%s\n' 'SANE discovery returned no usable device identifier.' >&2
   fi
 }
 
 unsupported_scanner_guidance() {
   local identifier=$1
-  printf 'Unsupported scanner detected: %s\n' "$identifier"
-  printf '%s\n' 'Automatic configuration is unavailable because its SANE backend and transport could not be verified.'
-  printf '%s\n' 'Manual experimental setup requires a compatible backend, any required device registration and one successful test scan before it is added to a managed workflow.'
+  printf 'Unsupported scanner detected: %s\n' "$identifier" >&2
+  printf '%s\n' 'Automatic configuration is unavailable because its SANE backend and transport could not be verified.' >&2
+  printf '%s\n' 'Manual experimental setup requires a compatible backend, any required device registration and one successful test scan before it is added to a managed workflow.' >&2
 }
 
 no_printer_discovery_guidance() {
-  printf '%s\n' 'No printer was found on the trusted LAN or USB. Find its IPP address in its web administration page or manual, for example ipp://192.168.178.50/ipp/print.'
-  printf '%s\n' 'A device cabled directly to a separate Raspberry Pi Ethernet interface is probed later through the direct_ethernet topology flow, after you enter its static address.'
+  printf '%s\n' 'No printer was found on the trusted LAN or USB. Find its IPP address in its web administration page or manual, for example ipp://192.168.178.50/ipp/print.' >&2
+  printf '%s\n' 'A device cabled directly to a separate Raspberry Pi Ethernet interface is probed later through the direct_ethernet topology flow, after you enter its static address.' >&2
 }
 
 tcp_port_is_open() {
@@ -280,7 +280,7 @@ recommend_legacy_profile() {
   case "$uri" in
     ipp://*|ipps://*) ;;
     *)
-      printf 'No IPP identity probe is available for %s. This endpoint has only protocol-appropriate reachability evidence; choose any package profile manually.\n' "$uri"
+      printf 'No IPP identity probe is available for %s. This endpoint has only protocol-appropriate reachability evidence; choose any package profile manually.\n' "$uri" >&2
       return
       ;;
   esac
@@ -290,9 +290,9 @@ recommend_legacy_profile() {
     return
   fi
   legacy_printer_identity_evidence=$identity_output
-  printf '%s\n' 'IPP identity evidence was received. Repository matches below are recommendations only; they do not prove support or select a profile.'
+  printf '%s\n' 'IPP identity evidence was received. Repository matches below are recommendations only; they do not prove support or select a profile.' >&2
   while IFS='|' read -r name description; do
-    [[ -n "$name" ]] && printf 'Recommended profile %s: %s\n' "$name" "$description"
+    [[ -n "$name" ]] && recommendation "Repository profile $name: $description"
   done < <("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" --inventory "$variables" --backup-directory "$backups" profiles-for-evidence "$identity_output")
 }
 
@@ -694,19 +694,22 @@ discover_devices() {
 
   [[ -n "$lpinfo_output" ]] && technical_report 'CUPS endpoint discovery with ipp-usb' 'lpinfo -v' "$lpinfo_output_status" "$lpinfo_output"
 
-  if [[ -n "$scanner_hint_output" ]]; then
-    printf '\nAdvertised network scanners\n'
-    while IFS='|' read -r hint_label _; do
-      [[ -n "$hint_label" ]] && printf '  - %s\n' "$hint_label"
-    done <<<"$scanner_hint_output"
-    printf '%s\n' 'Announcements are discovery hints. A scanner is selectable only when SANE reports an exact identifier.'
-  fi
-
-  printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}"
+  printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}" >&2
+  printf '\n' >&2
   detail_block 'Discovery result' \
     "Printers|${#printer_candidates[@]} candidate(s)" \
     "Scanners|${#scanner_candidates[@]} candidate(s)" \
     "Scope|$discovery_scope"
+
+  if [[ -n "$scanner_hint_output" ]]; then
+    printf '\n' >&2
+    group_header 'Advertised network scanners'
+    while IFS='|' read -r hint_label _; do
+      [[ -n "$hint_label" ]] && printf '  - %s\n' "$hint_label" >&2
+    done <<<"$scanner_hint_output"
+    printf '%s\n' 'Announcements are discovery hints. A scanner is selectable only when SANE reports an exact identifier.' >&2
+  fi
+
   (( ${#printer_candidates[@]} > 0 )) || no_printer_discovery_guidance
   if (( ${#scanner_candidates[@]} == 0 )); then
     sane_discovery_outcome "$scanner_output"

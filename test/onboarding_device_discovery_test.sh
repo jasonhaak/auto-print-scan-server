@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
 
 candidates=(alpha beta gamma beta)
@@ -41,7 +42,7 @@ brother_scanner=$(sane_scanner_candidates $'device `brother:net1;dev0\' is a fla
 brother_usb_scanner=$(sane_scanner_candidates $'device `brother:bus2;dev1\' is a flatbed scanner')
 [[ "$brother_usb_scanner" == 'brother:bus2;dev1 (preinstalled Brother backend)|usb|brother|legacy_usb|brother:bus2;dev1|false' ]]
 
-unsupported_guidance=$(unsupported_scanner_guidance 'brother:other;dev1')
+unsupported_guidance=$(unsupported_scanner_guidance 'brother:other;dev1' 2>&1)
 [[ "$unsupported_guidance" == *'brother:other;dev1'* ]]
 [[ "$unsupported_guidance" == *'Manual experimental setup'* ]]
 
@@ -104,12 +105,12 @@ if sane_hardware_detected 'sane-find-scanner: command not found'; then
   exit 1
 fi
 
-[[ "$(sane_discovery_outcome '')" == 'SANE discovery returned no usable device identifier.' ]]
-[[ "$(sane_discovery_outcome $'device `airscan:e0:Office Scanner\' is a scanner')" == 'SANE discovery returned an exact device identifier.' ]]
+[[ "$(sane_discovery_outcome '' 2>&1)" == 'SANE discovery returned no usable device identifier.' ]]
+[[ "$(sane_discovery_outcome $'device `airscan:e0:Office Scanner\' is a scanner' 2>&1)" == 'SANE discovery returned an exact device identifier.' ]]
 grep -Fq 'Run SANE scanner discovery command' "$root/scripts/lib/onboarding/device-discovery.sh"
 ! grep -Fq "step_check scanner_output 'SANE scanner discovery'" "$root/scripts/lib/onboarding/device-discovery.sh"
 
-no_printer_guidance=$(no_printer_discovery_guidance)
+no_printer_guidance=$(no_printer_discovery_guidance 2>&1)
 [[ "$no_printer_guidance" == *'trusted LAN or USB'* ]]
 [[ "$no_printer_guidance" == *'direct_ethernet topology flow'* ]]
 
@@ -847,13 +848,13 @@ remote() { probe_calls=$((probe_calls + 1)); return 1; }
 socket_output=$(recommend_legacy_profile 'socket://192.0.2.20:9100' 2>&1)
 [[ "$probe_calls" -eq 0 ]]
 [[ "$socket_output" == *'No IPP identity probe is available'* ]]
-[[ "$socket_output" != *'Recommended profile'* ]]
+[[ "$socket_output" != *'Repository profile'* ]]
 
 probe_calls=0
 lpd_output=$(recommend_legacy_profile 'lpd://192.0.2.21/queue' 2>&1)
 [[ "$probe_calls" -eq 0 ]]
 [[ "$lpd_output" == *'No IPP identity probe is available'* ]]
-[[ "$lpd_output" != *'Recommended profile'* ]]
+[[ "$lpd_output" != *'Repository profile'* ]]
 
 # An ipp:// URI with matching IPP identity evidence yields a recommendation
 # alongside its "recommendation only, not proof" disclaimer.
@@ -862,9 +863,9 @@ step_check() {
   printf -v "$output_var" '%s' 'make-and-model: Brother MFC-7360N'
   return 0
 }
-matched=$(recommend_legacy_profile 'ipp://printer.local/ipp/print')
+matched=$(recommend_legacy_profile 'ipp://printer.local/ipp/print' 2>&1)
 [[ "$matched" == *'recommendations only'* && "$matched" == *'do not prove support or select a profile'* ]]
-[[ "$matched" == *'Recommended profile brlaser'* ]]
+[[ "$matched" == *'Repository profile brlaser'* ]]
 
 # When the probe fails (no usable evidence), no profile is recommended and the
 # manual-selection path via choose_package_profile is still reachable and
@@ -876,7 +877,7 @@ step_check() {
 }
 unmatched=$(recommend_legacy_profile 'ipps://printer.local/ipp/print' 2>&1)
 [[ "$unmatched" == *'Choose a package profile manually'* ]]
-[[ "$unmatched" != *'Recommended profile'* ]]
+[[ "$unmatched" != *'Repository profile'* ]]
 
 manual_choice=$(choose_package_profile '' <<< 'brlaser')
 [[ "$manual_choice" == brlaser ]]
@@ -912,21 +913,21 @@ step_stream() { step_check "$@"; }
 printer_candidates=()
 scanner_candidates=()
 discovery_kind=printer
-printer_scoped_output=$(discover_devices true all)
+printer_scoped_output=$(discover_devices true all 2>&1)
 unset discovery_kind
 [[ "$printer_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
 
 printer_candidates=()
 scanner_candidates=()
 discovery_kind=scanner
-scanner_scoped_output=$(discover_devices true all)
+scanner_scoped_output=$(discover_devices true all 2>&1)
 unset discovery_kind
 [[ "$scanner_scoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
 
 # Without discovery_kind set (the default 'all'), discovery still just finds and reports.
 printer_candidates=()
 scanner_candidates=()
-unscoped_output=$(discover_devices true all)
+unscoped_output=$(discover_devices true all 2>&1)
 [[ "$unscoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
 
 rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log

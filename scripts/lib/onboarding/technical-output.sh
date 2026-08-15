@@ -37,7 +37,7 @@ step_tag_colored() {
 # overwrite (it can't render one) and only prints the final line.
 step_line_open() {
   if [[ -t 1 ]]; then
-    printf '[ .... ] %s' "$1"
+    printf '[ .... ] %s' "$1" >&2
   fi
   return 0
 }
@@ -47,7 +47,7 @@ step_line_close() {
   if [[ -t 1 ]]; then
     prefix=$'\r'
   fi
-  printf '%s%s %s\n' "$prefix" "$(step_tag_colored "$status")" "$purpose"
+  printf '%s%s %s\n' "$prefix" "$(step_tag_colored "$status")" "$purpose" >&2
 }
 
 step_line_full() {
@@ -70,27 +70,27 @@ technical_block_print() {
   local purpose=$1 command_label=$2 status=$3 raw_output=${4:-} operation=${5:-Check}
   local output line_count
   output=$(printf '%s' "$raw_output" | technical_redact)
-  printf '\n%s\n' "$(cli_color '1;36' '──────────────── Technical details ────────────────')"
-  printf '%s %s\n' "$(cli_color '1;36' "$operation:")" "$purpose"
-  printf '%s %s\n' 'Command:' "$command_label"
-  printf '%s %s\n' 'Result:' "$(cli_status "$status") $([[ "$status" == 0 ]] && printf success || printf 'failed (exit %s)' "$status")"
+  printf '\n%s\n' "$(cli_color '1;36' '──────────────── Technical details ────────────────')" >&2
+  printf '%s %s\n' "$(cli_color '1;36' "$operation:")" "$purpose" >&2
+  printf '%s %s\n' 'Command:' "$command_label" >&2
+  printf '%s %s\n' 'Result:' "$(cli_status "$status") $([[ "$status" == 0 ]] && printf success || printf 'failed (exit %s)' "$status")" >&2
   if [[ -n "$output" ]]; then
     line_count=$(printf '%s\n' "$output" | awk 'END { print NR }')
-    printf '%s\n' 'Output:'
+    printf '%s\n' 'Output:' >&2
     if [[ "${TECHNICAL_VERBOSE:-false}" == true || "$line_count" -le 40 ]]; then
-      printf '%s\n' "$output"
+      printf '%s\n' "$output" >&2
     elif [[ "$status" == 0 ]]; then
-      printf '%s\n' "$output" | sed -n '1,20p'
-      printf '... %d line(s) omitted; full output is in the transcript ...\n' "$((line_count - 30))"
-      printf '%s\n' "$output" | tail -n 10
+      printf '%s\n' "$output" | sed -n '1,20p' >&2
+      printf '... %d line(s) omitted; full output is in the transcript ...\n' "$((line_count - 30))" >&2
+      printf '%s\n' "$output" | tail -n 10 >&2
     else
-      printf '... showing the final 40 of %d lines; full output is in the transcript ...\n' "$line_count"
-      printf '%s\n' "$output" | tail -n 40
+      printf '... showing the final 40 of %d lines; full output is in the transcript ...\n' "$line_count" >&2
+      printf '%s\n' "$output" | tail -n 40 >&2
     fi
   else
-    printf '%s\n' 'Output: (none)'
+    printf '%s\n' 'Output: (none)' >&2
   fi
-  printf '%s\n' "$(cli_color '1;36' '────────────────────────────────────────────────────')"
+  printf '%s\n' "$(cli_color '1;36' '────────────────────────────────────────────────────')" >&2
 }
 
 step_run() {
@@ -123,7 +123,7 @@ step_check() {
 step_action() {
   local output_variable=$1 purpose=$2 command_label=$3
   shift 3
-  printf '%s %s\n' "$(cli_color '1;33' 'Action:')" "$purpose"
+  printf '%s %s\n' "$(cli_color '1;33' 'Action:')" "$purpose" >&2
   step_run "$output_variable" "$purpose" "$command_label" "$@"
   technical_block_print "$purpose" "$command_label" "$step_run_status" "$step_run_output" Action
   return "$step_run_status"
@@ -160,7 +160,7 @@ step_stream() {
   local -n step_output_ref=$output_variable
   shift 3
   local output_file status output
-  printf '%s %s ...\n' "$(cli_color '1;33' 'Action:')" "$purpose"
+  printf '%s %s ...\n' "$(cli_color '1;33' 'Action:')" "$purpose" >&2
   output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-step.XXXXXX")
   if "$@" 2>&1 | tee "$output_file"; then
     status=0
@@ -217,5 +217,5 @@ technical_capture() {
 technical_transcript_finish() {
   [[ -n "${technical_transcript:-}" && "${technical_transcript_finished:-false}" != true ]] || return 0
   technical_transcript_finished=true
-  printf '\nTechnical transcript: %s\n' "$technical_transcript"
+  printf '\nTechnical transcript: %s\n' "$technical_transcript" >&2
 }
