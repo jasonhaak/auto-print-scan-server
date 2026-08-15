@@ -119,11 +119,14 @@ configure_printer() {
   local profile_default dns_sd_name dns_sd_name_default
   local name_default=printer connection_default=${discovered_printer_connection:-ipp} driver_default=driverless shared_default=true
   if [[ -n "$original" ]]; then
+    subsection "Editing printer $original"
     name_default=$(field printer "$original" name)
     connection_default=$(field printer "$original" connection)
     driver_default=$(field printer "$original" driver_mode)
     shared_default=$(field printer "$original" shared)
     [[ -n "$shared_default" ]] || shared_default=true
+  else
+    subsection 'Adding a printer'
   fi
   while true; do
     name=$(ask 'CUPS queue name' "$name_default")
@@ -215,17 +218,21 @@ configure_scanner() {
   local original=${1:-} name display_name display_name_default connection backend backend_install usb_mode usb_identity retention ocr scanservjs_port page_splitting command_output
   local connection_default=${discovered_scanner_connection:-network} backend_default=${discovered_scanner_backend:-sane-airscan} backend_install_default=true
   if [[ -n "$original" ]]; then
+    subsection "Editing scanner $original"
     connection_default=$(field scanner "$original" connection)
     backend_default=$(field scanner "$original" backend)
     backend_install_default=$(field scanner "$original" backend_install)
     [[ -n "$backend_install_default" ]] || backend_install_default=true
-  elif (( ${#scanner_candidates[@]} > 0 )); then
-    pick_candidate scanner
-    if [[ "$PICKED_CANDIDATE" != manual ]]; then
-      IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$PICKED_CANDIDATE"
-      connection_default=$discovered_scanner_connection
-      backend_default=$discovered_scanner_backend
-      backend_install_default=$discovered_scanner_backend_install
+  else
+    subsection 'Adding a scanner'
+    if (( ${#scanner_candidates[@]} > 0 )); then
+      pick_candidate scanner
+      if [[ "$PICKED_CANDIDATE" != manual ]]; then
+        IFS='|' read -r _ discovered_scanner_connection discovered_scanner_backend discovered_scanner_usb_mode discovered_scanner_device_name discovered_scanner_backend_install <<<"$PICKED_CANDIDATE"
+        connection_default=$discovered_scanner_connection
+        backend_default=$discovered_scanner_backend
+        backend_install_default=$discovered_scanner_backend_install
+      fi
     fi
   fi
   while true; do
@@ -256,6 +263,11 @@ configure_scanner() {
   backend_install=$COLLECTED_SCANNER_BACKEND_INSTALL
   usb_mode=$COLLECTED_SCANNER_USB_MODE
   usb_identity=$COLLECTED_SCANNER_USB_IDENTITY
+
+  confirmation_block "Scanner: $name" \
+    "Display name|$display_name" "Connection|$connection" "Backend|$backend" \
+    "Backend install|$backend_install" "USB mode|${usb_mode:-not applicable}" \
+    "USB ID|${usb_identity:-not applicable}"
 
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)
   [[ -n "$original" ]] && command+=(--original-device-name "$original")
@@ -289,10 +301,12 @@ configure_link() {
   local original=${1:-} interface pi_cidr device_ipv4 active_interface detected_interface command_output
   local interface_default=eth1 pi_cidr_default=192.168.50.1/30 device_ipv4_default=192.168.50.2
   if [[ -n "$original" ]]; then
+    subsection "Editing direct Ethernet link $original"
     interface_default=$(field link "$original" interface)
     pi_cidr_default=$(field link "$original" pi_ipv4_cidr)
     device_ipv4_default=$(field link "$original" device_ipv4)
   else
+    subsection 'Adding a direct Ethernet link'
     open_inventory_ssh_session
     active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") {print \$(i+1); exit}}'" 2>/dev/null || true)
     detected_interface=$(remote "for path in /sys/class/net/*; do candidate=\${path##*/}; [[ \$candidate != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$candidate\"; break; }; done" 2>/dev/null || true)
@@ -311,6 +325,8 @@ configure_link() {
     same_direct_ipv4_link "$pi_cidr" "$device_ipv4" && break
     printf '%s\n' 'Use two host addresses in the same private /30, for example 192.168.50.1/30 and 192.168.50.2.' >&2
   done
+  confirmation_block "Direct Ethernet link: $interface" \
+    "Pi CIDR|$pi_cidr" "Device IPv4|$device_ipv4"
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
   [[ -n "$original" ]] && command+=(--original-interface "$original")
   command+=(--interface "$interface" --pi-ipv4-cidr "$pi_cidr" --device-ipv4 "$device_ipv4")
@@ -396,12 +412,18 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 action=${1:-}
 major_step 'Device management' 'Manage printer, scanner and direct Ethernet definitions' 'Review the current inventory, then confirm each requested change before it is saved or applied.'
+if [[ -z "$action" ]] && ! interactive_terminal; then
+  printf '%s\n' 'No action specified and no interactive terminal is available. Specify an action explicitly.' >&2
+  usage >&2
+  exit 2
+fi
 if [[ -z "$action" ]]; then
   printf '%s\n' 'Current managed definitions:'
   "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
   action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
+  [[ "$action" == list ]] && exit 0
   if [[ "$action" == add || "$action" == edit || "$action" == delete ]]; then
-    set -- "$action" "$(ask_choice 'Definition type' 'printer' printer scanner link)"
+    set -- "$action" "$(ask_choice 'Which kind of device or link?' 'printer' printer scanner link)"
   else
     set -- "$action"
   fi
@@ -431,6 +453,7 @@ case "$action" in
     kind=${2:-}
     [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
     identity=$(select_device "$kind" "${3:-}")
+    subsection "Deleting $kind: $identity"
     "$python" "$helper" --inventory "$variables" --backup-directory "$backups" show "$kind" "$identity"
     yes "Delete this managed $kind from inventory?" || exit 0
     step_action command_output "Delete the managed $kind definition" "device_inventory.py delete $kind" \
