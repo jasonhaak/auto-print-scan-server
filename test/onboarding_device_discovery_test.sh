@@ -941,6 +941,7 @@ direct_ethernet_interface=eth1
 direct_ethernet_pi_ipv4_cidr=192.168.50.1/30
 direct_ethernet_device_ipv4=192.168.50.2
 yes() { return 0; }
+yes_default() { return 0; }
 recommendation() { :; }
 technical_report() { :; }
 tcp_port_is_open() { return 1; }
