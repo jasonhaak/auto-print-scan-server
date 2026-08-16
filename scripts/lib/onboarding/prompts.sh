@@ -318,7 +318,7 @@ choose_candidate() {
 choose_existing_candidate() {
   local title=$1 selection index
   shift
-  printf '\n%s\n' "$title" >&2
+  printf '%s\n' "$title" >&2
   for index in "$@"; do
     printf '  %d) %s\n' "$((++candidate_count))" "${index%%|*}" >&2
   done

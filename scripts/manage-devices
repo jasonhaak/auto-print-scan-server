@@ -106,6 +106,7 @@ select_device() {
   done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names "$kind")
   (( ${#candidates[@]} > 0 )) || { printf 'No managed %ss exist.\n' "$kind" >&2; exit 1; }
   candidate_count=0
+  [[ "$interactive_mode" == true ]] || printf '\n' >&2
   choice=$(choose_existing_candidate "Select the managed $kind." "${candidates[@]}")
   printf '%s' "${choice##*|}"
 }
