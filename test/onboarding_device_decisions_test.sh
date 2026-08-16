@@ -181,7 +181,7 @@ ask_choice() {
 }
 ask() {
   case "$1" in
-    'Exact SANE device name from scanimage -L') printf 'airscan:e0:Office Scanner' ;;
+    'Scanner device name') printf 'airscan:e0:Office Scanner' ;;
     'Friendly scanner name') printf '%s' "$2" ;;
     *) printf '%s' "$2" ;;
   esac
@@ -204,7 +204,7 @@ ask_choice() {
 }
 ask() {
   case "$1" in
-    'Exact SANE device name from scanimage -L') printf 'airscan:e0:Office Scanner' ;;
+    'Scanner device name') printf 'airscan:e0:Office Scanner' ;;
     'Friendly scanner name') printf 'Office Scanner' ;;
     *) printf '%s' "$2" ;;
   esac

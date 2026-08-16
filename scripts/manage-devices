@@ -235,8 +235,9 @@ configure_scanner() {
       fi
     fi
   fi
+  printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
   while true; do
-    name=$(ask 'Exact SANE device name from scanimage -L' "${original:-${discovered_scanner_device_name:-}}")
+    name=$(ask 'Scanner device name' "${original:-${discovered_scanner_device_name:-}}")
     [[ -n "$name" ]] && break
     printf '%s\n' 'Scanner device name cannot be empty.' >&2
   done

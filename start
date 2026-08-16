@@ -91,7 +91,7 @@ case "$1" in
     run_command "$@"
     ;;
   *)
-    printf 'Unknown command: %s\n\n' "$1" >&2
+    printf '%s Unknown command: %s\n\n' "$(cli_color '31' 'Error:')" "$1" >&2
     show_help >&2
     exit 2
     ;;
