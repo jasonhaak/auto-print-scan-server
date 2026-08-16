@@ -422,6 +422,12 @@ if [[ -z "$action" ]]; then
   while true; do
     printf '%s\n' 'Current managed definitions:'
     "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+    printf '  %-8s %s\n' \
+      'list' 'Show the current definitions again.' \
+      'add' 'Add a new printer, scanner or direct Ethernet link.' \
+      'edit' 'Change an existing printer, scanner or link.' \
+      'delete' 'Remove an existing printer, scanner or link.' \
+      'apply' 'Push all saved changes to the Raspberry Pi with Ansible.'
     action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
     [[ "$action" != list ]] && break
   done
@@ -437,7 +443,10 @@ case "$action" in
     technical_capture command_output 'List managed definitions' 'device_inventory.py list' \
       "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
     ;;
-  apply) apply_inventory false ;;
+  apply)
+    yes_default 'Apply the saved inventory to the Raspberry Pi now?' || exit 0
+    apply_inventory false
+    ;;
   add)
     kind=${2:-}
     [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
