@@ -419,10 +419,12 @@ if [[ -z "$action" ]] && ! interactive_terminal; then
   exit 2
 fi
 if [[ -z "$action" ]]; then
-  printf '%s\n' 'Current managed definitions:'
-  "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
-  action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
-  [[ "$action" == list ]] && exit 0
+  while true; do
+    printf '%s\n' 'Current managed definitions:'
+    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+    action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
+    [[ "$action" != list ]] && break
+  done
   if [[ "$action" == add || "$action" == edit || "$action" == delete ]]; then
     set -- "$action" "$(ask_choice 'Which kind of device or link?' 'printer' printer scanner link)"
   else
