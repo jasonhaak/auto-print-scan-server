@@ -696,7 +696,7 @@ discover_devices() {
 
   [[ -n "$lpinfo_output" ]] && technical_report 'CUPS endpoint discovery with ipp-usb' 'lpinfo -v' "$lpinfo_output_status" "$lpinfo_output"
 
-  printf 'Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "${#printer_candidates[@]}" "${#scanner_candidates[@]}" >&2
+  printf '%s Discovery completed: %d printer candidate(s), %d scanner candidate(s).\n' "$(cli_status 0)" "${#printer_candidates[@]}" "${#scanner_candidates[@]}" >&2
   printf '\n' >&2
   detail_block 'Discovery result' \
     "Printers|${#printer_candidates[@]} candidate(s)" \

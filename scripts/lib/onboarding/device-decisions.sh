@@ -50,7 +50,11 @@ collect_printer_definition() {
     '  2. direct_ethernet: Ethernet directly to an unused Raspberry Pi port when the device cannot reach the router.' \
     '  3. usb: a fallback that often supports printing; scanning needs a usable Linux SANE backend.' >&2
   printf '\n' >&2
-  recommendation 'Choose network for a device on the home LAN. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
+  if [[ "$topology_default" == usb ]]; then
+    recommendation 'This printer was detected on USB; keep usb unless it also has a LAN/IPP endpoint. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
+  else
+    recommendation 'Choose network for a device on the home LAN. The wizard detects the capabilities the device actually provides and does not promise scanning for every connection type.'
+  fi
   local -a topology_options=(network usb)
   [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet usb)
   local topology
@@ -223,13 +227,13 @@ select_or_collect_printer() {
   while true; do
     queue=$(ask 'CUPS queue name' 'printer')
     [[ "$queue" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+    cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   dns_sd_name_default=$queue
   while true; do
     dns_sd_name=$(ask 'Client-visible DNS-SD name' "$dns_sd_name_default")
     [[ "$dns_sd_name" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+    cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   input_required 'Printer connection'
   collect_printer_definition || {

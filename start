@@ -13,7 +13,7 @@ command_reference() {
   group_header 'Commands'
   printf '  %-16s %s\n' 'setup' 'Prepare this machine (Python venv, Ansible). Run once per administrator machine.'
   printf '  %-16s %s\n' 'onboard' 'First-time guided setup: connect to the Pi, discover devices, commission it. Run once per Pi.'
-  printf '  %-16s %s\n' 'reconfigure' 'Rebuild server-level settings (target host, trusted LAN, direct Ethernet links).'
+  printf '  %-16s %s\n' 'reconfigure' 'Rebuild server-level settings and all device definitions (target host, trusted LAN, direct Ethernet links, printers, scanners).'
   printf '  %-16s %s\n' 'manage-devices' 'Add, edit, delete or list printers, scanners and links without full onboarding.'
   printf '  %-16s %s\n' 'qa' 'Run the full repository check suite.'
 }
@@ -35,6 +35,7 @@ show_help() {
   printf '  %-38s %s\n' 'Add or change a direct Ethernet link' '-> reconfigure'
   printf '  %-38s %s\n' 'Verify your own changes to this repo' '-> qa'
   printf '\n'
+  printf '%s\n' 'reconfigure also walks through every printer and scanner again, not just server-level settings; use manage-devices instead for a single device change.'
   printf '%s\n' 'onboard accepts --reconfigure (same as running reconfigure) and --verbose (show every check in full).'
   printf '%s\n' 'manage-devices also accepts list, add|edit|delete printer|scanner|link [IDENTITY], and apply directly.'
   printf '\n'

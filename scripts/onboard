@@ -100,6 +100,9 @@ need ansible-playbook
 need ansible-galaxy
 need ssh
 printf '%s\n' 'Raspberry Pi print and scan server onboarding'
+if [[ "$reconfigure" == true ]]; then
+  printf '%s\n' 'Reconfiguring an already-commissioned Pi: server-level settings and every printer and scanner will be reviewed and rebuilt from scratch.'
+fi
 detail_block 'Before you begin' \
   'Inventory|Only non-secret values are written' \
   'Passwords|Requested only when needed and never stored' \

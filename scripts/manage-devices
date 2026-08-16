@@ -128,10 +128,12 @@ configure_printer() {
   else
     subsection 'Adding a printer'
   fi
+  input_required 'Printer queue'
+  printf '%s\n' 'The queue name is what phones, computers and tablets will see when choosing this printer. Use only letters, numbers, dots, underscores and hyphens.' >&2
   while true; do
     name=$(ask 'CUPS queue name' "$name_default")
     validate_queue "$name" && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+    cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   if [[ -z "$original" ]]; then
     while IFS= read -r link_interface; do
@@ -178,12 +180,13 @@ configure_printer() {
   while true; do
     dns_sd_name=$(ask 'Client-visible DNS-SD name' "$dns_sd_name_default")
     validate_queue "$dns_sd_name" && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+    cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   profile=''
   local printer_identity_evidence=''
   cups_model=''
   if [[ "$driver" == package_profile ]]; then
+    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the Raspberry Pi. That happens next, right after this profile is chosen.' >&2
     profile_default=''
     if [[ -n "$original" ]]; then
       profile_default=$(field printer "$original" package_profile)
@@ -318,7 +321,7 @@ configure_link() {
   while true; do
     interface=$(ask 'Raspberry Pi Ethernet interface' "$interface_default")
     [[ "$interface" =~ ^[A-Za-z0-9_.-]+$ ]] && break
-    printf '%s\n' 'Use only letters, numbers, dots, underscores and hyphens.' >&2
+    cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   while true; do
     pi_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "$pi_cidr_default")
@@ -346,7 +349,7 @@ open_inventory_ssh_session() {
     exit 1
   }
   printf 'Connecting to %s@%s. SSH may request the Raspberry Pi password.\n' "$admin" "$host"
-  ssh_session_open || return 1
+  step_check_live 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open || return 1
 }
 
 discover_for_add() {
@@ -423,7 +426,7 @@ fi
 while true; do
   if [[ -z "$action" ]]; then
     while true; do
-      printf '%s\n' 'Current managed definitions:'
+      group_header 'Current managed definitions'
       "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
       printf '  %-8s %s\n' \
         'list' 'Show the current definitions again.' \
@@ -454,7 +457,11 @@ while true; do
       kind=${2:-}
       [[ "$kind" == printer || "$kind" == scanner || "$kind" == link ]] || { usage >&2; exit 2; }
       [[ "$kind" != link ]] && discover_for_add "$kind"
-      "configure_$kind"
+      if ! "configure_$kind"; then
+        printf 'The new %s was not saved.\n' "$kind" >&2
+        [[ "$interactive_mode" == true ]] && { action=''; continue; }
+        exit 1
+      fi
       [[ "$kind" == link ]] && offer_apply false || offer_apply true
       ;;
     edit)
@@ -464,7 +471,11 @@ while true; do
         [[ "$interactive_mode" == true ]] && { action=''; continue; }
         exit 1
       fi
-      "configure_$kind" "$identity"
+      if ! "configure_$kind" "$identity"; then
+        printf 'The edit to %s %s was not saved; the previous definition is unchanged.\n' "$kind" "$identity" >&2
+        [[ "$interactive_mode" == true ]] && { action=''; continue; }
+        exit 1
+      fi
       offer_apply true
       ;;
     delete)

@@ -12,6 +12,7 @@ cli_color() {
 cli_heading() {
   cli_color '1;36' "$1"
 }
+cli_error() { printf '%s %s\n' "$(cli_color '31' 'Error:')" "$1" >&2; }
 major_step() {
   local number=$1 title=$2 purpose=$3 recap=${4:-}
   printf '%s\n%s\n%s\n%s\n' "$(cli_heading '══════════════════════════════════════════════')" "$(cli_heading "$number · $title")" "$(cli_heading '══════════════════════════════════════════════')" "$purpose" >&2
@@ -148,7 +149,7 @@ ask_choice() {
         return
       fi
     done
-    printf 'Invalid choice: %s. Expected one of: %s. Please try again.\n' "$value" "$*" >&2
+    cli_error "Invalid choice: $value. Expected one of: $*. Please try again."
   done
 }
 valid_ipv4_cidr() {
