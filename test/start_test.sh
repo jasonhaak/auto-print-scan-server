@@ -9,7 +9,7 @@ help_output=$("$root/start" </dev/null 2>&1)
   && "$help_output" == *'manage-devices'* && "$help_output" == *'qa'* ]]
 [[ "$help_output" == *'shared LAN print and scan server'* ]]
 [[ "$help_output" == *'Use case'* ]]
-[[ "$help_output" == *'First time, no Pi commissioned yet'* ]]
+[[ "$help_output" == *'First time, no server commissioned yet'* ]]
 
 # Explicit help request behaves the same way regardless of TTY.
 explicit_help=$("$root/start" help </dev/null 2>&1)

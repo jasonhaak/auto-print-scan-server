@@ -41,7 +41,7 @@ printf '%s %s\n' "$(cli_color '1;33' 'Action:')" 'Installing the pinned Ansible 
 "$root/.venv/bin/ansible-galaxy" collection install -r "$root/requirements.yml"
 setup_status 'Pinned Ansible collections installed'
 if [[ -f "$root/inventories/production/hosts.yml" ]] && ! grep -q '192\.0\.2\.10' "$root/inventories/production/hosts.yml"; then
-  printf '%s\n' 'Ready. A Pi is already commissioned in this checkout; run ./scripts/manage-devices to add, edit or remove printers, scanners and links.'
+  printf '%s\n' 'Ready. A server is already commissioned in this checkout; run ./scripts/manage-devices to add, edit or remove printers, scanners and links.'
 else
-  printf '%s\n' 'Ready. Run ./scripts/onboard to configure a Raspberry Pi.'
+  printf '%s\n' 'Ready. Run ./scripts/onboard to configure a server.'
 fi

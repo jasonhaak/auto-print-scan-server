@@ -7,8 +7,8 @@
       - item.device_ipv4 is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}$')
       - item.interface != ansible_default_ipv4.interface
     fail_msg: >-
-      A direct Ethernet link needs a valid interface, Pi IPv4 CIDR and device IPv4 address.
-      It cannot use the Pi's default-route interface.
+      A direct Ethernet link needs a valid interface, server IPv4 CIDR and device IPv4 address.
+      It cannot use the server's default-route interface.
   loop: "{{ direct_ethernet_links }}"
   loop_control:
     label: "{{ item.interface | default('unnamed interface') }}"

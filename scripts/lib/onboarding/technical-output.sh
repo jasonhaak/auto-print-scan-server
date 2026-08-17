@@ -119,7 +119,7 @@ step_check() {
   return "$step_run_status"
 }
 
-# Actions differ from checks because they change inventory or Raspberry Pi state. Their label and
+# Actions differ from checks because they change inventory or server state. Their label and
 # captured technical output are always shown, while successful read-only checks stay compact.
 step_action() {
   local output_variable=$1 purpose=$2 command_label=$3

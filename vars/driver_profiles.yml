@@ -5,6 +5,6 @@ package_profiles:
     packages:
       - printer-driver-brlaser
     # Prefix advertised by CUPS after the package is installed. The exact model is
-    # selected interactively from the Raspberry Pi's `lpinfo -m` output.
+    # selected interactively from the server's `lpinfo -m` output.
     model_prefix: drv:///brlaser.drv/
     make_model_pattern: '(?i)Brother.*MFC-7360'

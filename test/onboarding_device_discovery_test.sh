@@ -64,7 +64,7 @@ if direct_scanner_candidate $'device `airscan:e0:192.168.50.9\' is a scanner' '1
 fi
 
 # Ticket 014: a scanner identified only by hostname is accepted when that
-# hostname resolves exclusively (via the Raspberry Pi, not locally) to the
+# hostname resolves exclusively (via the server, not locally) to the
 # configured direct device address.
 [[ "$(direct_scanner_candidate_host 'airscan:e0:printer.local')" == printer.local ]]
 [[ "$(direct_scanner_candidate_host 'escl:printer.local')" == printer.local ]]
@@ -214,7 +214,7 @@ fi
 # ready to answer lpinfo -- unlike the CUPS role's own provisioning path, which polls lpstat -r
 # before touching CUPS. Without the same wait here, lpinfo -v can hit a CUPS that isn't
 # listening yet, hang, and get killed by its 10s timeout, silently producing zero printer
-# candidates on a real Pi even though a printer is connected. wait_for_cups_ready's retry loop
+# candidates on a real server even though a printer is connected. wait_for_cups_ready's retry loop
 # runs as a remote shell snippet, so exercise it for real (via remote() { eval "$1"; }, matching
 # the create_scanner_test_pdf tests above) rather than mocking step_check away entirely.
 step_check() {
@@ -275,7 +275,7 @@ start_cups_block=$(awk '
 
 # WSD (the protocol this repo's own tested Brother MFC-7360N uses for AirScan, per
 # docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
-# inherently variable timing. Reproduced live: running scanimage -L standalone on the Pi found
+# inherently variable timing. Reproduced live: running scanimage -L standalone on the server found
 # the scanner every time, but discover_devices' single attempt found it roughly every other run
 # -- and even 3 retries (2s apart) still occasionally came back empty in a later live run.
 # scan_for_scanners retries up to 5 times with no added pause between attempts (each
@@ -680,7 +680,7 @@ scanner_candidate_output=$(scanner_candidate_details 'airscan:e0:Office Scanner 
 review_block=$(awk '
   /^stage .5 of 5. .Review and commission./ { capturing = 1 }
   capturing { print }
-  capturing && /Write production inventory and commission the Raspberry Pi/ { exit }
+  capturing && /Write production inventory and commission the server/ { exit }
 ' "$root/scripts/onboard")
 [[ -n "$review_block" ]]
 [[ "$review_block" == *"confirmation_block 'Server'"* ]]
@@ -1098,7 +1098,7 @@ mock_interface_ok=true
 
 # Ticket 014: discover_direct_ethernet_device's scanner-probe step must accept
 # a scanner candidate identified only by hostname when that hostname resolves
-# exclusively, via the Raspberry Pi over the temporary link, to the configured
+# exclusively, via the server over the temporary link, to the configured
 # direct device address. Drive the full temporary-link setup through cleanup,
 # not just the isolated direct_scanner_candidate helper.
 step_action() {

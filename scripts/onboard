@@ -32,7 +32,7 @@ TECHNICAL_VERBOSE=false
 
 usage() {
   cat <<'EOF'
-Configure a Raspberry Pi print and scan server.
+Configure a print and scan server.
 
 Usage:
   scripts/onboard                 Start first setup, or manage devices when setup already exists
@@ -99,69 +99,69 @@ trap 'exit 130' INT TERM
 need ansible-playbook
 need ansible-galaxy
 need ssh
-printf '%s\n' 'Raspberry Pi print and scan server onboarding'
+printf '%s\n' 'Print and scan server onboarding'
 if [[ "$reconfigure" == true ]]; then
-  printf '%s\n' 'Reconfiguring an already-commissioned Pi: server-level settings and every printer and scanner will be reviewed and rebuilt from scratch.'
+  printf '%s\n' 'Reconfiguring an already-commissioned server: server-level settings and every printer and scanner will be reviewed and rebuilt from scratch.'
 fi
 detail_block 'Before you begin' \
   'Inventory|Only non-secret values are written' \
   'Passwords|Requested only when needed and never stored' \
   'Tools|Bash, SSH and Ansible are ready'
 printf '%s\n' '' 'This guided setup has five steps:' \
-  '  1. Connect to the Raspberry Pi and check administrator access.' \
+  '  1. Connect to the server and check administrator access.' \
   '  2. Confirm the trusted home network.' \
   '  3. Find connected printers and scanners.' \
   '  4. Choose the devices and their settings.' \
-  '  5. Review everything before the Raspberry Pi is changed.' \
+  '  5. Review everything before the server is changed.' \
   '' \
   'You can stop with Ctrl+C at any time. Discovery may install diagnostic packages before confirmation. Legacy driver inspection can install only its selected driver package before final queue confirmation. Production inventory, queues and services are changed only after final confirmation.'
 
-stage '1 of 5' 'Connect to your Raspberry Pi' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same Raspberry Pi again later.'
+stage '1 of 5' 'Connect to your server' 'Use the DHCP-reserved address or stable local DNS name so onboarding can find the same server again later.'
 host_default=$(saved_host_value ansible_host print-server.local)
 [[ "$host_default" == 192.0.2.10 ]] && host_default=print-server.local
-if step_check administrator_cidr 'Detect the local network containing the Raspberry Pi' 'local IPv4 route lookup' administrator_lan_cidr; then
+if step_check administrator_cidr 'Detect the local network containing the server' 'local IPv4 route lookup' administrator_lan_cidr; then
   printf 'Detected local network: %s. A search checks private addresses for SSH port 22. It does not authenticate or change any device.\n' "$administrator_cidr"
 else
-  printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the Raspberry Pi address manually.'
+  printf '%s\n' 'The local network could not be detected automatically. You can enter another private range to search, or enter the server address manually.'
 fi
 printf '\n'
 input_required 'Network search'
 if [[ -n "$administrator_cidr" ]]; then
-  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for?' 'detected' detected other skip)
+  search_choice=$(ask_choice 'Where should the server be searched for?' 'detected' detected other skip)
 else
-  search_choice=$(ask_choice 'Where should the Raspberry Pi be searched for?' 'other' other skip)
+  search_choice=$(ask_choice 'Where should the server be searched for?' 'other' other skip)
 fi
 if [[ "$search_choice" != skip ]]; then
   while true; do
     if [[ "$search_choice" == detected ]]; then
       search_cidr=$administrator_cidr
     else
-      printf '%s\n' 'Enter the private network containing the Raspberry Pi. At most 1,024 addresses are accepted, for example 192.168.178.0/24 or 10.20.4.0/23.'
+      printf '%s\n' 'Enter the private network containing the server. At most 1,024 addresses are accepted, for example 192.168.178.0/24 or 10.20.4.0/23.'
       search_cidr=$(ask 'Private IPv4 network to search' '')
     fi
     valid_private_ipv4_search_cidr "$search_cidr" && break
     printf '%s\n' 'Invalid network range. Use an RFC1918 network address containing no more than 1,024 addresses.' >&2
   done
   if ! ssh_port_probe_available; then
-    printf '%s\n' 'Automatic search needs netcat (nc) or timeout on this administrator machine. Enter the Raspberry Pi address manually.' >&2
+    printf '%s\n' 'Automatic search needs netcat (nc) or timeout on this administrator machine. Enter the server address manually.' >&2
   else
     printf 'Searching %s now. Large ranges can take about one minute.\n' "$search_cidr"
     ssh_hosts=()
     ssh_search_output=''
-    if ! step_check ssh_search_output 'Search for possible Raspberry Pi SSH servers' "TCP port 22 probe across $search_cidr" find_ssh_hosts "$search_cidr"; then
-      printf '%s\n' 'The network search failed. Enter the Raspberry Pi address manually.' >&2
+    if ! step_check ssh_search_output 'Search for possible SSH hosts' "TCP port 22 probe across $search_cidr" find_ssh_hosts "$search_cidr"; then
+      printf '%s\n' 'The network search failed. Enter the server address manually.' >&2
     fi
     while IFS= read -r ssh_host; do
       [[ -n "$ssh_host" ]] && ssh_hosts+=("$ssh_host")
     done <<<"$ssh_search_output"
     if (( ${#ssh_hosts[@]} == 0 )); then
-      printf '%s\n' 'No SSH servers were detected. The Raspberry Pi may be offline, outside the searched network or have SSH disabled. Enter its address manually.'
+      printf '%s\n' 'No SSH servers were detected. The server may be offline, outside the searched network or have SSH disabled. Enter its address manually.'
     elif (( ${#ssh_hosts[@]} == 1 )); then
       host_default=${ssh_hosts[0]}
-      printf 'Detected one possible Raspberry Pi SSH server: %s. Press Enter below if this is the Raspberry Pi.\n' "$host_default"
+      printf 'Detected one possible SSH host: %s. Press Enter below if this is the server.\n' "$host_default"
       printf '\n'
     else
-      printf '%s\n' 'Detected multiple SSH servers. Select the Raspberry Pi explicitly; the list can include other computers or network appliances.'
+      printf '%s\n' 'Detected multiple SSH servers. Select the server explicitly; the list can include other computers or network appliances.'
       candidate_count=0
       discovered_host=$(choose_candidate 'Possible SSH servers' "${ssh_hosts[@]}")
       [[ "$discovered_host" != manual ]] && host_default=$discovered_host
@@ -170,59 +170,59 @@ if [[ "$search_choice" != skip ]]; then
 fi
 input_required 'Connection'
 while true; do
-  host=$(ask 'Raspberry Pi hostname or IP address' "$host_default")
+  host=$(ask 'Server hostname or IP address' "$host_default")
   resolution_output=''
-  if step_check resolution_output 'Resolve the Raspberry Pi address' "local IPv4 name lookup for $host" ssh_session_target_resolution "$host"; then
+  if step_check resolution_output 'Resolve the server address' "local IPv4 name lookup for $host" ssh_session_target_resolution "$host"; then
     break
   fi
-  printf '%s\n' 'That Raspberry Pi address could not be resolved to an IPv4 address on this computer.' >&2
+  printf '%s\n' 'That server address could not be resolved to an IPv4 address on this computer.' >&2
   printf '%s\n' 'Use the DHCP-reserved IPv4 address, for example 192.168.178.33, or a stable local name such as print-server.local.' >&2
 done
-printf '%s\n' 'Use the Raspberry Pi Imager bootstrap user. It is the account that installs and maintains printing services.'
+printf '%s\n' 'Use the bootstrap administrator account created when the server was provisioned. It is the account that installs and maintains printing services.'
 while true; do
-  admin=$(ask 'Raspberry Pi Imager bootstrap user' "$(saved_host_value ansible_user printadmin)")
+  admin=$(ask 'Bootstrap administrator user' "$(saved_host_value ansible_user printadmin)")
   [[ "$admin" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] && break
   printf '%s\n' 'Enter a valid Linux account name using lowercase letters, numbers, underscores or hyphens.' >&2
 done
 while true; do
-  printf '%s\n' 'Connecting now. On a first connection, confirm the Raspberry Pi host key. Then enter its password when SSH asks.'
+  printf '%s\n' 'Connecting now. On a first connection, confirm the server host key. Then enter its password when SSH asks.'
   reachability_output=''
   step_check reachability_output 'Check local route and SSH reachability' "ip route get; TCP port 22 probe for $host" ssh_session_reachability "$host" || true
-  if step_check_live 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open &&
-     step_check remote_shell_output 'Verify the Raspberry Pi remote shell' 'ssh remote true' remote true &&
-     step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
+  if step_check_live 'Open the server SSH session' "ssh control connection to $admin@$host" ssh_session_open &&
+     step_check remote_shell_output 'Verify the server remote shell' 'ssh remote true' remote true &&
+     step_check_live 'Verify server administrator privileges' 'sudo -v' remote_tty 'sudo -v'; then
     break
   fi
-  printf '%s\n' 'The Raspberry Pi connection or sudo check failed. Check the address, bootstrap user, password and SSH settings.' >&2
+  printf '%s\n' 'The server connection or sudo check failed. Check the address, bootstrap user, password and SSH settings.' >&2
   printf 'Choose retry to try the same address and user again, or correct to re-enter them.\n' >&2
   recovery=$(recovery_choice 'Connection recovery (retry, correct, stop)' retry retry correct stop) || exit 1
   case "$recovery" in
     retry) ssh_session_cleanup ;;
     correct)
       ssh_session_cleanup
-      host=$(ask 'Raspberry Pi hostname or IP address' "$host")
-      admin=$(ask 'Raspberry Pi Imager bootstrap user' "$admin")
+      host=$(ask 'Server hostname or IP address' "$host")
+      admin=$(ask 'Bootstrap administrator user' "$admin")
       ;;
     stop) exit 1 ;;
   esac
 done
 printf '%s\n' 'The password is not stored.'
 printf '\n'
-stage '2 of 5' 'Confirm your trusted network' 'Reading the Raspberry Pi network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Pi $admin@$host"
-step_check suggested_cidr 'Detect the Raspberry Pi trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
+stage '2 of 5' 'Confirm your trusted network' 'Reading the server network, timezone and locale now. Only devices on the trusted network will later reach printing and scanning.' "Server $admin@$host"
+step_check suggested_cidr 'Detect the server trusted-LAN route' 'ip route show default; ip route show dev <interface> proto kernel scope link' \
   remote 'interface=$(ip -4 route show default | awk '\''{print $5; exit}'\''); ip -4 route show dev "$interface" proto kernel scope link | awk '\''$1 ~ /\// {print $1; exit}'\''' || true
-step_check timezone 'Detect the Raspberry Pi timezone' 'cat /etc/timezone; timedatectl show --property=Timezone' \
+step_check timezone 'Detect the server timezone' 'cat /etc/timezone; timedatectl show --property=Timezone' \
   remote 'cat /etc/timezone 2>/dev/null || timedatectl show --property=Timezone --value' || true
-step_check locale 'Detect the Raspberry Pi locale' 'locale' \
+step_check locale 'Detect the server locale' 'locale' \
   remote "locale | awk -F= '/^LANG=/{print \$2; exit}'" || true
 timezone=${timezone:-"$(saved_scalar common_timezone Europe/Berlin)"}
 locale=${locale:-"$(saved_scalar common_locale en_US.UTF-8)"}
-printf 'Detected Raspberry Pi settings: IPv4 network %s, timezone %s, locale %s.\n' "${suggested_cidr:-not detected}" "$timezone" "$locale"
-printf '%s\n' 'The detected timezone and locale were set in Raspberry Pi Imager and will be kept. No input is needed for them.'
+printf 'Detected server settings: IPv4 network %s, timezone %s, locale %s.\n' "${suggested_cidr:-not detected}" "$timezone" "$locale"
+printf '%s\n' 'The detected timezone and locale were set during provisioning and will be kept. No input is needed for them.'
 setting_group 'Trusted IPv4 LAN'
-printf '%s\n' 'Choose the normal home-LAN subnet. A CIDR is the whole network range, for example 192.168.178.0/24, not the Raspberry Pi address. Accept the suggestion unless printing clients use another trusted VLAN.'
+printf '%s\n' 'Choose the normal home-LAN subnet. A CIDR is the whole network range, for example 192.168.178.0/24, not the server address. Accept the suggestion unless printing clients use another trusted VLAN.'
 while true; do
-  cidr=$(ask_detected 'Trusted IPv4 LAN CIDR' "${suggested_cidr:-192.168.1.0/24}" 'Do not enter the Raspberry Pi address itself.')
+  cidr=$(ask_detected 'Trusted IPv4 LAN CIDR' "${suggested_cidr:-192.168.1.0/24}" 'Do not enter the server address itself.')
   valid_ipv4_cidr "$cidr" && break
   printf '%s\n' 'Invalid IPv4 CIDR. Use four numbers from 0 to 255 followed by /0 to /32, for example 192.168.178.0/24.' >&2
 done
@@ -250,12 +250,12 @@ for public_key_path in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$H
   fi
 done
 [[ -n "$authorized_key" ]] || printf '%s\n' 'No standard SSH public key was found. Password SSH remains available.'
-stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Pi $admin@$host · trusted LAN $cidr"
+stage '3 of 5' 'Find printers and scanners' 'Discovery can suggest settings for devices on this trusted LAN and directly connected USB devices. It never selects or configures a device without you.' "Server $admin@$host · trusted LAN $cidr"
 input_required 'Discovery scope'
 discovery_scope=$(ask_choice 'Which connections to search?' 'all' all lan usb skip)
 discover_devices false "$discovery_scope"
 discovery_tools_ready=true
-stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Pi $admin@$host · trusted LAN $cidr"
+stage '4 of 5' 'Choose your devices' 'The selections here become the saved configuration used for later maintenance. Keep the suggested names unless another name is clearer in your home network.' "Server $admin@$host · trusted LAN $cidr"
 printer_queues=()
 printer_connections=()
 printer_uris=()
@@ -325,7 +325,7 @@ for index in "${!printer_queues[@]}"; do
 done
 
 # A package profile identifies a generic Debian driver package. The exact PPD/model is
-# deliberately selected from this Raspberry Pi after that package is prepared.
+# deliberately selected from this server after that package is prepared.
 if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
   group_header 'Prepare Legacy Drivers'
   host_tmp=$(mktemp "${inventory%.yml}.XXXXXX.yml")
@@ -346,11 +346,11 @@ if [[ " ${printer_drivers[*]} " == *' package_profile '* ]]; then
   host_tmp=''
 fi
 
-stage '5 of 5' 'Review and commission' 'Review the configuration below before it is written locally or applied to the Raspberry Pi.' "Pi $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
+stage '5 of 5' 'Review and commission' 'Review the configuration below before it is written locally or applied to the server.' "Server $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
 direct_ethernet_summary='not configured'
 [[ -n "$direct_ethernet_interface" ]] && direct_ethernet_summary="$direct_ethernet_interface ($direct_ethernet_pi_ipv4_cidr -> $direct_ethernet_device_ipv4)"
 confirmation_block 'Server' \
-  "Pi|$admin@$host" "Hostname|$hostname" "Trusted LAN|$cidr" "Trusted IPv6|${ipv6_cidr:-not configured}" \
+  "Server|$admin@$host" "Hostname|$hostname" "Trusted LAN|$cidr" "Trusted IPv6|${ipv6_cidr:-not configured}" \
   "Timezone|$timezone" "Locale|$locale" "Direct Ethernet|$direct_ethernet_summary" \
   "SSH key install|$([[ -n "$authorized_key" ]] && printf yes || printf no)"
 for index in "${!printer_queues[@]}"; do
@@ -373,9 +373,9 @@ if (( ${#scanner_device_names[@]} > 0 )); then
   confirmation_block 'ScanservJS' "Retention|$retention days" "OCR|$ocr" "Port|$scanservjs_port" "Page splitting|$page_splitting"
 fi
 printf '\n' >&2
-printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the Raspberry Pi.'
-printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or Raspberry Pi services.'
-yes 'Write production inventory and commission the Raspberry Pi?' || exit 0
+printf '%s\n' 'Confirmation creates local inventory backups, replaces the declared device lists and starts Ansible provisioning on the server.'
+printf '%s\n' 'No passwords are written to inventory. Choose no to exit without changing inventory or server services.'
+yes 'Write production inventory and commission the server?' || exit 0
 
 host_tmp=$(mktemp "$inventory.XXXXXX")
 vars_tmp=$(mktemp "$variables.XXXXXX")
@@ -448,11 +448,11 @@ while ! step_stream galaxy_output 'Install pinned Ansible collections' 'ansible-
 done
 ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e print_server_commissioning=true)
 if ! remote 'sudo -n true' >/dev/null 2>&1; then
-  printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for commissioning.'
+  printf '%s\n' 'Ansible needs the server sudo password once for commissioning.'
   ansible_arguments+=(--ask-become-pass)
 fi
 ansible_output=''
-while ! step_stream ansible_output 'Commission the Raspberry Pi with Ansible' 'ansible-playbook playbooks/site.yml' \
+while ! step_stream ansible_output 'Commission the server with Ansible' 'ansible-playbook playbooks/site.yml' \
   env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${ansible_arguments[@]}"; do
   printf 'Commissioning failed. Technical transcript: %s\n' "$technical_transcript" >&2
   manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e print_server_commissioning=true
@@ -501,7 +501,7 @@ if (( ${#scanner_device_names[@]} > 0 )) && yes 'Create scanner test PDFs now? T
 fi
 printf '\n' >&2
 group_header 'Onboarding complete'
-printf '%s\n' "Raspberry Pi: $admin@$host (hostname $hostname)" >&2
+printf '%s\n' "Server: $admin@$host (hostname $hostname)" >&2
 for index in "${!printer_queues[@]}"; do
   printf '  Printer: %s (DNS-SD name %s)\n' "${printer_queues[$index]}" "${printer_dns_sd_names[$index]}" >&2
 done

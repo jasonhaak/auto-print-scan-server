@@ -21,7 +21,7 @@ first_dir=$ssh_socket_dir
 [[ -n "$first_socket" ]]
 [[ -d "$first_dir" ]]
 
-# Simulate an interrupted control socket between attempts (e.g. the Pi rebooted or dropped the
+# Simulate an interrupted control socket between attempts (e.g. the server rebooted or dropped the
 # connection mid-step): remove the socket directory out from under the session, as a dead
 # ControlMaster would leave behind.
 rm -rf "$first_dir"
@@ -45,7 +45,7 @@ ssh_session_cleanup
 # A plain non-interactive SSH command execution does not always inherit /usr/sbin or /sbin (where
 # lpinfo, sane-find-scanner and similar admin tools live), even though a login shell for the same
 # account would. remote()/remote_tty() must prefix every remote command with an explicit PATH so
-# tool lookups do not silently fail with "command not found" depending on the Pi's SSH/PAM setup.
+# tool lookups do not silently fail with "command not found" depending on the server's SSH/PAM setup.
 captured_command=''
 ssh() {
   for argument in "$@"; do

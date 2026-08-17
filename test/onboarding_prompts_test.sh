@@ -45,7 +45,7 @@ choice_stderr=$(ask_choice 'Printer connection' 'ipp' ipp ipps socket <<< '' 2>&
 interactive_terminal() { [[ -t 0 && -t 1 ]]; }
 rm -f "$ask_stderr"
 
-detected=$(ask_detected 'Trusted IPv4 LAN CIDR' '192.168.178.0/24' 'Do not enter the Raspberry Pi address itself.' <<< '')
+detected=$(ask_detected 'Trusted IPv4 LAN CIDR' '192.168.178.0/24' 'Do not enter the server address itself.' <<< '')
 [[ "$detected" == 192.168.178.0/24 ]]
 valid_ipv4_cidr '192.168.178.0/24'
 if valid_ipv4_cidr '192.168.178.4/24'; then

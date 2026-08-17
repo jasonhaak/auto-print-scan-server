@@ -172,10 +172,10 @@ stream_fail_display=$(<"$display_file")
 # what must NOT happen is that output landing in the saved transcript or in a re-displayed
 # technical block, which is where step_check/step_action/step_stream deliberately keep a copy.
 live_fixture() { printf 'live-output'; }
-step_check_live 'Verify Raspberry Pi administrator privileges' 'sudo -v' live_fixture >"$display_file" 2>&1
+step_check_live 'Verify server administrator privileges' 'sudo -v' live_fixture >"$display_file" 2>&1
 live_display=$(<"$display_file")
 [[ "$live_display" == *'live-output'* ]]
-[[ "$live_display" == *'Verify Raspberry Pi administrator privileges'* ]]
+[[ "$live_display" == *'Verify server administrator privileges'* ]]
 [[ "$live_display" == *'[  OK  ]'* ]]
 grep -Fq 'not captured to protect entered credentials' "$technical_transcript"
 if grep -Fq 'live-output' "$technical_transcript"; then

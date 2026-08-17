@@ -266,7 +266,7 @@ unsupported_scanner_guidance() {
 
 no_printer_discovery_guidance() {
   printf '%s\n' 'No printer was found on the trusted LAN or USB. Find its IPP address in its web administration page or manual, for example ipp://192.168.178.50/ipp/print.' >&2
-  printf '%s\n' 'A device cabled directly to a separate Raspberry Pi Ethernet interface is probed later through the direct_ethernet topology flow, after you enter its static address.' >&2
+  printf '%s\n' 'A device cabled directly to a separate server Ethernet interface is probed later through the direct_ethernet topology flow, after you enter its static address.' >&2
 }
 
 tcp_port_is_open() {
@@ -408,24 +408,24 @@ direct_ethernet_recovery() {
 
 collect_direct_ethernet_link() {
   local active_interface detected_unused_interface direct_ethernet_discovery_status
-  recommendation 'Use a private /30 link. The Pi will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
+  recommendation 'Use a private /30 link. The server will use 192.168.50.1 and the device must be set once to 192.168.50.2 on its own control panel or web interface.'
   active_interface=$(remote "ip -4 route get 1.1.1.1 | awk '{for (i=1;i<=NF;i++) if (\$i==\"dev\") print \$(i+1)}'" 2>/dev/null || true)
   detected_unused_interface=$(remote "for path in /sys/class/net/*; do interface=\${path##*/}; [[ \$interface != $(printf '%q' "$active_interface") && \$(cat \"\$path/type\" 2>/dev/null) == 1 ]] && { printf '%s' \"\$interface\"; break; }; done" 2>/dev/null || true)
   while true; do
     while true; do
-      direct_ethernet_interface=$(ask_detected 'Unused Raspberry Pi Ethernet interface' "${direct_ethernet_interface:-${detected_unused_interface:-eth0}}" 'Use an Ethernet adapter that is not carrying the trusted LAN connection.')
+      direct_ethernet_interface=$(ask_detected 'Unused server Ethernet interface' "${direct_ethernet_interface:-${detected_unused_interface:-eth0}}" 'Use an Ethernet adapter that is not carrying the trusted LAN connection.')
       [[ "$direct_ethernet_interface" =~ ^[A-Za-z0-9_.-]+$ && "$direct_ethernet_interface" != "$active_interface" ]] && break
-      printf 'Interface %s is invalid or carries the Raspberry Pi default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
+      printf 'Interface %s is invalid or carries the server default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
     done
     while true; do
-      direct_ethernet_pi_ipv4_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "${direct_ethernet_pi_ipv4_cidr:-192.168.50.1/30}")
+      direct_ethernet_pi_ipv4_cidr=$(ask 'Server private IPv4 CIDR' "${direct_ethernet_pi_ipv4_cidr:-192.168.50.1/30}")
       valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" false && break
       printf '%s\n' 'Enter a valid IPv4 CIDR, for example 192.168.50.1/30.' >&2
     done
     while true; do
       direct_ethernet_device_ipv4=$(ask 'Device static IPv4 address' "${direct_ethernet_device_ipv4:-192.168.50.2}")
       same_direct_ipv4_link "$direct_ethernet_pi_ipv4_cidr" "$direct_ethernet_device_ipv4" && break
-      printf '%s\n' 'Enter another address in the same /30 link as the Raspberry Pi, for example 192.168.50.2.' >&2
+      printf '%s\n' 'Enter another address in the same /30 link as the server, for example 192.168.50.2.' >&2
     done
     direct_ethernet_discovery_status=0
     discover_direct_ethernet_device || direct_ethernet_discovery_status=$?
@@ -447,7 +447,7 @@ discover_direct_ethernet_device() {
   yes_default 'Temporarily configure the direct Ethernet link and search this device?' || return
   if ! step_check command_output 'Verify the direct Ethernet interface' "test -d /sys/class/net/$direct_ethernet_interface" \
     remote "test -d /sys/class/net/$(printf '%q' "$direct_ethernet_interface")"; then
-    direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the Raspberry Pi."
+    direct_ethernet_recovery "Interface $direct_ethernet_interface does not exist on the server."
     return $?
   fi
   carrier_status=0
@@ -462,7 +462,7 @@ discover_direct_ethernet_device() {
   remote_tty 'sudo -v'
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
     remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
-    direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and Raspberry Pi NetworkManager status.'
+    direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and server NetworkManager status.'
     return $?
   fi
   if ! step_check command_output 'Reach the directly connected device' "ping -c 1 -W 2 $direct_ethernet_device_ipv4" \
@@ -551,7 +551,7 @@ discover_devices() {
   if [[ "$tools_ready" != true ]]; then
     input_required 'Discovery tools'
     printf '\n' >&2
-    recommendation 'Install the discovery tools on the Raspberry Pi. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
+    recommendation 'Install the discovery tools on the server. Discovery temporarily starts CUPS and ipp-usb when needed, then restores their prior service state. It does not create queues, firewall rules or scanner services.'
     if [[ "$discovery_approved" != true ]] && ! yes_default 'Install discovery tools and search for printers and scanners?'; then
       printf '%s\n' 'Discovery skipped. Device details will be entered manually.'
       rm -f "$discovery_log"
@@ -723,7 +723,7 @@ discover_devices() {
     elif sane_hardware_detected "$scanner_hardware_output"; then
       printf '%s\n' 'Scanner-like USB hardware was found, but SANE did not report a usable device identifier. Install the device-compatible SANE backend, then run scanimage -L again.'
     else
-      printf '%s\n' 'No scanner was found. Connect it, then run scanimage -L on the Raspberry Pi and copy the reported device line.'
+      printf '%s\n' 'No scanner was found. Connect it, then run scanimage -L on the server and copy the reported device line.'
     fi
   fi
 

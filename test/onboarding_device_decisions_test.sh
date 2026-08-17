@@ -15,7 +15,7 @@ input_required() { :; }
 # network/ipp printer, no direct_ethernet claimed yet, no discovered defaults.
 ask_choice() {
   case "$1" in
-    'How is this device connected to the Raspberry Pi?') printf 'network' ;;
+    'How is this device connected to the server?') printf 'network' ;;
     'Printer connection') printf 'ipp' ;;
     *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
   esac
@@ -39,7 +39,7 @@ unset -f ask_choice ask
 # usb printer: usb mode + identity collected, and legacy_usb forces a usb:// URI.
 ask_choice() {
   case "$1" in
-    'How is this device connected to the Raspberry Pi?') printf 'usb' ;;
+    'How is this device connected to the server?') printf 'usb' ;;
     'USB mode') printf 'legacy_usb' ;;
     *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;
   esac
@@ -122,7 +122,7 @@ choose_candidate() { printf '%s' "$2"; }
 printer_candidate_details() { :; }
 ask_choice() {
   case "$1" in
-    'How is this device connected to the Raspberry Pi?') printf 'network' ;;
+    'How is this device connected to the server?') printf 'network' ;;
     'Printer connection') printf 'ipp' ;;
     'Printer driver mode') printf 'driverless' ;;
     *) printf 'unexpected ask_choice: %s\n' "$1" >&2; exit 1 ;;

@@ -12,12 +12,12 @@ prepare_and_choose_cups_model() {
       yes_default 'Install this driver package and inspect its CUPS models?' || return 1
       local -a arguments=(-i "$legacy_driver_inventory" "$root/playbooks/prepare-printer-profile.yml" -e "{\"selected_package_profiles\":[\"$profile\"]}")
       if ! remote 'sudo -n true' >/dev/null 2>&1; then
-        printf '%s\n' 'Ansible needs the Raspberry Pi sudo password to prepare this driver package.' >&2
+        printf '%s\n' 'Ansible needs the server sudo password to prepare this driver package.' >&2
         arguments+=(--ask-become-pass)
       fi
       step_stream preparation_output 'Prepare legacy driver package' 'ansible-playbook playbooks/prepare-printer-profile.yml' \
         env ANSIBLE_SSH_ARGS="-o ControlMaster=auto -o ControlPath=$ssh_socket" ansible-playbook "${arguments[@]}" || return 1
-      step_check models 'Read CUPS models from the Raspberry Pi' 'lpinfo -m' remote 'lpinfo -m' || return 1
+      step_check models 'Read CUPS models from the server' 'lpinfo -m' remote 'lpinfo -m' || return 1
       LEGACY_PROFILE_MODELS[$profile]=$models
     else
       printf 'Reusing the CUPS model list already prepared for package profile %s.\n' "$profile" >&2

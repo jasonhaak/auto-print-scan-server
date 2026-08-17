@@ -190,7 +190,7 @@ def validate_direct_link(link: Any) -> None:
     if not QUEUE_PATTERN.fullmatch(interface):
         raise InventoryError(f"direct Ethernet interface {interface!r} is invalid")
     try:
-        pi = ipaddress.ip_interface(require_text(link.get("pi_ipv4_cidr"), f"link {interface!r} Pi IPv4 CIDR"))
+        pi = ipaddress.ip_interface(require_text(link.get("pi_ipv4_cidr"), f"link {interface!r} server IPv4 CIDR"))
         device = ipaddress.ip_address(require_text(link.get("device_ipv4"), f"link {interface!r} device IPv4"))
     except ValueError as error:
         raise InventoryError(f"direct Ethernet link {interface!r} has an invalid IPv4 value: {error}") from error

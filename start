@@ -5,14 +5,14 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$root/scripts/lib/onboarding/prompts.sh"
 
 intro() {
-  printf '%s\n' 'Raspberry Pi print and scan server'
-  printf '%s\n' 'This repository turns a Raspberry Pi into a shared LAN print and scan server: it commissions printers through CUPS and scanners through ScanservJS, favouring driverless standards with isolated vendor support for older hardware.'
+  printf '%s\n' 'Print and scan server'
+  printf '%s\n' 'This repository turns a server into a shared LAN print and scan server: it commissions printers through CUPS and scanners through ScanservJS, favouring driverless standards with isolated vendor support for older hardware.'
 }
 
 command_reference() {
   group_header 'Commands'
   printf '  %-16s %s\n' 'setup' 'Prepare this machine (Python venv, Ansible). Run once per administrator machine.'
-  printf '  %-16s %s\n' 'onboard' 'First-time guided setup: connect to the Pi, discover devices, commission it. Run once per Pi.'
+  printf '  %-16s %s\n' 'onboard' 'First-time guided setup: connect to the server, discover devices, commission it. Run once per server.'
   printf '  %-16s %s\n' 'reconfigure' 'Rebuild server-level settings and all device definitions (target host, trusted LAN, direct Ethernet links, printers, scanners).'
   printf '  %-16s %s\n' 'manage-devices' 'Add, edit, delete or list printers, scanners and links without full onboarding.'
   printf '  %-16s %s\n' 'qa' 'Run the full repository check suite.'
@@ -29,7 +29,7 @@ show_help() {
   command_reference
   printf '\n'
   group_header 'Use case'
-  printf '  %-38s %s\n' 'First time, no Pi commissioned yet' '-> setup, then onboard'
+  printf '  %-38s %s\n' 'First time, no server commissioned yet' '-> setup, then onboard'
   printf '  %-38s %s\n' 'Add, edit, delete or list a device' '-> manage-devices'
   printf '  %-38s %s\n' 'Change the target host or trusted LAN' '-> reconfigure'
   printf '  %-38s %s\n' 'Add or change a direct Ethernet link' '-> reconfigure'
@@ -62,10 +62,10 @@ interactive_menu() {
   local default_command reason
   if is_commissioned; then
     default_command=manage-devices
-    reason='A Pi is already commissioned in this checkout. Use manage-devices to add, edit or remove printers, scanners and links.'
+    reason='A server is already commissioned in this checkout. Use manage-devices to add, edit or remove printers, scanners and links.'
   else
     default_command=onboard
-    reason='No Pi has been commissioned yet in this checkout. Run onboard first to connect, discover devices and commission it.'
+    reason='No server has been commissioned yet in this checkout. Run onboard first to connect, discover devices and commission it.'
   fi
   printf '\n' >&2
   recommendation "$reason"

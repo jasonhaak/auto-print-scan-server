@@ -60,7 +60,7 @@ Usage:
   scripts/manage-devices apply
   scripts/manage-devices --verbose ACTION
 
-Printer identity is its CUPS queue name. Scanner identity is its exact SANE device name. Link identity is its Raspberry Pi interface.
+Printer identity is its CUPS queue name. Scanner identity is its exact SANE device name. Link identity is its server interface.
 Every add, edit and delete creates a local backup before replacing the inventory atomically.
 EOF
 }
@@ -187,7 +187,7 @@ configure_printer() {
   local printer_identity_evidence=''
   cups_model=''
   if [[ "$driver" == package_profile ]]; then
-    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the Raspberry Pi. That happens next, right after this profile is chosen.' >&2
+    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the server. That happens next, right after this profile is chosen.' >&2
     profile_default=''
     if [[ -n "$original" ]]; then
       profile_default=$(field printer "$original" package_profile)
@@ -239,7 +239,7 @@ configure_scanner() {
       fi
     fi
   fi
-  printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
+  printf '%s\n' 'The SANE device name identifies this exact scanner. On the server, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
   while true; do
     name=$(ask 'Scanner device name' "${original:-${discovered_scanner_device_name:-}}")
     [[ -n "$name" ]] && break
@@ -320,18 +320,18 @@ configure_link() {
   fi
   input_required 'Direct Ethernet link'
   while true; do
-    interface=$(ask 'Raspberry Pi Ethernet interface' "$interface_default")
+    interface=$(ask 'Server Ethernet interface' "$interface_default")
     [[ "$interface" =~ ^[A-Za-z0-9_.-]+$ ]] && break
     cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   while true; do
-    pi_cidr=$(ask 'Raspberry Pi private IPv4 CIDR' "$pi_cidr_default")
+    pi_cidr=$(ask 'Server private IPv4 CIDR' "$pi_cidr_default")
     device_ipv4=$(ask 'Direct device IPv4 address' "$device_ipv4_default")
     same_direct_ipv4_link "$pi_cidr" "$device_ipv4" && break
     printf '%s\n' 'Use two host addresses in the same private /30, for example 192.168.50.1/30 and 192.168.50.2.' >&2
   done
   confirmation_block "Direct Ethernet link: $interface" \
-    "Pi CIDR|$pi_cidr" "Device IPv4|$device_ipv4"
+    "Server CIDR|$pi_cidr" "Device IPv4|$device_ipv4"
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
   [[ -n "$original" ]] && command+=(--original-interface "$original")
   command+=(--interface "$interface" --pi-ipv4-cidr "$pi_cidr" --device-ipv4 "$device_ipv4")
@@ -349,8 +349,8 @@ open_inventory_ssh_session() {
     printf '%s\n' 'Production server address or administrator is missing. Run ./scripts/onboard first.' >&2
     exit 1
   }
-  printf 'Connecting to %s@%s. SSH may request the Raspberry Pi password.\n' "$admin" "$host"
-  step_check_live 'Open the Raspberry Pi SSH session' "ssh control connection to $admin@$host" ssh_session_open || return 1
+  printf 'Connecting to %s@%s. SSH may request the server password.\n' "$admin" "$host"
+  step_check_live 'Open the server SSH session' "ssh control connection to $admin@$host" ssh_session_open || return 1
 }
 
 discover_for_add() {
@@ -381,7 +381,7 @@ apply_inventory() {
     if open_inventory_ssh_session; then
       ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
       if ! remote 'sudo -n true' >/dev/null 2>&1; then
-        printf '%s\n' 'Ansible needs the Raspberry Pi sudo password once for this run.'
+        printf '%s\n' 'Ansible needs the server sudo password once for this run.'
         ansible_arguments+=(--ask-become-pass)
       fi
       if step_stream command_output 'Apply inventory with Ansible' 'ansible-playbook playbooks/site.yml' \
@@ -390,7 +390,7 @@ apply_inventory() {
         return 0
       fi
     else
-      printf '%s\n' 'The Raspberry Pi connection failed before inventory could be applied.' >&2
+      printf '%s\n' 'The server connection failed before inventory could be applied.' >&2
     fi
     printf 'Apply failed. Technical transcript: %s\n' "$technical_transcript" >&2
     manual_recovery_command "$root" "$variables" "$inventory" playbooks/site.yml -e "print_server_commissioning=$commissioning"
@@ -402,7 +402,7 @@ apply_inventory() {
 
 offer_apply() {
   local commissioning=$1
-  if yes_default 'Apply this inventory change to the Raspberry Pi now?'; then
+  if yes_default 'Apply this inventory change to the server now?'; then
     apply_inventory "$commissioning"
   else
     printf '%s\n' 'Inventory is saved but not applied. Run ./scripts/manage-devices apply when ready.'
@@ -434,7 +434,7 @@ while true; do
         'add' 'Add a new printer, scanner or direct Ethernet link.' \
         'edit' 'Change an existing printer, scanner or link.' \
         'delete' 'Remove an existing printer, scanner or link.' \
-        'apply' 'Push all saved changes to the Raspberry Pi with Ansible.'
+        'apply' 'Push all saved changes to the server with Ansible.'
       action=$(ask_choice 'Device management action' 'list' list add edit delete apply)
       [[ "$action" != list ]] && break
     done
@@ -451,7 +451,7 @@ while true; do
         "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
       ;;
     apply)
-      yes_default 'Apply the saved inventory to the Raspberry Pi now?' || exit 0
+      yes_default 'Apply the saved inventory to the server now?' || exit 0
       apply_inventory false
       ;;
     add)

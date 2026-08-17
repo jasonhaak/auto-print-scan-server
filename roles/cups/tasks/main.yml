@@ -68,7 +68,7 @@
     fail_msg: >-
       Queue {{ item.name }} selected CUPS model {{ item.cups_model }}, but CUPS does not
       advertise it after installing package profile {{ item.package_profile }}. Run lpinfo -m
-      on the Raspberry Pi, then choose an advertised model before retrying.
+      on the server, then choose an advertised model before retrying.
   loop: "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}"
   loop_control:
     label: "{{ item.name }} -> {{ item.package_profile }}"

@@ -2,9 +2,9 @@
 
 [![Release](https://img.shields.io/github/v/release/jasonhaak/raspberry-print-server)](https://github.com/jasonhaak/raspberry-print-server/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/raspberry-print-server/quality.yml?branch=main&logo=github)](https://github.com/jasonhaak/raspberry-print-server/actions/workflows/quality.yml)
-[![Raspberry Pi OS](https://img.shields.io/badge/Raspberry%20Pi%20OS-Debian%20Trixie-C51A4A?logo=raspberrypi)](https://www.raspberrypi.com/software/operating-systems/)
+[![Debian Trixie](https://img.shields.io/badge/Debian-Trixie-A81D33?logo=debian)](https://www.debian.org/releases/trixie/)
 
-Automated Ansible deployment of one Raspberry Pi as a trusted-LAN print server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS.
+Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS. Built and tested on a Raspberry Pi, but the playbooks target any Debian-based host reachable over SSH — the server hardware isn't fixed.
 
 ## Table of Contents
 
@@ -31,11 +31,11 @@ Automated Ansible deployment of one Raspberry Pi as a trusted-LAN print server w
 
 ## Quick Start
 
-You will prepare the administrator machine, prepare a Raspberry Pi with SSH and run onboarding from the trusted LAN.
+You will prepare the administrator machine, prepare a server with SSH and run onboarding from the trusted LAN.
 
 ### 1. Prepare the Administrator Machine
 
-Use Linux, macOS or Windows with WSL2. The administrator machine runs the Bash onboarding script and Ansible over SSH. The Raspberry Pi does not need a desktop, Git checkout or development tooling.
+Use Linux, macOS or Windows with WSL2. The administrator machine runs the Bash onboarding script and Ansible over SSH. The server does not need a desktop, Git checkout or development tooling.
 
 Install or confirm Bash, OpenSSH and Python 3.12 or newer. Linux and macOS provide Bash and SSH by default. On Windows, use an Ubuntu or other Linux WSL2 distribution. Git is recommended for updates and configuration history, but a ZIP download also works.
 
@@ -60,9 +60,11 @@ Ansible runs on the administrator machine. The setup command creates `.venv` and
 ./scripts/setup
 ```
 
-Running `./scripts/onboard` performs this setup automatically when Ansible is not ready. Python is used only on the administrator machine. It is not required on the Raspberry Pi.
+Running `./scripts/onboard` performs this setup automatically when Ansible is not ready. Python is used only on the administrator machine. It is not required on the server.
 
-### 2. Prepare the Raspberry Pi
+### 2. Prepare the Server
+
+Any Debian-based host reachable over SSH with the compatibility variables below can run this repository. The steps below document the Raspberry Pi path, since that's what's actually built and tested; substitute your own provisioning method for other hardware.
 
 Use a **Raspberry Pi 4 Model B with 4 GB RAM** or newer as the recommended baseline for printing plus optional ScanservJS and OCR. Use at least 8 GB storage for printing only and at least 16 GB for scanner-enabled deployments.
 
@@ -74,24 +76,24 @@ Before writing the card, open Imager's OS Customization dialog and set:
 2. **Network**: wired Ethernet where possible or, for Wi-Fi, the SSID, password and wireless country.
 3. **Remote Access**: enable SSH and choose **Use Password Authentication**.
 
-Clients must share one normal LAN or VLAN with the Raspberry Pi. Printers and scanners may instead
-connect directly to an unused Raspberry Pi Ethernet port through a separate private link.
+Clients must share one normal LAN or VLAN with the server. Printers and scanners may instead
+connect directly to an unused server Ethernet port through a separate private link.
 
-Write the image, safely eject the card, insert it into the Raspberry Pi and power it on.
+Write the image, safely eject the card, insert it into the server and power it on.
 
-### 3. Give the Raspberry Pi a Stable Local Address
+### 3. Give the Server a Stable Local Address
 
-> **Note**: See Raspberry Pi's [Imager and SSH documentation](https://www.raspberrypi.com/documentation/computers/remote-access.html) for more information.
+> **Note**: See Raspberry Pi's [Imager and SSH documentation](https://www.raspberrypi.com/documentation/computers/remote-access.html) for more information on the Raspberry Pi path.
 
-The Raspberry Pi needs a predictable address so onboarding and future maintenance can reach it after a reboot. For a normal home network, create a **DHCP reservation** in the router:
+The server needs a predictable address so onboarding and future maintenance can reach it after a reboot. For a normal home network, create a **DHCP reservation** in the router:
 
 1. Open the router or modem administration page and find the list of connected devices, DHCP leases or network clients.
-2. Locate the Raspberry Pi by its hostname or MAC address. It may appear as `print-server`, `raspberrypi` or the hostname chosen in Imager.
+2. Locate the server by its hostname or MAC address. It may appear as `print-server`, `raspberrypi` or the hostname chosen during provisioning.
 3. Select **Reserve address**, **Static DHCP**, **Address reservation** or the equivalent option.
 4. Keep or choose an unused address in the normal LAN range, for example `192.168.178.50`, then save the change.
-5. Restart the Raspberry Pi or renew its DHCP lease. Confirm that the router gives it the reserved address.
+5. Restart the server or renew its DHCP lease. Confirm that the router gives it the reserved address.
 
-If the network already has local DNS, create a stable name such as `print-server.home` that resolves to the reserved Raspberry Pi address. `print-server.local` can work through mDNS, but it should not be the only management address because support differs between routers and client devices.
+If the network already has local DNS, create a stable name such as `print-server.home` that resolves to the reserved server address. `print-server.local` can work through mDNS, but it should not be the only management address because support differs between routers and client devices.
 
 ### 4. Run Onboarding
 
@@ -99,13 +101,13 @@ If the network already has local DNS, create a stable name such as `print-server
 ./scripts/onboard
 ```
 
-Run this command on the administrator machine from the repository directory. The wizard detects the local private network, then explicitly offers to search it, search another RFC1918 network or skip the search. A search range may contain at most 1,024 addresses. The resulting addresses are possible SSH servers, so select one only when you recognise it as the Raspberry Pi. The search does not authenticate or change any device.
+Run this command on the administrator machine from the repository directory. The wizard detects the local private network, then explicitly offers to search it, search another RFC1918 network or skip the search. A search range may contain at most 1,024 addresses. The resulting addresses are possible SSH servers, so select one only when you recognise it as the server. The search does not authenticate or change any device.
 
-The wizard asks for the Raspberry Pi address and bootstrap administrator, then opens one SSH session that it reuses for discovery and Ansible. Detected values are labelled clearly. Press Enter to accept a value only when it matches the intended server or device.
+The wizard asks for the server address and bootstrap administrator, then opens one SSH session that it reuses for discovery and Ansible. Detected values are labelled clearly. Press Enter to accept a value only when it matches the intended server or device.
 
 The wizard walks through the following process:
 
-1. **Connect to your Raspberry Pi**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the Raspberry Pi. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
+1. **Connect to your server**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the server. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
 2. **Confirm your trusted network**: reports the connected IPv4 route with its actual prefix, timezone and locale, then validates trusted IPv4 and optional IPv6 input.
 3. **Find printers and scanners**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected. A failed install or an empty result offers retry, a changed search scope, manual entry or stop.
 4. **Choose your devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link; a discovered scanner is only recommended when its identifier or hostname resolution is bound to that exact direct device address, never to an unrelated LAN scanner. A failed link, interface or ping offers retry, corrected settings, manual entry or stop. ScanservJS retention, OCR and port settings are shared by all scanners.
@@ -120,7 +122,7 @@ Searches and remote operations show a label and a result tag as they run; a succ
 After commissioning, confirm the optional CUPS test page. If a scanner is configured, confirm the optional scanner test PDF and open ScanservJS from a trusted-LAN browser, using the configured `scanservjs_port` (8080 by default):
 
 ```text
-http://<pi-hostname-or-address>:8080
+http://<server-hostname-or-address>:8080
 ```
 
 ### 6. Add, Change or Remove Devices
@@ -138,7 +140,7 @@ http://<pi-hostname-or-address>:8080
 ./scripts/manage-devices apply
 ```
 
-Running the command with no arguments shows current definitions and prompts for an action interactively; every other form runs that action directly. `add` offers scoped assisted discovery (printer-only or scanner-only, matching the device being added) before manual entry. `edit` keeps every current value as its prompt default. `delete` shows the exact definition and requires confirmation. Printer, scanner and direct Ethernet link changes create timestamped backups and replace only the selected definition. Links remain independent because one multifunction device can use the same link for printing and scanning; deleting a device never deletes its link. Deleting the only printer is rejected because the repository provisions a print server. Deleting the last scanner disables scanner services and timers while preserving completed scans.
+Running the command with no arguments shows current definitions and prompts for an action interactively; every other form runs that action directly. `add` offers scoped assisted discovery (printer-only or scanner-only, matching the device being added) before manual entry. `edit` keeps every current value as its prompt default. `delete` shows the exact definition and requires confirmation. Printer, scanner and direct Ethernet link changes create timestamped backups and replace only the selected definition. Links remain independent because one multifunction device can use the same link for printing and scanning; deleting a device never deletes its link. Deleting the only printer is rejected because the repository provisions a print and scan server. Deleting the last scanner disables scanner services and timers while preserving completed scans.
 
 Running `./scripts/onboard` after first setup offers this device workflow. Use `./scripts/onboard --reconfigure` only when server-level settings such as the target host, trusted LAN or direct Ethernet links must be rebuilt.
 
@@ -148,10 +150,10 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `common_supported_debian_major_versions` | No | `['13']` | Tested Raspberry Pi OS Debian bases. Add a release only after repository QA and hardware acceptance. |
-| `common_supported_architectures` | No | `[aarch64]` | Tested target architectures. This is model-independent; supported 64-bit Raspberry Pi boards report `aarch64`. |
-| `trusted_lan_cidrs` | Yes | None | IPv4 and optional IPv6 CIDRs allowed to reach Raspberry Pi-hosted services. |
-| `direct_ethernet_links` | No | `[]` | Private Pi-to-device NetworkManager links. These are never trusted client networks. |
+| `common_supported_debian_major_versions` | No | `['13']` | Tested Debian bases. Add a release only after repository QA and hardware acceptance. |
+| `common_supported_architectures` | No | `[aarch64]` | Tested target architectures. This is model-independent; supported 64-bit boards, including Raspberry Pi, report `aarch64`. |
+| `trusted_lan_cidrs` | Yes | None | IPv4 and optional IPv6 CIDRs allowed to reach server-hosted services. |
+| `direct_ethernet_links` | No | `[]` | Private server-to-device NetworkManager links. These are never trusted client networks. |
 | `managed_printers` | Yes | None | List of unique queue names, connections, device URIs and driver modes. |
 | `managed_scanners` | No | `[]` | List of SANE device names, connections, backend packages and optional friendly display names. |
 | `scanservjs_retention_days` | With scanner | None | Completed-scan retention period from 1 to 900 days. |
@@ -167,26 +169,26 @@ The wizard writes inventory-local values in `inventories/production/`. Do not pu
 | --- | --- | --- |
 | `ipp` or `ipps` | Driverless network printer | Preferred path. |
 | `socket` | JetDirect or AppSocket printer | Uses TCP port 9100 and normally needs a package profile. |
-| `lpd` | Older network printer | Requires the exact remote queue and normally a package profile. The Raspberry Pi does not host LPD. |
+| `lpd` | Older network printer | Requires the exact remote queue and normally a package profile. The server does not host LPD. |
 | `usb` | Locally connected printer | Requires `ipp_usb` or `legacy_usb`. |
 
-For a legacy printer, use `driver_mode: package_profile`. Onboarding first prepares the selected generic driver package, then lists the exact CUPS models advertised by that Raspberry Pi and requires an explicit choice. The queue stores both `package_profile` and `cups_model`; a future printer model therefore does not require a repository change. When the URI is `ipp://` or `ipps://`, onboarding may recommend a package profile from identity evidence, but never selects it automatically.
+For a legacy printer, use `driver_mode: package_profile`. Onboarding first prepares the selected generic driver package, then lists the exact CUPS models advertised by that server and requires an explicit choice. The queue stores both `package_profile` and `cups_model`; a future printer model therefore does not require a repository change. When the URI is `ipp://` or `ipps://`, onboarding may recommend a package profile from identity evidence, but never selects it automatically.
 
 ### Device Topologies
 
 Use **network** for a printer or multifunction device connected to the router or switch. This is the
 recommended setup because onboarding can discover both IPP printing and WSD/eSCL scanning.
 
-Use **direct Ethernet** only when the device is cabled to an unused Raspberry Pi Ethernet port. The
+Use **direct Ethernet** only when the device is cabled to an unused server Ethernet port. The
 device needs one static address set on its control panel or web interface. Onboarding recommends a
-private `/30` link such as Pi `192.168.50.1/30` and device `192.168.50.2`; it does not expose this
+private `/30` link such as server `192.168.50.1/30` and device `192.168.50.2`; it does not expose this
 link to trusted-LAN clients or run DHCP for it. Initial onboarding creates one link inline. Later
 links can be added, edited or deleted through `scripts/manage-devices`. A direct-link `/30` must
 not overlap any trusted-LAN CIDR.
 
 Use USB as a fallback when Ethernet is unavailable. USB commonly supports printing, but scanner support depends on a usable Linux SANE backend for that device. Onboarding accepts only an exact CUPS `usb://` endpoint or a new ipp-usb endpoint as printer evidence. It accepts exact standard SANE identifiers as scanner evidence. When `scanimage -L` reports a recognised preinstalled device backend such as `brother:bus…` or `brother:net…`, onboarding can retain that exact identifier without installing or changing the backend package.
 
-The playbooks do not check for one concrete Raspberry Pi model. They check Raspberry Pi OS, a tested Debian base and architecture through the compatibility variables above. This keeps future releases easy to add while preventing an untested operating-system upgrade from changing packages and services unexpectedly.
+The playbooks do not check for one concrete hardware model. They check the Debian base and architecture through the compatibility variables above, not the board or vendor. This keeps future releases easy to add while preventing an untested operating-system upgrade from changing packages and services unexpectedly.
 
 ### Scanner Settings
 
@@ -232,7 +234,7 @@ enable_remote_sane: false
 
 ## How it Works
 
-1. `scripts/onboard` runs on the administrator machine. It creates production inventory and invokes Ansible over SSH on the Raspberry Pi.
+1. `scripts/onboard` runs on the administrator machine. It creates production inventory and invokes Ansible over SSH on the server.
 2. Baseline roles validate the supported platform, configure users and SSH, then apply the trusted-LAN firewall policy.
 3. CUPS creates or updates every managed queue and removes only queues recorded as previously Ansible-managed. Avahi provides link-local DNS-SD discovery when a queue is shared. CUPS administration remains localhost-only.
 4. The scanner path installs SANE and the checksum-pinned ScanservJS package. Removing the last scanner stops browser scanning, remote SANE and scanner timers without deleting completed scans.
@@ -274,7 +276,7 @@ Run the same shell tests, inventory tests, YAML lint, Ansible lint and playbook 
 ./scripts/qa
 ```
 
-The static suite checks configuration syntax and Ansible conventions. Follow [acceptance testing](docs/acceptance-testing.md) for required Raspberry Pi, printer, scanner, mDNS and firewall acceptance checks.
+The static suite checks configuration syntax and Ansible conventions. Follow [acceptance testing](docs/acceptance-testing.md) for required server, printer, scanner, mDNS and firewall acceptance checks.
 
 ## Troubleshooting and Experimental Hardware
 

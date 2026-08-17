@@ -26,7 +26,7 @@ extract_loop() {
 }
 
 galaxy_loop=$(extract_loop "step_stream galaxy_output 'Install pinned Ansible collections'")
-commissioning_loop=$(extract_loop "step_stream ansible_output 'Commission the Raspberry Pi with Ansible'")
+commissioning_loop=$(extract_loop "step_stream ansible_output 'Commission the server with Ansible'")
 
 [[ -n "$galaxy_loop" ]]
 [[ -n "$commissioning_loop" ]]

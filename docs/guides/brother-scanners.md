@@ -1,6 +1,6 @@
 # Troubleshoot Brother scanners with brscan2
 
-Use this guide when a Brother printer is reachable from Raspberry Print Server but scanning does not work through the standard SANE path. It explains how to establish whether brscan2 is a suitable manual fallback, configure a verified Brother model and prove a real scan.
+Use this guide when a Brother printer is reachable from the print and scan server but scanning does not work through the standard SANE path. It explains how to establish whether brscan2 is a suitable manual fallback, configure a verified Brother model and prove a real scan.
 
 This is experimental operator guidance. It does not add Brother support to onboarding, install software automatically or claim that all Brother models work.
 
@@ -25,7 +25,7 @@ The external project is [dmikushin/brscan](https://github.com/dmikushin/brscan).
 
 Check the model data before installing a release or build. The MFC-7360N record below is currently a local addition and is not part of upstream `v1.0.1`. Installing that release alone does not enable this model.
 
-The brscan repository needs these changes before its release artifacts are a general Raspberry Print Server dependency:
+The brscan repository needs these changes before its release artifacts are a general dependency of this project:
 
 - make suffix-2 library symlinks respect `DESTDIR` during staged installation;
 - make the installed backend visible to the dynamic linker, so `brsaneconfig` works without `LD_LIBRARY_PATH`;
@@ -36,7 +36,7 @@ Until then, use a reviewed local build or a later upstream release that demonstr
 
 ## Direct Ethernet example
 
-For a device cabled directly to an unused Raspberry Pi Ethernet port, use a private `/30` link. The tested MFC-7360N configuration is:
+For a device cabled directly to an unused server Ethernet port, use a private `/30` link. The tested MFC-7360N configuration, on a Raspberry Pi, is:
 
 | Side | IPv4 configuration |
 | --- | --- |
@@ -45,7 +45,7 @@ For a device cabled directly to an unused Raspberry Pi Ethernet port, use a priv
 | MFC subnet mask | `255.255.255.252` |
 | MFC gateway | `0.0.0.0` |
 
-The Raspberry Print Server onboarding flow creates this link temporarily for discovery, then creates it permanently only after confirmation. Confirm the device is reachable before configuring a scanner:
+The onboarding flow creates this link temporarily for discovery, then creates it permanently only after confirmation. Confirm the device is reachable before configuring a scanner:
 
 ```bash
 ssh jason@192.168.178.33 'ping -c 3 192.168.50.2'
@@ -116,6 +116,6 @@ Success means the scanner moves and the command reports a non-empty image file. 
 
 ## Current limitations
 
-- This is a manual experimental setup. Raspberry Print Server does not install, update or persist brscan configuration through onboarding.
+- This is a manual experimental setup. Onboarding does not install, update or persist brscan configuration.
 - Additional Brother models require verified model data and a real hardware scan. Do not add a bulk list based only on model names.
 - A later upstream brscan release containing the required model data and packaging fixes can replace this manual path.

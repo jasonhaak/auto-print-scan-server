@@ -8,7 +8,7 @@ ssh_session_cleanup() {
 # A plain, non-interactive SSH command execution does not always inherit /usr/sbin and /sbin
 # (where lpinfo, sane-find-scanner and similar admin tools live) even though a login shell on the
 # same account would. Every remote command is prefixed with an explicit PATH so tool lookups are
-# consistent regardless of how the Raspberry Pi's SSH daemon and PAM configure a bare exec session.
+# consistent regardless of how the server's SSH daemon and PAM configure a bare exec session.
 remote_path_prefix='export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH";'
 remote() { ssh -o ControlPath="$ssh_socket" -o ControlMaster=auto "$admin@$host" "$remote_path_prefix $*"; }
 remote_tty() { ssh -tt -q -o ControlPath="$ssh_socket" -o ControlMaster=auto "$admin@$host" "$remote_path_prefix $*"; }

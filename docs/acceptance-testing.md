@@ -1,6 +1,6 @@
 # Commissioning Acceptance
 
-Commission a fresh Raspberry Pi OS Lite 64-bit host based on Debian Trixie by running the
+Commission a fresh Debian Trixie (or Raspberry Pi OS Lite 64-bit) host by running the
 onboarding wizard from Linux, macOS or WSL2:
 
 ```bash

@@ -240,7 +240,7 @@ choose_cups_model() {
     fi
   done <<<"$models"
   (( ${#candidates[@]} > 0 )) || {
-    printf 'CUPS did not advertise a model beginning with %s for profile %s. Choose another profile or inspect lpinfo -m on the Raspberry Pi.\n' "$prefix" "$profile" >&2
+    printf 'CUPS did not advertise a model beginning with %s for profile %s. Choose another profile or inspect lpinfo -m on the server.\n' "$prefix" "$profile" >&2
     return 1
   }
   input_required 'Exact CUPS model'
@@ -341,11 +341,11 @@ choose_usb_identity() {
   (( ${#candidates[@]} > 0 )) || return 1
   if (( ${#candidates[@]} == 1 )); then
     identity=${candidates[0]##*|}
-    ask_detected 'USB vendor:product identity from lsusb' "$identity" 'This USB device was detected on the Raspberry Pi. Enter a different value only when it is not the intended printer.'
+    ask_detected 'USB vendor:product identity from lsusb' "$identity" 'This USB device was detected on the server. Enter a different value only when it is not the intended printer.'
     return
   fi
   candidate_count=0
-  choice=$(choose_candidate 'USB devices detected on the Raspberry Pi. Select the intended printer or enter an identity manually.' "${candidates[@]}")
+  choice=$(choose_candidate 'USB devices detected on the server. Select the intended printer or enter an identity manually.' "${candidates[@]}")
   [[ "$choice" == manual ]] && { printf '%s' manual; return; }
   printf '%s' "${choice##*|}"
 }

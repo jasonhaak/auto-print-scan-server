@@ -44,10 +44,10 @@ collect_usb_identity_from_lsusb() {
 collect_printer_definition() {
   local topology_default=network
   [[ "${discovered_printer_connection:-}" == usb ]] && topology_default=usb
-  printf '\n%s\n' 'Choose how this device reaches the Raspberry Pi. This controls which discovery and connection settings are used.' >&2
+  printf '\n%s\n' 'Choose how this device reaches the server. This controls which discovery and connection settings are used.' >&2
   printf '%s\n' 'Connection preference, when the device supports it:' \
     '  1. network: Ethernet through the router or switch. This is the simplest path and can support standard printing and scanning.' \
-    '  2. direct_ethernet: Ethernet directly to an unused Raspberry Pi port when the device cannot reach the router.' \
+    '  2. direct_ethernet: Ethernet directly to an unused server port when the device cannot reach the router.' \
     '  3. usb: a fallback that often supports printing; scanning needs a usable Linux SANE backend.' >&2
   printf '\n' >&2
   if [[ "$topology_default" == usb ]]; then
@@ -58,7 +58,7 @@ collect_printer_definition() {
   local -a topology_options=(network usb)
   [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet usb)
   local topology
-  topology=$(ask_choice 'How is this device connected to the Raspberry Pi?' "$topology_default" "${topology_options[@]}")
+  topology=$(ask_choice 'How is this device connected to the server?' "$topology_default" "${topology_options[@]}")
   if [[ "$topology" == direct_ethernet ]]; then
     discovered_printer_connection=''
     discovered_printer_uri=''
@@ -133,7 +133,7 @@ collect_scanner_definition() {
   [[ "${discovered_scanner_connection:-}" == usb ]] && topology_default=usb
   local -a topology_options=(network ipp ipps usb)
   [[ -z "$direct_ethernet_interface" ]] && topology_options=(network direct_ethernet ipp ipps usb)
-  printf '\n%s\n' 'Choose how this device reaches the Raspberry Pi. network is an exact SANE identifier reached over IP (including a preinstalled backend'"'"'s own net: identifier); ipp/ipps request a driverless eSCL/AirScan endpoint explicitly; usb is a fallback that needs a usable Linux SANE backend for the device.' >&2
+  printf '\n%s\n' 'Choose how this device reaches the server. network is an exact SANE identifier reached over IP (including a preinstalled backend'"'"'s own net: identifier); ipp/ipps request a driverless eSCL/AirScan endpoint explicitly; usb is a fallback that needs a usable Linux SANE backend for the device.' >&2
   local connection
   connection=$(ask_choice 'Scanner connection' "${discovered_scanner_connection:-$topology_default}" "${topology_options[@]}")
   if [[ "$connection" == direct_ethernet ]]; then
@@ -251,7 +251,7 @@ select_or_collect_printer() {
     driver=$(ask_choice 'Printer driver mode' "$driver_default" driverless package_profile)
   fi
   if [[ "$driver" == package_profile ]]; then
-    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the Raspberry Pi. That happens in its own step, after every device has been added and before the final review.' >&2
+    printf '%s\n' 'A package_profile printer needs its driver package installed and its exact CUPS model selected on the server. That happens in its own step, after every device has been added and before the final review.' >&2
     collect_legacy_printer_profile "$COLLECTED_PRINTER_URI" ''
     printer_identity_evidence=$COLLECTED_PRINTER_IDENTITY_EVIDENCE
     profile=$COLLECTED_PRINTER_PROFILE
@@ -273,7 +273,7 @@ select_or_collect_scanner() {
   if [[ "$choice" != manual ]]; then
     printf 'Detected SANE device name: %s. Press Enter to keep it, or enter another identifier if this is not the intended scanner.\n' "$discovered_scanner_device_name" >&2
   else
-    printf '%s\n' 'The SANE device name identifies this exact scanner. On the Raspberry Pi, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
+    printf '%s\n' 'The SANE device name identifies this exact scanner. On the server, run scanimage -L and copy the text inside the quotes after device, for example airscan:e0:Office_Scanner.' >&2
   fi
   while true; do
     device_name=$(ask 'Scanner device name' "${discovered_scanner_device_name:-}")
