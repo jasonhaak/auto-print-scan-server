@@ -273,10 +273,10 @@ start_cups_block=$(awk '
 ' "$root/scripts/lib/onboarding/device-discovery.sh")
 [[ "$start_cups_block" == *'wait_for_cups_ready'* ]]
 
-# WSD (the protocol this repo's own tested Brother MFC-7360N uses for AirScan, per
-# docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
-# inherently variable timing. Reproduced live: running scanimage -L standalone on the server found
-# the scanner every time, but discover_devices' single attempt found it roughly every other run
+# WSD (the protocol this repo's own tested Brother MFC-7360N uses for AirScan) discovers devices
+# via a multicast probe/response cycle with inherently variable timing. Reproduced live: running
+# scanimage -L standalone on the server found the scanner every time, but discover_devices' single
+# attempt found it roughly every other run
 # -- and even 3 retries (2s apart) still occasionally came back empty in a later live run.
 # scan_for_scanners retries up to 5 times with no added pause between attempts (each
 # scanimage -L invocation already blocks for its own WSD response window, so extra sleep only
@@ -464,7 +464,7 @@ fi
 # The primary printer's connection topology (network/direct_ethernet/usb) must never clear a
 # separately-discovered scanner. A multifunction device commonly uses a different connection per
 # function -- e.g. this repo's own tested Brother MFC-7360N prints over USB but scans over the
-# network via AirScan (docs/guides/brother-scanners.md). Topology/connection/URI/USB collection
+# network via AirScan. Topology/connection/URI/USB collection
 # now lives entirely in the shared collect_printer_definition (device-decisions.sh, covered by
 # test/onboarding_device_decisions_test.sh) -- scripts/onboard must not inline its own copy of
 # that logic (which is exactly what produced the original bug) or clear a scanner explicitly.

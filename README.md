@@ -1,10 +1,10 @@
-# raspberry-print-server
+# auto-print-scan-server
 
-[![Release](https://img.shields.io/github/v/release/jasonhaak/raspberry-print-server)](https://github.com/jasonhaak/raspberry-print-server/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/raspberry-print-server/quality.yml?branch=main&logo=github)](https://github.com/jasonhaak/raspberry-print-server/actions/workflows/quality.yml)
+[![Release](https://img.shields.io/github/v/release/jasonhaak/auto-print-scan-server)](https://github.com/jasonhaak/auto-print-scan-server/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/auto-print-scan-server/quality.yml?branch=main&logo=github)](https://github.com/jasonhaak/auto-print-scan-server/actions/workflows/quality.yml)
 [![Debian Trixie](https://img.shields.io/badge/Debian-Trixie-A81D33?logo=debian)](https://www.debian.org/releases/trixie/)
 
-Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS. Built and tested on a Raspberry Pi, but the playbooks target any Debian-based host reachable over SSH — the server hardware isn't fixed.
+Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS.
 
 ## Table of Contents
 
@@ -17,7 +17,6 @@ Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, l
 - [How it Works](#how-it-works)
 - [Installation & Development](#installation--development)
 - [Testing](#testing)
-- [Troubleshooting and Experimental Hardware](#troubleshooting-and-experimental-hardware)
 - [Author & Licence](#author--licence)
 
 ## Features
@@ -50,8 +49,8 @@ python3 --version
 The repository can be cloned with:
 
 ```bash
-git clone https://github.com/jasonhaak/raspberry-print-server.git
-cd raspberry-print-server
+git clone https://github.com/jasonhaak/auto-print-scan-server.git
+cd auto-print-scan-server
 ```
 
 Ansible runs on the administrator machine. The setup command creates `.venv` and installs the pinned tools as well as Ansible collections without modifying the system Python installation:
@@ -246,8 +245,8 @@ enable_remote_sane: false
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/jasonhaak/raspberry-print-server.git
-   cd raspberry-print-server
+   git clone https://github.com/jasonhaak/auto-print-scan-server.git
+   cd auto-print-scan-server
    ```
 
 2. **Install dependencies**
@@ -277,10 +276,6 @@ Run the same shell tests, inventory tests, YAML lint, Ansible lint and playbook 
 ```
 
 The static suite checks configuration syntax and Ansible conventions. Follow [acceptance testing](docs/acceptance-testing.md) for required server, printer, scanner, mDNS and firewall acceptance checks.
-
-## Troubleshooting and Experimental Hardware
-
-- [Brother scanners with brscan2](docs/guides/brother-scanners.md): manual fallback when a Brother scanner is available but standard SANE backends cannot perform a scan.
 
 ## Author & Licence
 

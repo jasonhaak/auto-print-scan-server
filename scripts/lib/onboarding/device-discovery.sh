@@ -513,14 +513,13 @@ discover_direct_ethernet_device() {
   direct_ethernet_discovery_cleanup
 }
 
-# WSD (used by this repo's own tested Brother MFC-7360N AirScan setup, per
-# docs/guides/brother-scanners.md) discovers devices via a multicast probe/response cycle with
-# inherently variable timing -- reproduced live: a standalone scanimage -L found the scanner
-# every time, but a single discovery attempt found it roughly every other run, and even 3
-# retries 2s apart still occasionally came back empty. Retry up to 5 times with no added pause
-# between attempts (each scanimage -L call already blocks on its own WSD response window, so
-# extra sleep only adds wall-clock time without improving odds), showing the attempt number in
-# the step label so a run needing several attempts doesn't look stuck.
+# WSD (used by this repo's own tested Brother MFC-7360N AirScan setup) discovers devices via a
+# multicast probe/response cycle with inherently variable timing -- reproduced live: a standalone
+# scanimage -L found the scanner every time, but a single discovery attempt found it roughly every
+# other run, and even 3 retries 2s apart still occasionally came back empty. Retry up to 5 times
+# with no added pause between attempts (each scanimage -L call already blocks on its own WSD
+# response window, so extra sleep only adds wall-clock time without improving odds), showing the
+# attempt number in the step label so a run needing several attempts doesn't look stuck.
 #
 # This repo is general-purpose, not tuned to any one operator's hardware: an earlier version
 # returned as soon as any candidate was found, which would silently miss a second scanner that
