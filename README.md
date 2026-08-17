@@ -4,16 +4,13 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/auto-print-scan-server/ci.yml?branch=main&logo=github)](https://github.com/jasonhaak/auto-print-scan-server/actions/workflows/ci.yml)
 [![Debian Trixie](https://img.shields.io/badge/Debian-Trixie-A81D33?logo=debian)](https://www.debian.org/releases/trixie/)
 
-Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS.
+This project turns a Debian host into a print and scan server for one trusted LAN. It manages CUPS queues, optional ScanservJS browser scanning and selected SANE access from an administrator machine over SSH. Guided onboarding collects the network and device settings, shows the resulting configuration and then commissions the server.
 
 ## Table of Contents
 
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
-  - [Printer Connections](#printer-connections)
-  - [Scanner Settings](#scanner-settings)
-  - [Example Configuration](#example-configuration)
 - [How it Works](#how-it-works)
 - [Installation & Development](#installation--development)
 - [Testing](#testing)
@@ -21,49 +18,68 @@ Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, l
 
 ## Features
 
-- **Network printing**: Connects multiple printers by Wi-Fi, Ethernet or USB and shares selected CUPS queues with devices on the home network.
-- **Browser scanning**: Makes multiple optional scanners available through one ScanservJS interface, so users select a device and create PDF scans in a browser.
-- **Home-network access**: Restricts printing, scanning and optional remote SANE to the configured local IPv4 and IPv6 networks, excluding guest and untrusted devices.
-- **Standards before drivers**: Prefers driverless IPP Everywhere and requires an explicit open-source package profile only when an older printer needs one.
-- **Assisted lifecycle**: Guides first setup, discovers device settings and provides focused add, edit and delete commands for later changes.
-- **Automatic scan cleanup**: Deletes completed scans after the selected retention period and warns administrators before scan storage becomes too low.
+- **Guided onboarding**: Collects server and device settings, discovers usable devices where possible and commissions the resulting configuration after review.
+- **Scoped administration**: Adds, edits or removes one device definition without repeating first-time server setup.
+- **Managed CUPS queues**: Creates and updates declared printer queues for IPP, IPPS, Socket, LPD and USB connections.
+- **Browser scanning**: Exposes managed scanners through ScanservJS with PDF output, OCR, retention and low-storage warnings.
+- **Trusted-LAN access**: Limits SSH, printing, browser scanning and optional remote SANE to configured IPv4 and IPv6 CIDRs.
+- **Driver selection**: Uses driverless standards first, then explicit Debian package profiles for supported legacy printers.
+- **Direct device links**: Supports an isolated Ethernet link between the server and a printer or multifunction device.
 
 ## Quick Start
 
-You will prepare the administrator machine, prepare a server with SSH and run onboarding from the trusted LAN.
+The administrator machine runs Bash, Python and Ansible. The server only needs Debian, SSH access and a bootstrap administrator with `sudo`.
 
 ### 1. Prepare the Administrator Machine
 
-Use Linux, macOS or Windows with WSL2. The administrator machine runs the Bash onboarding script and Ansible over SSH. The server does not need a desktop, Git checkout or development tooling.
+Use Linux, macOS or Windows with WSL2. The administrator machine needs:
 
-Install or confirm Bash, OpenSSH and Python 3.12 or newer. Linux and macOS provide Bash and SSH by default. On Windows, use an Ubuntu or other Linux WSL2 distribution. Git is recommended for updates and configuration history, but a ZIP download also works.
-
-You can check versions with:
-
-```bash
-bash --version
-ssh -V
-python3 --version
-```
-
-The repository can be cloned with:
+- Bash to run the project scripts.
+- OpenSSH to connect to the server.
+- Python 3.12 or later to run Ansible locally.
+- Git to clone and update the repository. A ZIP download also works, but does not provide update history.
 
 ```bash
 git clone https://github.com/jasonhaak/auto-print-scan-server.git
 cd auto-print-scan-server
 ```
 
-Ansible runs on the administrator machine. The setup command creates `.venv` and installs the pinned tools as well as Ansible collections without modifying the system Python installation:
+### 2. Install the Administrator Tools
+
+Ansible runs from the administrator machine, not from the server. Run the setup command once for each administrator machine to create the repository-local Python environment and install the pinned Ansible tools and collections.
 
 ```bash
 ./scripts/setup
 ```
 
-Running `./scripts/onboard` performs this setup automatically when Ansible is not ready. Python is used only on the administrator machine. It is not required on the server.
+`./scripts/setup` creates `.venv` in the repository and does not modify the system Python installation.
 
-### 2. Prepare the Server
+### 3. Prepare the Server
 
-Any Debian-based host reachable over SSH with the compatibility variables below can run this repository. The steps below document the Raspberry Pi path, since that's what's actually built and tested; substitute your own provisioning method for other hardware.
+The server must meet these requirements:
+
+- A 64-bit system running Debian 13. This includes current 64-bit Raspberry Pi systems and conventional Intel or AMD computers.
+- SSH reachable from the administrator machine, using password or key authentication.
+- A bootstrap administrator account with `sudo` access.
+- One Ethernet or Wi-Fi connection on the trusted LAN; an additional unused Ethernet interface is optional for a direct device link.
+
+Install Debian 13 with the installer or image supplied for the hardware. During installation, choose a hostname, create the bootstrap administrator, connect the server to the trusted LAN and enable SSH.
+
+#### 2.1. DHCP Reservation
+
+Whichever method you use, once the device is running you still need a stable, predictable address for it, since onboarding and later maintenance both need to find the same server again after a reboot. For a normal home network, create a **DHCP reservation** in the router:
+
+1. Open the router or modem administration page and find the list of connected devices, DHCP leases or network clients.
+2. Locate the server by its hostname or MAC address.
+3. Select **Reserve address**, **Static DHCP**, **Address reservation** or the equivalent option.
+4. Keep or choose an unused address in the normal LAN range, for example `192.168.178.50`, then save the change.
+5. Restart the server or renew its DHCP lease. Confirm that the router gives it the reserved address.
+
+If the network already has local DNS, create a stable name such as `print-scan-server.home` that resolves to the reserved server address. `print-scan-server.local` can work through mDNS, but it should not be the only management address because support differs between routers and client devices.
+
+#### Raspberry Pi example
+
+> NOTE: This is the concrete path actually built and tested for this repository.
 
 Use a **Raspberry Pi 4 Model B with 4 GB RAM** or newer as the recommended baseline for printing plus optional ScanservJS and OCR. Use at least 8 GB storage for printing only and at least 16 GB for scanner-enabled deployments.
 
@@ -75,131 +91,127 @@ Before writing the card, open Imager's OS Customization dialog and set:
 2. **Network**: wired Ethernet where possible or, for Wi-Fi, the SSID, password and wireless country.
 3. **Remote Access**: enable SSH and choose **Use Password Authentication**.
 
-Clients must share one normal LAN or VLAN with the server. Printers and scanners may instead
-connect directly to an unused server Ethernet port through a separate private link.
+Clients must share one normal LAN or VLAN with the server. Printers and scanners may instead connect directly to an unused server Ethernet port through a separate private link.
 
-Write the image, safely eject the card, insert it into the server and power it on.
+Write the image, safely eject the card, insert it into the server and power it on. It may appear in the router's DHCP client list as `print-server`, `raspberrypi` or the hostname chosen above.
 
-### 3. Give the Server a Stable Local Address
+See Raspberry Pi's [Imager and SSH documentation](https://www.raspberrypi.com/documentation/computers/remote-access.html) for more detail on this path.
 
-> **Note**: See Raspberry Pi's [Imager and SSH documentation](https://www.raspberrypi.com/documentation/computers/remote-access.html) for more information on the Raspberry Pi path.
+### 4. Give Network Devices Stable Addresses
 
-The server needs a predictable address so onboarding and future maintenance can reach it after a reboot. For a normal home network, create a **DHCP reservation** in the router:
+> **Note:** This step applies only to printers and scanners connected over a network. USB devices do not need a network address.
 
-1. Open the router or modem administration page and find the list of connected devices, DHCP leases or network clients.
-2. Locate the server by its hostname or MAC address. It may appear as `print-server`, `raspberrypi` or the hostname chosen during provisioning.
-3. Select **Reserve address**, **Static DHCP**, **Address reservation** or the equivalent option.
-4. Keep or choose an unused address in the normal LAN range, for example `192.168.178.50`, then save the change.
-5. Restart the server or renew its DHCP lease. Confirm that the router gives it the reserved address.
+Network printers and scanners need addresses that remain stable after a restart. The appropriate method depends on how the device connects:
 
-If the network already has local DNS, create a stable name such as `print-server.home` that resolves to the reserved server address. `print-server.local` can work through mDNS, but it should not be the only management address because support differs between routers and client devices.
+| Connection | What to configure before onboarding |
+| --- | --- |
+| Router or switch | Create a DHCP reservation for the printer or scanner in the router, using its MAC address. This lets the device keep one LAN address without configuring an address on the device itself. |
+| Direct Ethernet link | Configure a static private IPv4 address on the device through its control panel or web interface. A typical link uses server `192.168.50.1/30` and device `192.168.50.2`. The addresses must not overlap the trusted LAN. |
+| USB | No network address is needed. |
 
-### 4. Run Onboarding
+Onboarding configures the server side of a direct Ethernet link after you enter its details. It cannot configure the device's own static address.
+
+### 5. Run Onboarding
 
 ```bash
 ./scripts/onboard
 ```
 
-Run this command on the administrator machine from the repository directory. The wizard detects the local private network, then explicitly offers to search it, search another RFC1918 network or skip the search. A search range may contain at most 1,024 addresses. The resulting addresses are possible SSH servers, so select one only when you recognise it as the server. The search does not authenticate or change any device.
+The wizard opens a reusable SSH session for the onboarding, confirms the trusted LAN, discovers printers and scanners, collects device definitions, writes production inventory and commissions the server. It requests SSH and `sudo` passwords interactively and never stores them in inventory or backups.
 
-The wizard asks for the server address and bootstrap administrator, then opens one SSH session that it reuses for discovery and Ansible. Detected values are labelled clearly. Press Enter to accept a value only when it matches the intended server or device.
+Before it writes inventory or changes the server, onboarding shows a non-secret summary. It creates local timestamped backups in `.onboard-backups/` and retains full sanitised transcripts in `.onboard-logs/`. Use `./scripts/onboard --verbose` to show every check's technical output.
 
-The wizard walks through the following process:
+### 6. Use the Services
 
-1. **Connect to your server**: searches the detected or manually entered private network for SSH servers when requested, explains the first SSH host-key confirmation, verifies the bootstrap user once and verifies `sudo` access before changing the server. SSH and sudo failures offer retry, a corrected address or user, or stop in place, without repeating earlier steps.
-2. **Confirm your trusted network**: reports the connected IPv4 route with its actual prefix, timezone and locale, then validates trusted IPv4 and optional IPv6 input.
-3. **Find printers and scanners**: asks whether to search all connections, LAN only, USB only or skip discovery. With permission, it installs diagnostic tools and checks standard CUPS, DNS-SD, ipp-usb and SANE evidence. Advertised scanners are shown as hints, but only exact SANE identifiers can be selected. A failed install or an empty result offers retry, a changed search scope, manual entry or stop.
-4. **Choose your devices**: prominently asks how the device is connected and always permits LAN, direct Ethernet or USB. A direct link temporarily configures an isolated NetworkManager connection and checks IPP, CUPS SNMP, ports 9100 and 515 plus SANE before removing the link; a discovered scanner is only recommended when its identifier or hostname resolution is bound to that exact direct device address, never to an unrelated LAN scanner. A failed link, interface or ping offers retry, corrected settings, manual entry or stop. ScanservJS retention, OCR and port settings are shared by all scanners.
-5. **Review and commission**: shows a non-secret summary before writing production inventory or provisioning services. Confirmation then creates timestamped local backups in `.onboard-backups/`, writes production inventory and runs Ansible with normal progress output. A failed collection install or commissioning run offers retry, switching to `scripts/manage-devices` or stop, with the committed inventory and backup left untouched either way. It then offers confirmed printer and scanner tests: the printer test tracks the actual CUPS job and polls for a bounded, reported outcome without claiming paper output; the scanner test requires non-empty output and checks that ScanservJS has a real local listener, not only that its service is enabled.
-
-SSH and sudo passwords are requested interactively and are never stored in inventory or backups. When a standard local SSH public key exists, onboarding installs it for the managed administrator so later maintenance can connect without the account password. If commissioning or a real device test fails, the generated inventory remains available for correction and rerunning.
-
-Searches and remote operations show a label and a result tag as they run; a successful read-only check collapses to that single line, while a failed check or any state-changing action always shows its full command and output. The complete sanitized transcript is retained with mode `0600` under `.onboard-logs/` regardless of what the terminal shows. Run `./scripts/onboard --verbose` to show every check's full output, not only failures and actions.
-
-### 5. Test the Configured Devices
-
-After commissioning, confirm the optional CUPS test page. If a scanner is configured, confirm the optional scanner test PDF and open ScanservJS from a trusted-LAN browser, using the configured `scanservjs_port` (8080 by default):
+After commissioning, print from clients on the trusted LAN. Shared queues are advertised through DNS-SD. If a scanner is configured, open ScanservJS in a trusted-LAN browser:
 
 ```text
 http://<server-hostname-or-address>:8080
 ```
 
-### 6. Add, Change or Remove Devices
+`8080` is the default; use the configured `scanservjs_port` if it differs. ScanservJS has no application login, so completed scans are visible to everyone on the trusted LAN until the retention timer removes them.
 
-```bash
-./scripts/manage-devices
-./scripts/manage-devices list
-./scripts/manage-devices add printer
-./scripts/manage-devices add scanner
-./scripts/manage-devices add link
-./scripts/manage-devices edit printer office-printer
-./scripts/manage-devices edit link eth1
-./scripts/manage-devices delete scanner 'airscan:e0:Office Scanner'
-./scripts/manage-devices delete link eth1
-./scripts/manage-devices apply
-```
+### 7. Manage Devices After Onboarding
 
-Running the command with no arguments shows current definitions and prompts for an action interactively; every other form runs that action directly. `add` offers scoped assisted discovery (printer-only or scanner-only, matching the device being added) before manual entry. `edit` keeps every current value as its prompt default. `delete` shows the exact definition and requires confirmation. Printer, scanner and direct Ethernet link changes create timestamped backups and replace only the selected definition. Links remain independent because one multifunction device can use the same link for printing and scanning; deleting a device never deletes its link. Deleting the only printer is rejected because the repository provisions a print and scan server. Deleting the last scanner disables scanner services and timers while preserving completed scans.
+Use `scripts/manage-devices` for a printer, scanner or direct-link change. It backs up the production inventory before each add, edit or delete and only changes the selected definition.
 
-Running `./scripts/onboard` after first setup offers this device workflow. Use `./scripts/onboard --reconfigure` only when server-level settings such as the target host, trusted LAN or direct Ethernet links must be rebuilt.
+Use it after initial commissioning when the server itself is unchanged. It is the narrower path for replacing a printer, adding a scanner or correcting one device endpoint. The script saves each inventory change first, then offers to apply it to the server.
+
+| Command | Use |
+| --- | --- |
+| `./scripts/manage-devices --help` | Show the available commands and the identity each command expects. |
+| `./scripts/manage-devices` | List the current definitions and open an interactive menu. |
+| `./scripts/manage-devices list` | Report the managed printers, scanners and direct Ethernet links without changing them. |
+| `./scripts/manage-devices add printer` | Discover and add a printer. Use `add scanner` or `add link` for the other definition types. |
+| `./scripts/manage-devices edit printer office-printer` | Edit one definition by its queue name, exact SANE device name or server Ethernet interface. Existing values are prompt defaults, so Enter keeps them. |
+| `./scripts/manage-devices delete scanner 'airscan:e0:Office Scanner'` | Show one definition and request confirmation before removing it. Deleting a printer or scanner does not remove an independent direct Ethernet link. |
+| `./scripts/manage-devices apply` | Provision the current inventory without changing a definition. |
+
+### Command Overview
+
+`./start` is the repository entry point. Run it with no arguments to open an interactive menu or use `./start help` for the complete command reference.
+
+| Command | Use |
+| --- | --- |
+| `./start` | Open the interactive menu and choose the appropriate workflow. |
+| `./start setup` | Prepare the administrator machine with the local Python environment and Ansible dependencies. |
+| `./start onboard` | Run first-time guided server setup and commissioning. |
+| `./start reconfigure` | Rebuild server-level settings and revisit every device definition. |
+| `./start manage-devices` | Add, edit, delete or apply a scoped device change. |
+| `./start qa` | Run the repository validation suite. |
+| `./start help` | Show this command reference and usage guidance. |
 
 ## Configuration
 
-The wizard writes inventory-local values in `inventories/production/`. Do not put passwords in inventory.
+Onboarding writes non-secret production values to `inventories/production/`. Do not store passwords in inventory.
+
+### Variable Descriptions
+
+These variables are the declared state of the server. Onboarding writes them to production inventory and later Ansible runs compare that inventory with the server before creating, updating or removing only project-managed resources.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `common_supported_debian_major_versions` | No | `['13']` | Tested Debian bases. Add a release only after repository QA and hardware acceptance. |
-| `common_supported_architectures` | No | `[aarch64]` | Tested target architectures. This is model-independent; supported 64-bit boards, including Raspberry Pi, report `aarch64`. |
+| `common_supported_debian_major_versions` | No | `['13']` | Debian major versions accepted by the platform validation. Add one only after repository QA and hardware acceptance. |
+| `common_supported_architectures` | No | `[aarch64, x86_64]` | Target architectures accepted by the platform validation. |
 | `trusted_lan_cidrs` | Yes | None | IPv4 and optional IPv6 CIDRs allowed to reach server-hosted services. |
-| `direct_ethernet_links` | No | `[]` | Private server-to-device NetworkManager links. These are never trusted client networks. |
-| `managed_printers` | Yes | None | List of unique queue names, connections, device URIs and driver modes. |
-| `managed_scanners` | No | `[]` | List of SANE device names, connections, backend packages and optional friendly display names. |
-| `scanservjs_retention_days` | With scanner | None | Completed-scan retention period from 1 to 900 days. |
-| `scanservjs_ocr_languages` | With scanner | `[eng]` | Selected Tesseract languages, for example `[eng, deu]`. |
-| `scanservjs_port` | With scanner | `8080` | Local TCP port ScanservJS listens on, from 1 to 65535. |
-| `scanservjs_page_splitting` | No | `false` | When enabled, ScanservJS also writes one PDF per scanned page alongside the normal multipage PDF. |
-| `enable_remote_sane` | No | `false` | Enables SANE-native access for trusted-LAN Linux clients. |
+| `direct_ethernet_links` | No | `[]` | Private NetworkManager links between the server and devices; never trusted client networks. |
+| `managed_printers` | Yes | None | Printer queue names, endpoints, driver modes and sharing settings. |
+| `managed_scanners` | No | `[]` | Exact SANE device names, connection details, backend packages and display names. |
+| `scanservjs_retention_days` | With scanner | None | Days to retain completed scans, from `1` to `900`. |
+| `scanservjs_ocr_languages` | With scanner | `[eng]` | Tesseract language codes, such as `[eng, deu]`. |
+| `scanservjs_port` | With scanner | `8080` | ScanservJS TCP port, from `1` to `65535`. |
+| `scanservjs_page_splitting` | No | `false` | Also writes one PDF per scanned page. |
+| `enable_remote_sane` | No | `false` | Enables SANE-native access for trusted-LAN clients. |
 | `enable_unattended_upgrades` | No | `false` | Enables unattended security updates without automatic reboot. |
 
 ### Printer Connections
 
 | Connection | Use | Notes |
 | --- | --- | --- |
-| `ipp` or `ipps` | Driverless network printer | Preferred path. |
-| `socket` | JetDirect or AppSocket printer | Uses TCP port 9100 and normally needs a package profile. |
-| `lpd` | Older network printer | Requires the exact remote queue and normally a package profile. The server does not host LPD. |
-| `usb` | Locally connected printer | Requires `ipp_usb` or `legacy_usb`. |
+| `ipp` or `ipps` | Driverless network printer | Preferred connection. |
+| `socket` | JetDirect or AppSocket printer | Uses TCP port `9100` and normally needs a package profile. |
+| `lpd` | Older network printer | Requires the remote queue name; the server does not provide LPD. |
+| `usb` | Locally connected printer | Requires either `ipp_usb` or `legacy_usb`. |
 
-For a legacy printer, use `driver_mode: package_profile`. Onboarding first prepares the selected generic driver package, then lists the exact CUPS models advertised by that server and requires an explicit choice. The queue stores both `package_profile` and `cups_model`; a future printer model therefore does not require a repository change. When the URI is `ipp://` or `ipps://`, onboarding may recommend a package profile from identity evidence, but never selects it automatically.
+For `driver_mode: package_profile`, the queue also requires a `package_profile` and an exact `cups_model`. Onboarding installs the selected profile, then offers only CUPS models currently advertised by the server. It never selects a model automatically.
 
 ### Device Topologies
 
-Use **network** for a printer or multifunction device connected to the router or switch. This is the
-recommended setup because onboarding can discover both IPP printing and WSD/eSCL scanning.
+| Topology | Use when | Notes |
+| --- | --- | --- |
+| `network` | The device connects to the normal router or switch. | The default path for IPP printing and standard network scanning. |
+| `direct_ethernet` | The device connects to an unused server Ethernet interface. | Uses a private IPv4 `/30` outside the trusted LAN. |
+| `usb` | The device connects locally to the server. | Printing is common; scanning depends on a working SANE backend. |
 
-Use **direct Ethernet** only when the device is cabled to an unused server Ethernet port. The
-device needs one static address set on its control panel or web interface. Onboarding recommends a
-private `/30` link such as server `192.168.50.1/30` and device `192.168.50.2`; it does not expose this
-link to trusted-LAN clients or run DHCP for it. Initial onboarding creates one link inline. Later
-links can be added, edited or deleted through `scripts/manage-devices`. A direct-link `/30` must
-not overlap any trusted-LAN CIDR.
-
-Use USB as a fallback when Ethernet is unavailable. USB commonly supports printing, but scanner support depends on a usable Linux SANE backend for that device. Onboarding accepts only an exact CUPS `usb://` endpoint or a new ipp-usb endpoint as printer evidence. It accepts exact standard SANE identifiers as scanner evidence. When `scanimage -L` reports a recognised preinstalled device backend such as `brother:bus…` or `brother:net…`, onboarding can retain that exact identifier without installing or changing the backend package.
-
-The playbooks do not check for one concrete hardware model. They check the Debian base and architecture through the compatibility variables above, not the board or vendor. This keeps future releases easy to add while preventing an untested operating-system upgrade from changing packages and services unexpectedly.
+A direct Ethernet link needs a static address on the device. For example, configure server `192.168.50.1/30` and device `192.168.50.2`. This project does not enable DHCP on the link or route it to trusted-LAN clients.
 
 ### Scanner Settings
 
-ScanservJS is the supported cross-platform scanning path. It has no application login, so completed scans are visible to everyone allowed on the trusted LAN until retention deletes them. Remote SANE remains off by default and is intended for compatible native Linux clients.
+`managed_scanners` uses the exact SANE identifier returned by `scanimage -L`. A network scanner may use `network`, `ipp` or `ipps`. A USB scanner must explicitly choose `ipp_usb` or `legacy_usb`. `display_name` replaces the raw SANE identifier in ScanservJS.
 
-Scanner connection `network` represents an exact SANE identifier reached over IP, including `net:` identifiers from package-provided backends. Existing `ipp` and `ipps` values remain accepted. Connection `usb` requires an explicit `ipp_usb` or `legacy_usb` mode.
+Set `backend_install: false` only when a backend is installed and maintained outside this project. The deployment still installs `sane-utils` and validates the configured identifier, but does not install or update that backend.
 
-Set `backend_install: false` for a scanner backend installed and maintained outside this repository. The deployment still installs `sane-utils` and uses the configured identifier for validation, but does not install, update or register that backend. Use this only after `scanimage -L` has reported the exact device and a real test scan has succeeded.
-
-Set `display_name` to show a friendly label in the ScanservJS web interface instead of the raw SANE identifier (for example `airscan:w0:Brother MFC-7360N`). It defaults to the exact SANE device name when omitted.
-
-`scanservjs_ocr_languages` accepts one or more Tesseract language codes. Selecting `[eng, deu]` installs English and German OCR data and configures combined OCR for PDF scans.
+Remote SANE is disabled by default and is intended for compatible native clients. Browser scanning through ScanservJS is the supported path for mixed client environments.
 
 ### Example Configuration
 
@@ -233,12 +245,14 @@ enable_remote_sane: false
 
 ## How it Works
 
-1. `scripts/onboard` runs on the administrator machine. It creates production inventory and invokes Ansible over SSH on the server.
-2. Baseline roles validate the supported platform, configure users and SSH, then apply the trusted-LAN firewall policy.
-3. CUPS creates or updates every managed queue and removes only queues recorded as previously Ansible-managed. Avahi provides link-local DNS-SD discovery when a queue is shared. CUPS administration remains localhost-only.
-4. The scanner path installs SANE and the checksum-pinned ScanservJS package. Removing the last scanner stops browser scanning, remote SANE and scanner timers without deleting completed scans.
-5. A run with `print_server_commissioning=true` requires every declared device to be reachable, using the exact probe tool and, for a declared scanner, its configured SANE backend; commissioning fails distinctly when a probe tool itself is missing rather than reporting it as an unreachable device, and it does not depend on interactive discovery having run first. Routine maintenance warns about unavailable hardware and preserves existing queues.
-6. UFW, CUPS queues and direct Ethernet links keep project-owned state files. Later runs remove stale project entries without resetting unrelated administrator configuration.
+The repository treats the inventory as the desired state for the server. It does not aim to replace every local administrator decision. It owns only the CUPS queues, firewall rules and direct Ethernet links that it created, so later runs can remove stale project resources without resetting unrelated configuration.
+
+1. `scripts/onboard` runs on the administrator machine. It validates the connection, collects non-secret settings and writes production inventory only after review.
+2. The `site.yml` playbook connects over SSH. It validates the supported Debian version and CPU architecture, configures the administrator account and SSH, manages update policy and applies the trusted-LAN firewall rules.
+3. CUPS reconciles the declared printer queues. Shared queues are advertised through Avahi and link-local DNS-SD, while CUPS administration stays localhost-only.
+4. Scanner definitions install the selected SANE backend and ScanservJS. ScanservJS receives its pinned package version, OCR languages, retention timer and storage checks from inventory.
+5. A commissioning run requires every declared printer and scanner to answer through its configured endpoint or SANE backend. A normal maintenance run preserves existing queues and reports unavailable hardware instead of treating a temporary outage as a configuration change.
+6. `scripts/manage-devices` changes one definition at a time. It creates a local backup, saves the intended state and then offers to apply it to the server.
 
 ## Installation & Development
 
@@ -255,27 +269,33 @@ enable_remote_sane: false
    ./scripts/setup
    ```
 
-3. **Configure production inventory**
+3. **Configure a production server**
 
    ```bash
-   scripts/onboard
+   ./scripts/onboard
    ```
 
-4. **Run a maintenance pass**
+4. **Apply the current production inventory**
 
    ```bash
    ./scripts/manage-devices apply
    ```
 
+For an overview of the available commands, run:
+
+```bash
+./start help
+```
+
 ## Testing
 
-Run the same shell tests, inventory tests, YAML lint, Ansible lint and playbook syntax checks used by CI:
+The repository uses Bash tests, Python tests, `yamllint` and `ansible-lint`. Run the complete local suite with:
 
 ```bash
 ./scripts/qa
 ```
 
-The static suite checks configuration syntax and Ansible conventions. Follow [acceptance testing](docs/acceptance-testing.md) for required server, printer, scanner, mDNS and firewall acceptance checks.
+The suite checks onboarding and device-management behaviour, inventory handling, role logic, YAML and Ansible conventions and playbook syntax. Follow [acceptance testing](docs/acceptance-testing.md) for server, printer, scanner, DNS-SD and firewall checks on real hardware.
 
 ## Author & Licence
 
