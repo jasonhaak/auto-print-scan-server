@@ -899,6 +899,7 @@ remote_tty() { return 0; }
 avahi_browse_scan() { return 0; }
 choose_candidate() { printf 'choose_candidate must not be called from discover_devices\n' >&2; exit 1; }
 recovery_choice() { printf 'manual'; return 0; }
+yes() { return 1; }
 technical_report() { :; }
 step_check() {
   local output_variable=$1 output status

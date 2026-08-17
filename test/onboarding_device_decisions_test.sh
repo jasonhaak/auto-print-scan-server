@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ONBOARD_PYTHON="$root/.venv/bin/python"
+if [[ -x "$root/.venv/bin/python" ]]; then
+  ONBOARD_PYTHON="$root/.venv/bin/python"
+else
+  ONBOARD_PYTHON=$(command -v python3)
+fi
 variables=''
 source "$root/scripts/lib/onboarding/prompts.sh"
 source "$root/scripts/lib/onboarding/device-discovery.sh"
