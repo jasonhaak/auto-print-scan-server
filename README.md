@@ -1,7 +1,7 @@
 # auto-print-scan-server
 
 [![Release](https://img.shields.io/github/v/release/jasonhaak/auto-print-scan-server)](https://github.com/jasonhaak/auto-print-scan-server/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/auto-print-scan-server/quality.yml?branch=main&logo=github)](https://github.com/jasonhaak/auto-print-scan-server/actions/workflows/quality.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/jasonhaak/auto-print-scan-server/ci.yml?branch=main&logo=github)](https://github.com/jasonhaak/auto-print-scan-server/actions/workflows/ci.yml)
 [![Debian Trixie](https://img.shields.io/badge/Debian-Trixie-A81D33?logo=debian)](https://www.debian.org/releases/trixie/)
 
 Automated Ansible deployment of a trusted-LAN print and scan server with CUPS, local DNS-SD discovery, SANE and optional browser scanning through ScanservJS.

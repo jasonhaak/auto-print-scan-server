@@ -53,7 +53,7 @@ jobs:
       - name: Test onboarding and inventory modules
         run: |
           for test_script in test/*.sh; do bash "$test_script"; done
-          python test/device_inventory_test.py
+          for python_test in test/*_test.py; do python "$python_test"; done
 
       - name: Check playbook syntax
         run: |
