@@ -9,14 +9,14 @@
 - name: Configure unattended security upgrades
   ansible.builtin.template:
     src: 20auto-upgrades.j2
-    dest: /etc/apt/apt.conf.d/52raspberry-print-server-unattended-upgrades
+    dest: /etc/apt/apt.conf.d/52auto-print-scan-server-unattended-upgrades
     mode: '0644'
   when: enable_unattended_upgrades | bool
   tags: updates
 
 - name: Remove unattended upgrade configuration when disabled
   ansible.builtin.file:
-    path: /etc/apt/apt.conf.d/52raspberry-print-server-unattended-upgrades
+    path: /etc/apt/apt.conf.d/52auto-print-scan-server-unattended-upgrades
     state: absent
   when: not enable_unattended_upgrades | bool
   tags: updates

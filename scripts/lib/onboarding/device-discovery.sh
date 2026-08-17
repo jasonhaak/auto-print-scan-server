@@ -457,7 +457,7 @@ discover_direct_ethernet_device() {
     direct_ethernet_recovery "Interface $direct_ethernet_interface has no Ethernet carrier. Connect the device cable before discovery."
     return $?
   fi
-  temporary_direct_connection="raspberry-print-server-onboarding-$$"
+  temporary_direct_connection="auto-print-scan-server-onboarding-$$"
   # Refresh sudo live, uncaptured, before the nmcli step below captures its own output to a file.
   remote_tty 'sudo -v'
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
@@ -547,7 +547,7 @@ discover_devices() {
   local discovery_log install_output network_output usb_output ipp_usb_output='' lpinfo_before='' lpinfo_output='' scanner_before='' scanner_output scanner_hardware_output scanner_hint_output ipp_query_output='' query_output event interface protocol name service domain device_host address port txt rp scheme uri choice candidate new_ipp_candidates
   local lpinfo_output_status=0
   [[ "$discovery_scope" != skip ]] || { printf '%s\n' 'Device discovery skipped. Connection details will be entered manually.'; return; }
-  discovery_log=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-discovery.XXXXXX.log")
+  discovery_log=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-discovery.XXXXXX.log")
   if [[ "$tools_ready" != true ]]; then
     input_required 'Discovery tools'
     printf '\n' >&2

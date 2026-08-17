@@ -110,14 +110,14 @@
 
 - name: Create firewall ownership state directory
   ansible.builtin.file:
-    path: /var/lib/raspberry-print-server
+    path: /var/lib/auto-print-scan-server
     state: directory
     mode: '0755'
   tags: firewall
 
 - name: Read previously managed firewall rules
   ansible.builtin.slurp:
-    src: /var/lib/raspberry-print-server/ufw-rules.json
+    src: /var/lib/auto-print-scan-server/ufw-rules.json
   register: firewall_rule_state
   failed_when: false
   changed_when: false
@@ -172,7 +172,7 @@
     from_ip: "{{ item.from_ip }}"
     direction: "{{ item.direction | default(omit) }}"
     interface: "{{ item.interface | default(omit) }}"
-    comment: raspberry-print-server
+    comment: auto-print-scan-server
   loop: "{{ firewall_desired_rules }}"
   loop_control:
     label: "{{ item.proto }}/{{ item.port }} from {{ item.from_ip }}"
@@ -194,6 +194,6 @@
 - name: Save managed firewall rule state
   ansible.builtin.copy:
     content: "{{ firewall_desired_rules | to_nice_json }}\n"
-    dest: /var/lib/raspberry-print-server/ufw-rules.json
+    dest: /var/lib/auto-print-scan-server/ufw-rules.json
     mode: '0644'
   tags: firewall

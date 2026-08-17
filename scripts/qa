@@ -9,9 +9,9 @@ if [[ ! -x "$root/.venv/bin/ansible-lint" ]]; then
 fi
 
 export PATH="$root/.venv/bin:$PATH"
-export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/raspberry-print-server-ansible-local"
-export ANSIBLE_REMOTE_TEMP="${TMPDIR:-/tmp}/raspberry-print-server-ansible-remote"
-export XDG_CACHE_HOME="${TMPDIR:-/tmp}/raspberry-print-server-cache"
+export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/auto-print-scan-server-ansible-local"
+export ANSIBLE_REMOTE_TEMP="${TMPDIR:-/tmp}/auto-print-scan-server-ansible-remote"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/auto-print-scan-server-cache"
 mkdir -p "$ANSIBLE_LOCAL_TEMP" "$ANSIBLE_REMOTE_TEMP" "$XDG_CACHE_HOME"
 
 printf '%s\n' 'Repository checks'

@@ -100,7 +100,7 @@ step_run() {
   shift 3
   local output_file
   step_line_open "$purpose"
-  output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-step.XXXXXX")
+  output_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-step.XXXXXX")
   if "$@" >"$output_file" 2>&1; then step_run_status=0; else step_run_status=$?; fi
   step_run_output=$(<"$output_file")
   rm -f "$output_file"
@@ -164,7 +164,7 @@ step_stream() {
   shift 3
   local output_file status output
   printf '%s %s ...\n' "$(cli_color '1;33' 'Action:')" "$purpose" >&2
-  output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-step.XXXXXX")
+  output_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-step.XXXXXX")
   if "$@" 2>&1 | tee "$output_file"; then
     status=0
   else
@@ -204,7 +204,7 @@ technical_capture() {
   local output_variable=$1 purpose=$2 command_label=$3 output output_file status
   local -n captured_output=$output_variable
   shift 3
-  output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-technical.XXXXXX")
+  output_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-technical.XXXXXX")
   if "$@" >"$output_file" 2>&1; then
     status=0
   else

@@ -76,14 +76,14 @@
 
 - name: Create CUPS ownership state directory
   ansible.builtin.file:
-    path: /var/lib/raspberry-print-server
+    path: /var/lib/auto-print-scan-server
     state: directory
     mode: '0755'
   tags: cups
 
 - name: Read previously managed CUPS queues
   ansible.builtin.slurp:
-    src: /var/lib/raspberry-print-server/cups-queues
+    src: /var/lib/auto-print-scan-server/cups-queues
   register: cups_managed_queue_state
   failed_when: false
   changed_when: false
@@ -103,7 +103,7 @@
 
 - name: Read previously applied CUPS queue definitions
   ansible.builtin.slurp:
-    src: /var/lib/raspberry-print-server/cups-queue-specs.json
+    src: /var/lib/auto-print-scan-server/cups-queue-specs.json
   register: cups_managed_queue_specs
   failed_when: false
   changed_when: false
@@ -194,13 +194,13 @@
 - name: Save managed CUPS queue ownership state
   ansible.builtin.copy:
     content: "{{ managed_printers | map(attribute='name') | join('\n') }}\n"
-    dest: /var/lib/raspberry-print-server/cups-queues
+    dest: /var/lib/auto-print-scan-server/cups-queues
     mode: '0644'
   tags: cups
 
 - name: Save applied CUPS queue definitions
   ansible.builtin.copy:
     content: "{{ managed_printers | to_nice_json }}\n"
-    dest: /var/lib/raspberry-print-server/cups-queue-specs.json
+    dest: /var/lib/auto-print-scan-server/cups-queue-specs.json
     mode: '0644'
   tags: cups

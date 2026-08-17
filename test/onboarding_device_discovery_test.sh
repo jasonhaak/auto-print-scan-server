@@ -231,7 +231,7 @@ sleep() { :; }
 # The retry loop pipes lpstat through grep -q, and the whole snippet runs inside a command
 # substitution, so a plain shell variable can't survive across iterations -- track calls
 # through a file instead, matching scope_recovery_counter_file's pattern further below.
-lpstat_call_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-lpstat-count.XXXXXX")
+lpstat_call_counter_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-lpstat-count.XXXXXX")
 printf '0' >"$lpstat_call_counter_file"
 lpstat() {
   local n
@@ -930,7 +930,7 @@ scanner_candidates=()
 unscoped_output=$(discover_devices true all 2>&1)
 [[ "$unscoped_output" == *'Discovery completed: 1 printer candidate(s), 1 scanner candidate(s).'* ]]
 
-rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
+rm -f "${TMPDIR:-/tmp}"/auto-print-scan-server-discovery.*.log
 
 # Ticket 013: discover_direct_ethernet_device must offer a recovery menu
 # (retry, change settings, continue manually, stop) on every failure branch,
@@ -960,7 +960,7 @@ cleanup_cups_calls=0
 # invocation and the mock would return the same choice forever (infinite
 # retry recursion). Persist the counter in a file instead, since filesystem
 # state survives across subshells.
-recovery_choice_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-recovery-choice.XXXXXX")
+recovery_choice_counter_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-recovery-choice.XXXXXX")
 
 step_check() {
   local output_variable=$1 label=$2
@@ -1131,7 +1131,7 @@ remote() {
 mock_scanner_output=$'device `airscan:e0:printer.local\' is a scanner'
 scanner_candidates=()
 printer_candidates=()
-direct_ethernet_output_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-direct-ethernet.XXXXXX")
+direct_ethernet_output_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-direct-ethernet.XXXXXX")
 # Redirect rather than use $(...): command substitution forks a subshell, and
 # scanner_candidates is appended to as a global inside discover_direct_ethernet_device, so it
 # must be observed in this shell, not a discarded subshell copy (same pitfall noted above for
@@ -1209,7 +1209,7 @@ step_stream() { step_check "$@"; }
 # recovery_choice runs as `choice=$(recovery_choice ...)`, forking a subshell,
 # so (as above) its call count must be tracked through a file rather than a
 # plain shell variable.
-scope_recovery_counter_file=$(mktemp "${TMPDIR:-/tmp}/raspberry-print-server-scope-recovery.XXXXXX")
+scope_recovery_counter_file=$(mktemp "${TMPDIR:-/tmp}/auto-print-scan-server-scope-recovery.XXXXXX")
 printf '0' >"$scope_recovery_counter_file"
 recovery_choice() {
   local n
@@ -1238,4 +1238,4 @@ scope_recovery_calls=$(<"$scope_recovery_counter_file")
 
 unset -f discover_devices discover_devices_original recovery_choice ask_choice remote remote_tty avahi_browse_scan choose_candidate technical_report step_check step_action step_stream
 
-rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
+rm -f "${TMPDIR:-/tmp}"/auto-print-scan-server-discovery.*.log

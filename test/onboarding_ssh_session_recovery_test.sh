@@ -62,7 +62,7 @@ remote 'lpinfo -v'
 # then verify its output creates a legacy_usb candidate.
 restricted_remote_path=/usr/bin:/bin
 [[ "$restricted_remote_path" != *'/usr/sbin'* ]]
-test_admin_path=$(mktemp -d "${TMPDIR:-/tmp}/raspberry-print-server-lpinfo.XXXXXX")
+test_admin_path=$(mktemp -d "${TMPDIR:-/tmp}/auto-print-scan-server-lpinfo.XXXXXX")
 printf '%s\n' '#!/usr/bin/env bash' 'printf "direct usb://Brother/MFC-7360N?serial=123\\n"' >"$test_admin_path/lpinfo"
 chmod +x "$test_admin_path/lpinfo"
 remote_path_prefix="export PATH=\"$test_admin_path:$restricted_remote_path\";"
