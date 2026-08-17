@@ -361,14 +361,14 @@ scanservjs_ocr_languages: [eng]
 
     def test_adds_edits_lists_and_deletes_a_direct_ethernet_link(self):
         self.run_helper(
-            "upsert-link", "--interface", "eth1", "--pi-ipv4-cidr", "192.168.50.1/30",
+            "upsert-link", "--interface", "eth1", "--server-ipv4-cidr", "192.168.50.1/30",
             "--device-ipv4", "192.168.50.2",
         )
         names = self.run_helper("names", "link")
         self.assertEqual(names.stdout, "eth1\n")
         self.run_helper(
             "upsert-link", "--original-interface", "eth1", "--interface", "enx1234",
-            "--pi-ipv4-cidr", "192.168.60.1/30", "--device-ipv4", "192.168.60.2",
+            "--server-ipv4-cidr", "192.168.60.1/30", "--device-ipv4", "192.168.60.2",
         )
         link = self.load()["direct_ethernet_links"][0]
         self.assertEqual(link["interface"], "enx1234")
@@ -380,7 +380,7 @@ scanservjs_ocr_languages: [eng]
     def test_rejects_an_invalid_direct_ethernet_link_without_writing(self):
         before = self.inventory.read_text(encoding="utf-8")
         result = self.run_helper(
-            "upsert-link", "--interface", "eth1", "--pi-ipv4-cidr", "192.168.50.1/30",
+            "upsert-link", "--interface", "eth1", "--server-ipv4-cidr", "192.168.50.1/30",
             "--device-ipv4", "192.168.60.2", check=False,
         )
         self.assertNotEqual(result.returncode, 0)
@@ -390,7 +390,7 @@ scanservjs_ocr_languages: [eng]
     def test_rejects_a_direct_link_overlapping_the_trusted_lan(self):
         before = self.inventory.read_text(encoding="utf-8")
         result = self.run_helper(
-            "upsert-link", "--interface", "eth1", "--pi-ipv4-cidr", "192.168.178.1/30",
+            "upsert-link", "--interface", "eth1", "--server-ipv4-cidr", "192.168.178.1/30",
             "--device-ipv4", "192.168.178.2", check=False,
         )
         self.assertNotEqual(result.returncode, 0)

@@ -437,7 +437,7 @@ valid_ipv4_cidr() { return 0; }
 same_direct_ipv4_link() { return 0; }
 recommendation() { :; }
 direct_ethernet_interface=''
-direct_ethernet_pi_ipv4_cidr=''
+direct_ethernet_server_ipv4_cidr=''
 direct_ethernet_device_ipv4=''
 scanner_candidates=()
 printer_candidates=()
@@ -938,7 +938,7 @@ rm -f "${TMPDIR:-/tmp}"/raspberry-print-server-discovery.*.log
 # restore_cups_state, and any temporary nmcli connection delete) before every
 # retry attempt so each attempt starts from a clean state.
 direct_ethernet_interface=eth1
-direct_ethernet_pi_ipv4_cidr=192.168.50.1/30
+direct_ethernet_server_ipv4_cidr=192.168.50.1/30
 direct_ethernet_device_ipv4=192.168.50.2
 yes() { return 0; }
 yes_default() { return 0; }

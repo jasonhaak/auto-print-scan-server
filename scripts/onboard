@@ -17,7 +17,7 @@ ssh_socket_dir=''
 host_tmp=''
 vars_tmp=''
 direct_ethernet_interface=''
-direct_ethernet_pi_ipv4_cidr=''
+direct_ethernet_server_ipv4_cidr=''
 direct_ethernet_device_ipv4=''
 temporary_direct_connection=''
 printer_candidates=()
@@ -348,7 +348,7 @@ fi
 
 stage '5 of 5' 'Review and commission' 'Review the configuration below before it is written locally or applied to the server.' "Server $admin@$host · trusted LAN $cidr · ${#printer_queues[@]} printer(s)"
 direct_ethernet_summary='not configured'
-[[ -n "$direct_ethernet_interface" ]] && direct_ethernet_summary="$direct_ethernet_interface ($direct_ethernet_pi_ipv4_cidr -> $direct_ethernet_device_ipv4)"
+[[ -n "$direct_ethernet_interface" ]] && direct_ethernet_summary="$direct_ethernet_interface ($direct_ethernet_server_ipv4_cidr -> $direct_ethernet_device_ipv4)"
 confirmation_block 'Server' \
   "Server|$admin@$host" "Hostname|$hostname" "Trusted LAN|$cidr" "Trusted IPv6|${ipv6_cidr:-not configured}" \
   "Timezone|$timezone" "Locale|$locale" "Direct Ethernet|$direct_ethernet_summary" \
@@ -390,8 +390,8 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   printf 'ssh_allow_password_authentication: true\nfirewall_enabled: true\ntrusted_lan_cidrs:\n  - %s\n' "$(quote "$cidr")"
   [[ -n "$ipv6_cidr" ]] && printf '  - %s\n' "$(quote "$ipv6_cidr")"
   if [[ -n "$direct_ethernet_interface" ]]; then
-    printf 'direct_ethernet_links:\n  - interface: %s\n    pi_ipv4_cidr: %s\n    device_ipv4: %s\n' \
-      "$(quote "$direct_ethernet_interface")" "$(quote "$direct_ethernet_pi_ipv4_cidr")" "$(quote "$direct_ethernet_device_ipv4")"
+    printf 'direct_ethernet_links:\n  - interface: %s\n    server_ipv4_cidr: %s\n    device_ipv4: %s\n' \
+      "$(quote "$direct_ethernet_interface")" "$(quote "$direct_ethernet_server_ipv4_cidr")" "$(quote "$direct_ethernet_device_ipv4")"
   else
     printf '%s\n' 'direct_ethernet_links: []'
   fi

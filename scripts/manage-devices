@@ -34,7 +34,7 @@ discovery_ipp_usb_was_enabled='not-found'
 discovery_ipp_usb_was_active='inactive'
 temporary_direct_connection=''
 direct_ethernet_interface=''
-direct_ethernet_pi_ipv4_cidr=''
+direct_ethernet_server_ipv4_cidr=''
 direct_ethernet_device_ipv4=''
 printer_candidates=()
 scanner_candidates=()
@@ -303,12 +303,12 @@ configure_scanner() {
 }
 
 configure_link() {
-  local original=${1:-} interface pi_cidr device_ipv4 active_interface detected_interface command_output
-  local interface_default=eth1 pi_cidr_default=192.168.50.1/30 device_ipv4_default=192.168.50.2
+  local original=${1:-} interface server_cidr device_ipv4 active_interface detected_interface command_output
+  local interface_default=eth1 server_cidr_default=192.168.50.1/30 device_ipv4_default=192.168.50.2
   if [[ -n "$original" ]]; then
     subsection "Editing direct Ethernet link $original"
     interface_default=$(field link "$original" interface)
-    pi_cidr_default=$(field link "$original" pi_ipv4_cidr)
+    server_cidr_default=$(field link "$original" server_ipv4_cidr)
     device_ipv4_default=$(field link "$original" device_ipv4)
   else
     subsection 'Adding a direct Ethernet link'
@@ -325,16 +325,16 @@ configure_link() {
     cli_error 'Use only letters, numbers, dots, underscores and hyphens.'
   done
   while true; do
-    pi_cidr=$(ask 'Server private IPv4 CIDR' "$pi_cidr_default")
+    server_cidr=$(ask 'Server private IPv4 CIDR' "$server_cidr_default")
     device_ipv4=$(ask 'Direct device IPv4 address' "$device_ipv4_default")
-    same_direct_ipv4_link "$pi_cidr" "$device_ipv4" && break
+    same_direct_ipv4_link "$server_cidr" "$device_ipv4" && break
     printf '%s\n' 'Use two host addresses in the same private /30, for example 192.168.50.1/30 and 192.168.50.2.' >&2
   done
   confirmation_block "Direct Ethernet link: $interface" \
-    "Server CIDR|$pi_cidr" "Device IPv4|$device_ipv4"
+    "Server CIDR|$server_cidr" "Device IPv4|$device_ipv4"
   command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
   [[ -n "$original" ]] && command+=(--original-interface "$original")
-  command+=(--interface "$interface" --pi-ipv4-cidr "$pi_cidr" --device-ipv4 "$device_ipv4")
+  command+=(--interface "$interface" --server-ipv4-cidr "$server_cidr" --device-ipv4 "$device_ipv4")
   step_action command_output 'Save the direct Ethernet link definition' 'device_inventory.py upsert-link' "${command[@]}"
   printf 'The link is independent from device definitions. Add a printer or scanner using device address %s when needed.\n' "$device_ipv4"
 }

@@ -418,13 +418,13 @@ collect_direct_ethernet_link() {
       printf 'Interface %s is invalid or carries the server default route. Choose another Ethernet interface.\n' "$direct_ethernet_interface" >&2
     done
     while true; do
-      direct_ethernet_pi_ipv4_cidr=$(ask 'Server private IPv4 CIDR' "${direct_ethernet_pi_ipv4_cidr:-192.168.50.1/30}")
-      valid_ipv4_cidr "$direct_ethernet_pi_ipv4_cidr" false && break
+      direct_ethernet_server_ipv4_cidr=$(ask 'Server private IPv4 CIDR' "${direct_ethernet_server_ipv4_cidr:-192.168.50.1/30}")
+      valid_ipv4_cidr "$direct_ethernet_server_ipv4_cidr" false && break
       printf '%s\n' 'Enter a valid IPv4 CIDR, for example 192.168.50.1/30.' >&2
     done
     while true; do
       direct_ethernet_device_ipv4=$(ask 'Device static IPv4 address' "${direct_ethernet_device_ipv4:-192.168.50.2}")
-      same_direct_ipv4_link "$direct_ethernet_pi_ipv4_cidr" "$direct_ethernet_device_ipv4" && break
+      same_direct_ipv4_link "$direct_ethernet_server_ipv4_cidr" "$direct_ethernet_device_ipv4" && break
       printf '%s\n' 'Enter another address in the same /30 link as the server, for example 192.168.50.2.' >&2
     done
     direct_ethernet_discovery_status=0
@@ -434,7 +434,7 @@ collect_direct_ethernet_link() {
   if [[ "$direct_ethernet_discovery_status" != 0 ]]; then
     printf 'The direct Ethernet link could not be configured for this device. Choose another connection topology for it, or fix the cable/interface and try again on the next device.\n' >&2
     direct_ethernet_interface=''
-    direct_ethernet_pi_ipv4_cidr=''
+    direct_ethernet_server_ipv4_cidr=''
     direct_ethernet_device_ipv4=''
     return 1
   fi
@@ -461,7 +461,7 @@ discover_direct_ethernet_device() {
   # Refresh sudo live, uncaptured, before the nmcli step below captures its own output to a file.
   remote_tty 'sudo -v'
   if ! step_action command_output 'Configure the temporary direct Ethernet link' "nmcli connection add/up $temporary_direct_connection" \
-    remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_pi_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
+    remote_tty "sudo nmcli connection add type ethernet ifname $(printf '%q' "$direct_ethernet_interface") con-name $(printf '%q' "$temporary_direct_connection") ipv4.method manual ipv4.addresses $(printf '%q' "$direct_ethernet_server_ipv4_cidr") ipv4.never-default yes ipv6.method disabled && sudo nmcli connection up $(printf '%q' "$temporary_direct_connection")"; then
     direct_ethernet_recovery 'The private Ethernet link could not be configured. Check the cable, interface name and server NetworkManager status.'
     return $?
   fi

@@ -194,7 +194,7 @@ valid_ocr_languages() {
 same_direct_ipv4_link() {
   local checker=${ONBOARD_PYTHON:-python3}
   command -v "$checker" >/dev/null 2>&1 || [[ -x "$checker" ]] || return 1
-  "$checker" -c 'import ipaddress, sys; pi = ipaddress.ip_interface(sys.argv[1]); device = ipaddress.ip_address(sys.argv[2]); network = pi.network; valid = pi.version == 4 and network.prefixlen == 30 and device.version == 4 and device in network and pi.ip not in (network.network_address, network.broadcast_address) and device not in (pi.ip, network.network_address, network.broadcast_address); raise SystemExit(not valid)' "$1" "$2" >/dev/null 2>&1
+  "$checker" -c 'import ipaddress, sys; server_ip = ipaddress.ip_interface(sys.argv[1]); device = ipaddress.ip_address(sys.argv[2]); network = server_ip.network; valid = server_ip.version == 4 and network.prefixlen == 30 and device.version == 4 and device in network and server_ip.ip not in (network.network_address, network.broadcast_address) and device not in (server_ip.ip, network.network_address, network.broadcast_address); raise SystemExit(not valid)' "$1" "$2" >/dev/null 2>&1
 }
 valid_usb_identity() {
   local identity=$1 checker=${ONBOARD_PYTHON:-python3}

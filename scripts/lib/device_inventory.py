@@ -190,16 +190,16 @@ def validate_direct_link(link: Any) -> None:
     if not QUEUE_PATTERN.fullmatch(interface):
         raise InventoryError(f"direct Ethernet interface {interface!r} is invalid")
     try:
-        pi = ipaddress.ip_interface(require_text(link.get("pi_ipv4_cidr"), f"link {interface!r} server IPv4 CIDR"))
+        server_ip = ipaddress.ip_interface(require_text(link.get("server_ipv4_cidr"), f"link {interface!r} server IPv4 CIDR"))
         device = ipaddress.ip_address(require_text(link.get("device_ipv4"), f"link {interface!r} device IPv4"))
     except ValueError as error:
         raise InventoryError(f"direct Ethernet link {interface!r} has an invalid IPv4 value: {error}") from error
     valid = (
-        pi.version == 4
-        and pi.network.prefixlen == 30
+        server_ip.version == 4
+        and server_ip.network.prefixlen == 30
         and device.version == 4
-        and device in pi.network
-        and device not in {pi.ip, pi.network.network_address, pi.network.broadcast_address}
+        and device in server_ip.network
+        and device not in {server_ip.ip, server_ip.network.network_address, server_ip.network.broadcast_address}
     )
     if not valid:
         raise InventoryError(f"direct Ethernet link {interface!r} requires two host addresses in the same IPv4 /30")
@@ -237,7 +237,7 @@ def validate_inventory(data: dict[str, Any]) -> None:
         except ValueError as error:
             raise InventoryError(f"trusted LAN CIDR {cidr!r} is invalid: {error}") from error
     for link in links:
-        link_network = ipaddress.ip_interface(link["pi_ipv4_cidr"]).network
+        link_network = ipaddress.ip_interface(link["server_ipv4_cidr"]).network
         if any(network.version == 4 and link_network.overlaps(network) for network in trusted_networks):
             raise InventoryError(f"direct Ethernet link {link['interface']!r} overlaps trusted LAN")
     if scanners:
@@ -389,7 +389,7 @@ def command_list(data: dict[str, Any]) -> None:
     if links:
         print("Direct Ethernet links:")
         for link in links:
-            print(f"  {link['interface']}: {link['pi_ipv4_cidr']} -> {link['device_ipv4']}")
+            print(f"  {link['interface']}: {link['server_ipv4_cidr']} -> {link['device_ipv4']}")
     else:
         print("No direct Ethernet links.")
 
@@ -453,7 +453,7 @@ def build_parser() -> argparse.ArgumentParser:
     link = commands.add_parser("upsert-link")
     link.add_argument("--original-interface")
     link.add_argument("--interface", required=True)
-    link.add_argument("--pi-ipv4-cidr", required=True)
+    link.add_argument("--server-ipv4-cidr", required=True)
     link.add_argument("--device-ipv4", required=True)
 
     delete = commands.add_parser("delete")
@@ -584,7 +584,7 @@ def main() -> int:
         elif arguments.command == "upsert-link":
             replacement = {
                 "interface": arguments.interface,
-                "pi_ipv4_cidr": arguments.pi_ipv4_cidr,
+                "server_ipv4_cidr": arguments.server_ipv4_cidr,
                 "device_ipv4": arguments.device_ipv4,
             }
             action = upsert(data, "link", arguments.original_interface, replacement)
