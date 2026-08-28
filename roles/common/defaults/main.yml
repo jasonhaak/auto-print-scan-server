@@ -6,6 +6,7 @@ common_supported_debian_major_versions:
 common_supported_architectures:
   - aarch64
   - x86_64
+  - armv6l
 common_packages:
   - ca-certificates
   - locales

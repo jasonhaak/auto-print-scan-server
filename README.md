@@ -58,14 +58,14 @@ Ansible runs from the administrator machine, not from the server. Run the setup 
 
 The server must meet these requirements:
 
-- A 64-bit system running Debian 13. This includes current 64-bit Raspberry Pi systems and conventional Intel or AMD computers.
+- Debian 13 on `aarch64` or `x86_64`, or Raspberry Pi OS Lite 32-bit based on Debian Trixie on `armv6l`. This includes the Raspberry Pi Zero W, current 64-bit Raspberry Pi systems and conventional Intel or AMD computers.
 - SSH reachable from the administrator machine, using password or key authentication.
 - A bootstrap administrator account with `sudo` access.
 - One Ethernet or Wi-Fi connection on the trusted LAN; an additional unused Ethernet interface is optional for a direct device link.
 
 Install Debian 13 with the installer or image supplied for the hardware. During installation, choose a hostname, create the bootstrap administrator, connect the server to the trusted LAN and enable SSH.
 
-#### 2.1. DHCP Reservation
+#### DHCP Reservation
 
 Whichever method you use, once the device is running you still need a stable, predictable address for it, since onboarding and later maintenance both need to find the same server again after a reboot. For a normal home network, create a **DHCP reservation** in the router:
 
@@ -77,13 +77,15 @@ Whichever method you use, once the device is running you still need a stable, pr
 
 If the network already has local DNS, create a stable name such as `print-scan-server.home` that resolves to the reserved server address. `print-scan-server.local` can work through mDNS, but it should not be the only management address because support differs between routers and client devices.
 
-#### Raspberry Pi example
+#### Raspberry Pi Example
 
 > NOTE: This is the concrete path actually built and tested for this repository.
 
 Use a **Raspberry Pi 4 Model B with 4 GB RAM** or newer as the recommended baseline for printing plus optional ScanservJS and OCR. Use at least 8 GB storage for printing only and at least 16 GB for scanner-enabled deployments.
 
-Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) on a computer with a microSD-card reader. Insert a reliable microSD card, then choose **Raspberry Pi OS Lite (64-bit)** based on Debian Trixie. Do not choose a desktop image, as this repository provisions a headless server.
+A **Raspberry Pi Zero W** is also supported with **Raspberry Pi OS Lite (32-bit)**. Its 512 MB RAM and single CPU core make the Pi 4 baseline the better choice for ScanservJS, OCR or frequent large scans.
+
+Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/) on a computer with a microSD-card reader. Insert a reliable microSD card, then choose **Raspberry Pi OS Lite (64-bit)** based on Debian Trixie for a 64-bit Pi, or **Raspberry Pi OS Lite (32-bit)** for a Raspberry Pi Zero W. Do not choose a desktop image, as this repository provisions a headless server.
 
 Before writing the card, open Imager's OS Customization dialog and set:
 
@@ -172,7 +174,7 @@ These variables are the declared state of the server. Onboarding writes them to 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `common_supported_debian_major_versions` | No | `['13']` | Debian major versions accepted by the platform validation. Add one only after repository QA and hardware acceptance. |
-| `common_supported_architectures` | No | `[aarch64, x86_64]` | Target architectures accepted by the platform validation. |
+| `common_supported_architectures` | No | `[aarch64, x86_64, armv6l]` | Target architectures accepted by the platform validation. `armv6l` covers Raspberry Pi OS Lite 32-bit on the Raspberry Pi Zero W. |
 | `trusted_lan_cidrs` | Yes | None | IPv4 and optional IPv6 CIDRs allowed to reach server-hosted services. |
 | `direct_ethernet_links` | No | `[]` | Private NetworkManager links between the server and devices; never trusted client networks. |
 | `managed_printers` | Yes | None | Printer queue names, endpoints, driver modes and sharing settings. |

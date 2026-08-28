@@ -13,6 +13,7 @@ class CommonRoleTest(unittest.TestCase):
         defaults = yaml.safe_load((ROOT / "roles/common/defaults/main.yml").read_text(encoding="utf-8"))
         self.assertIn("aarch64", defaults["common_supported_architectures"])
         self.assertIn("x86_64", defaults["common_supported_architectures"])
+        self.assertIn("armv6l", defaults["common_supported_architectures"])
 
     def test_platform_assert_does_not_require_raspberry_pi_os(self):
         tasks = yaml.safe_load((ROOT / "roles/common/tasks/main.yml").read_text(encoding="utf-8"))
