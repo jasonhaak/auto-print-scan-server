@@ -70,6 +70,16 @@ class CupsRoleTest(unittest.TestCase):
         )
         self.assertNotIn("cups_model", profiles["package_profiles"]["brlaser"])
 
+    def test_generic_pcl_profile_limits_selection_to_generic_pcl_models(self):
+        profiles = yaml.safe_load((ROOT / "vars/driver_profiles.yml").read_text(encoding="utf-8"))
+        profile = profiles["package_profiles"]["generic_pcl"]
+        self.assertEqual(profile["packages"], ["foomatic-db-compressed-ppds"])
+        self.assertEqual(
+            profile["model_prefix"],
+            "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Generic-PCL_",
+        )
+        self.assertNotIn("make_model_pattern", profile)
+
     def test_queue_reconciliation_uses_the_inventory_model(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
         reconcile = next(task for task in tasks if task["name"] == "Reconcile managed CUPS queues")

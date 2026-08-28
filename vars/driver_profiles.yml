@@ -8,3 +8,10 @@ package_profiles:
     # selected interactively from the server's `lpinfo -m` output.
     model_prefix: drv:///brlaser.drv/
     make_model_pattern: '(?i)Brother.*MFC-7360'
+  generic_pcl:
+    description: Generic PCL 3/4/5/5e/6 and PCL XL printers supported by Debian's OpenPrinting PPD database
+    packages:
+      - foomatic-db-compressed-ppds
+    # The operator selects an exact advertised generic PCL model after CUPS installs
+    # the OpenPrinting PPD database. Do not infer a PCL dialect from discovery alone.
+    model_prefix: foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Generic-PCL_

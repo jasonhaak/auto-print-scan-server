@@ -53,9 +53,9 @@ Verify that a trusted-LAN client can print and browse ScanservJS, while a client
 enabled, verify one Linux SANE client with `scanimage -L`.
 
 Test the configured printer with a CUPS test page. Test a scanner by producing a PDF through
-ScanservJS and confirm that it appears in the configured output directory. The `brlaser` profile
-and every physical printer or scanner remain unvalidated until this hardware acceptance is
-recorded.
+ScanservJS and confirm that it appears in the configured output directory. The `brlaser` and
+`generic_pcl` profiles, and every physical printer or scanner, remain unvalidated until this
+hardware acceptance is recorded.
 
 ## Recovery
 

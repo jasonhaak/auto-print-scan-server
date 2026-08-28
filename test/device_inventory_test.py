@@ -355,6 +355,13 @@ scanservjs_ocr_languages: [eng]
         result = run_standalone("profile-model-prefix", "brlaser")
         self.assertEqual(result.stdout, "drv:///brlaser.drv/\n")
 
+    def test_reports_the_generic_pcl_profile_model_prefix_without_inventory(self):
+        result = run_standalone("profile-model-prefix", "generic_pcl")
+        self.assertEqual(
+            result.stdout,
+            "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Generic-PCL_\n",
+        )
+
     def test_reads_fields_for_prompt_defaults(self):
         result = self.run_helper("field", "printer", "office", "device_uri")
         self.assertEqual(result.stdout, "ipp://office.local/ipp/print")
