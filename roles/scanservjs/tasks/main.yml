@@ -58,7 +58,7 @@
     regexp: '(<policy domain="coder" rights=")[^"]+(" pattern="PDF"/>)'
     replace: '\1write\2'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists and managed_scanners | length > 0
+  when: managed_scanners | length > 0 and item.stat.exists
   tags: scanservjs
 
 - name: Restore conservative ImageMagick indirect-read policy
@@ -67,7 +67,7 @@
     regexp: '(<policy domain="path" rights=")[^"]+(" pattern="@"/>)'
     replace: '\1none\2'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists and managed_scanners | length > 0
+  when: managed_scanners | length > 0 and item.stat.exists
   tags: scanservjs
 
 - name: Set the managed ImageMagick disk-cache limit
@@ -76,7 +76,7 @@
     regexp: '(<policy domain="resource" name="disk" value=")[^"]+("/>)'
     replace: '\g<1>{{ scanservjs_imagemagick_disk_limit }}\g<2>'
   loop: "{{ scanservjs_imagemagick_policy_files.results }}"
-  when: item.stat.exists and managed_scanners | length > 0
+  when: managed_scanners | length > 0 and item.stat.exists
   tags: scanservjs
 
 - name: Create ScanservJS data directories

@@ -29,6 +29,20 @@ class ScanservjsRoleTest(unittest.TestCase):
         self.assertEqual(task["ansible.builtin.include_tasks"], "absent.yml")
         self.assertEqual(task.get("when"), "managed_scanners | length == 0")
 
+    def test_policy_tasks_check_for_scanners_before_skipped_stat_results(self):
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        policy_task_names = {
+            "Restore conservative ImageMagick PDF policy",
+            "Restore conservative ImageMagick indirect-read policy",
+            "Set the managed ImageMagick disk-cache limit",
+        }
+        for task in tasks:
+            if task["name"] in policy_task_names:
+                self.assertEqual(
+                    task.get("when"),
+                    "managed_scanners | length > 0 and item.stat.exists",
+                )
+
     def test_disk_cache_replacement_uses_unambiguous_backreferences(self):
         tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
         task = next(item for item in tasks if item["name"] == "Set the managed ImageMagick disk-cache limit")
