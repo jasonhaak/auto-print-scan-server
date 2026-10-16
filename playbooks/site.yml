@@ -6,6 +6,8 @@
   vars_files:
     - ../vars/driver_profiles.yml
   roles:
+    - role: driver_catalog
+      tags: always
     - role: common
       tags: common
     - role: direct_ethernet

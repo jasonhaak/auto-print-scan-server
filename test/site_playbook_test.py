@@ -33,5 +33,14 @@ class SitePlaybookTest(unittest.TestCase):
         self.assertNotIn("tasks_from", scanservjs_entries[0])
 
 
+class CatalogRoleOrderTest(unittest.TestCase):
+    def test_driver_catalog_role_runs_first(self):
+        for name in ("site.yml", "print-server.yml", "scanner.yml"):
+            roles = yaml.safe_load((ROOT / "playbooks" / name).read_text(encoding="utf-8"))[0]["roles"]
+            entry = roles[0]
+            first = entry if isinstance(entry, str) else entry.get("role")
+            self.assertEqual(first, "driver_catalog", name)
+
+
 if __name__ == "__main__":
     unittest.main()
