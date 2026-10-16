@@ -506,5 +506,35 @@ class CatalogCliTest(unittest.TestCase):
         self.assertIn("brlaser", result.stdout)
 
 
+class CatalogValidationTest(unittest.TestCase):
+    def test_unknown_generated_profile_fails_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inventory = Path(tmp) / "vars.yml"
+            inventory.write_text(
+                "managed_printers:\n- name: p\n  connection: socket\n  device_uri: socket://printer:9100\n"
+                "  driver_mode: package_profile\n  package_profile: debian_absent\n  cups_model: m\n  shared: true\n",
+                encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--inventory", str(inventory), "--backup-directory", tmp, "validate"],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("debian_absent", result.stderr)
+
+    def test_upsert_accepts_a_known_curated_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inventory = Path(tmp) / "vars.yml"
+            inventory.write_text(
+                "managed_printers:\n- name: seed\n  connection: socket\n  device_uri: socket://printer:9100\n"
+                "  driver_mode: driverless\n  shared: true\nmanaged_scanners: []\ndirect_ethernet_links: []\n",
+                encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--inventory", str(inventory), "--backup-directory", tmp,
+                 "upsert-printer", "--name", "p", "--connection", "socket",
+                 "--device-uri", "socket://printer:9100", "--driver-mode", "package_profile",
+                 "--shared", "true", "--package-profile", "brlaser", "--cups-model", "m"],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
