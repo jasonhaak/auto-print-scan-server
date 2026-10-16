@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import shlex
 import subprocess
 import sys
@@ -534,6 +535,48 @@ class CatalogValidationTest(unittest.TestCase):
                  "--shared", "true", "--package-profile", "brlaser", "--cups-model", "m"],
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class CuratedSuppressionTest(unittest.TestCase):
+    def test_curated_match_suppresses_generated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "generated"
+            generated.mkdir()
+            (generated / "driver_profiles_trixie_armhf_raspberrypi.yml").write_text(
+                "generated_package_profiles:\n"
+                "  debian_fixture:\n    model_prefix: drv:///fixture.drv/\n    prefix_status: verified\n"
+                "    description: fixture\n"
+                "model_index:\n  \"brother|mfc-7360\": [debian_fixture]\n"
+                "catalog_metadata:\n  suite: trixie\n  package_architecture: armhf\n  repository_identity: R\n",
+                encoding="utf-8")
+            environment = {**os.environ, "DRIVER_CATALOG_GENERATED_DIR": str(generated)}
+            arguments = [sys.executable, str(HELPER), "--catalog-suite", "trixie",
+                         "--catalog-architecture", "armhf", "--catalog-repository", "R",
+                         "--enable-generated-catalog", "profiles-for-evidence",
+                         "printer-device-id = MFG:Brother;MDL:MFC-7360;"]
+            result = subprocess.run(arguments, capture_output=True, text=True, env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("brlaser", result.stdout)
+            self.assertNotIn("debian_fixture", result.stdout)
+
+    def test_generated_match_is_returned_without_a_curated_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "generated"
+            generated.mkdir()
+            (generated / "driver_profiles_trixie_armhf_raspberrypi.yml").write_text(
+                "generated_package_profiles:\n"
+                "  debian_fixture:\n    model_prefix: drv:///fixture.drv/\n    prefix_status: verified\n"
+                "    description: fixture\n"
+                "model_index:\n  \"acme|z900\": [debian_fixture]\n"
+                "catalog_metadata:\n  suite: trixie\n  package_architecture: armhf\n  repository_identity: R\n",
+                encoding="utf-8")
+            environment = {**os.environ, "DRIVER_CATALOG_GENERATED_DIR": str(generated)}
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--catalog-suite", "trixie", "--catalog-architecture", "armhf",
+                 "--catalog-repository", "R", "--enable-generated-catalog", "profiles-for-evidence",
+                 "printer-device-id = MFG:Acme;MDL:Z900;"],
+                capture_output=True, text=True, env=environment)
+            self.assertIn("debian_fixture", result.stdout)
 
 
 if __name__ == "__main__":
