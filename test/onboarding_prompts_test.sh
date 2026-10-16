@@ -190,3 +190,12 @@ key_command=$(manual_recovery_command "$root" "$workspace/vars-key.yml" "$root/i
 candidate_count=0
 default_choice=$(choose_candidate 'Detected printers' 'Candidate one|a' 'Candidate two|b' <<< '' 2>/dev/null)
 [[ "$default_choice" == 'Candidate one|a' ]]
+
+output=$(CATALOG_SUITE=trixie CATALOG_ARCHITECTURE=armhf CATALOG_REPOSITORY=R \
+  choose_package_profile '' <<< 'brlaser' 2>&1)
+grep -q 'brlaser' <<<"$output" || { echo "curated profile missing" >&2; exit 1; }
+if (ONBOARD_PYTHON=false choose_package_profile '' <<< '' 2>&1); then
+  echo "expected failure when the resolver cannot run" >&2; exit 1
+fi
+# no CATALOG_* set must still work (empty argument list, not a blank argument)
+choose_package_profile '' <<< 'brlaser' >/dev/null
