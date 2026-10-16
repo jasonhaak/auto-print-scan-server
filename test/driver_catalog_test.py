@@ -3,6 +3,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -133,6 +135,23 @@ class ExclusionTest(unittest.TestCase):
             "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW-2.ppd",
             "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd",
         ])
+
+
+class RenderTest(unittest.TestCase):
+    def test_artifact_round_trips_with_provenance(self):
+        generator = load_generator()
+        catalog = generator.build_catalog(CAPTURE)
+        document = yaml.safe_load(generator.render_artifact(catalog, CAPTURE))
+        self.assertEqual(set(document), {"generated_package_profiles", "model_index", "catalog_metadata"})
+        self.assertEqual(document["catalog_metadata"]["repository_identity"], CAPTURE["repository_identity"])
+        self.assertEqual(document["catalog_metadata"]["provenance"], CAPTURE["provenance"])
+
+    def test_manifest_records_required_provenance(self):
+        generator = load_generator()
+        manifest = generator.write_manifest(CAPTURE, generator.build_catalog(CAPTURE))
+        self.assertEqual(manifest["provenance"]["index_sha256"], "abc")
+        self.assertEqual(manifest["provenance"]["package_sha256"]["foomatic-db-compressed-ppds"], "def")
+        self.assertEqual(manifest["entries"][0]["uri"], CAPTURE["entries"][0]["uri"])
 
 
 if __name__ == "__main__":
