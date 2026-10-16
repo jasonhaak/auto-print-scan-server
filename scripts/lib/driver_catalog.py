@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+import os
 import re
+import sys
 from pathlib import Path
 
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CURATED_PROFILES_PATH = REPO_ROOT / "vars/driver_profiles.yml"
-GENERATED_DIR = REPO_ROOT / "vars/generated"
+GENERATED_DIR = Path(os.environ.get("DRIVER_CATALOG_GENERATED_DIR", REPO_ROOT / "vars/generated"))
 
 ARCHITECTURE_FACTS = {"armv6l": "armhf", "aarch64": "arm64", "x86_64": "amd64"}
 
@@ -112,3 +116,31 @@ def resolve_identity(suite, architecture_fact, repository_identity) -> dict:
         raise CatalogError(f"unsupported architecture fact {architecture_fact!r}")
     return {"suite": str(suite), "package_architecture": package_architecture,
             "repository_identity": str(repository_identity)}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    select = commands.add_parser("select")
+    select.add_argument("--suite", required=True)
+    select.add_argument("--architecture", required=True)
+    select.add_argument("--repository", required=True)
+    select.add_argument("--enable-generated-catalog", action="store_true")
+    return parser
+
+
+def main() -> int:
+    arguments = build_parser().parse_args()
+    if arguments.command != "select":
+        return 2
+    catalog = load_catalog(arguments.suite, arguments.architecture, arguments.repository)
+    if not arguments.enable_generated_catalog:
+        catalog = {"package_profiles": load_catalog()["package_profiles"], "model_index": {},
+                   "metadata": {}, "requested": catalog["requested"], "matched": False,
+                   "identity_matched": False}
+    print(json.dumps(catalog, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
