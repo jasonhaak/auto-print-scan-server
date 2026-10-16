@@ -57,6 +57,13 @@ ScanservJS and confirm that it appears in the configured output directory. The `
 `generic_pcl` profiles, and every physical printer or scanner, remain unvalidated until this
 hardware acceptance is recorded.
 
+## Driver catalog hardware acceptance
+
+Repository checks cover the generator, matcher, gates and curated compatibility. The boxes below stay open until a device prints; no catalog hardware has been measured yet.
+
+- [ ] Pi Zero W (`armv6l`/`armhf`, Raspberry Pi OS Lite 32-bit): commission with a representative generated-profile printer, confirm the exact `printer-device-id` suggestion and the operator-selected `lpinfo -m` model, then print one CUPS test page. (pending)
+- [ ] 64-bit Pi (`arm64`, Raspberry Pi OS Lite 64-bit): same sequence for a second representative family. (pending)
+
 ## Recovery
 
 Recover by flashing fresh Trixie Lite 64-bit media, enabling SSH and recreating the bootstrap
