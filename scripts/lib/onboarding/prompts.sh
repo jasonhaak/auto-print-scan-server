@@ -230,11 +230,30 @@ package_profile_model_prefix() {
   mapfile -t identity < <(catalog_identity_arguments)
   "$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" "${identity[@]}" profile-model-prefix "$1"
 }
+identity_match_tokens() {
+  local base=$1 evidence=$2 chunk value
+  for chunk in $(tr -cs '[:alnum:]' ' ' <<<"$base"); do
+    chunk=${chunk,,}
+    (( ${#chunk} >= 4 )) && printf '%s\n' "$chunk"
+  done
+  base=$(tr -cd '[:alnum:]' <<<"${base,,}")
+  (( ${#base} >= 4 )) && printf '%s\n' "$base"
+  while IFS= read -r value; do
+    value=${value#*:}
+    for chunk in $(tr -cs '[:alnum:]' ' ' <<<"$value"); do
+      chunk=${chunk,,}
+      (( ${#chunk} >= 4 )) && printf '%s\n' "$chunk"
+    done
+    value=$(tr -cd '[:alnum:]' <<<"${value,,}")
+    (( ${#value} >= 4 )) && printf '%s\n' "$value"
+  done < <(grep -o -E 'MFG:[^;]*|MDL:[^;]*' <<<"$evidence" || true)
+}
 choose_cups_model() {
-  local profile=$1 uri=$2 models=$3 prefix=$4 evidence=${5:-} candidate model description selection recommended='' identity normalized_description score best_score=0 index recommended_index=0 choice_default
-  local -a candidates=() scores=()
+  local profile=$1 uri=$2 models=$3 prefix=$4 evidence=${5:-} candidate model description selection recommended='' identity normalized_description score best_score=0 index choice_default show_all=0 show_all_option manual_option position
+  local -a candidates=() scores=() tokens=() displayed=()
   identity=${uri%%\?*}
   identity=${identity##*/}
+  mapfile -t tokens < <(identity_match_tokens "$identity" "$evidence" | sort -u)
   while IFS= read -r candidate; do
     model=${candidate%%[[:space:]]*}
     description=${candidate#"$model"}
@@ -242,52 +261,87 @@ choose_cups_model() {
     candidates+=("$model${description}|$model")
     normalized_description=$(tr -cd '[:alnum:]' <<<"${description,,}")
     score=0
-    for identity in $identity $evidence; do
-      identity=$(tr -cd '[:alnum:]' <<<"${identity,,}")
-      (( ${#identity} >= 4 )) || continue
-      [[ "$normalized_description" == *"$identity"* ]] && ((score++))
+    for token in ${tokens[@]+"${tokens[@]}"}; do
+      [[ "$normalized_description" == *"$token"* ]] && ((score++))
     done
+    # A generic PCL model is never inferred from a PCL capability: it stays
+    # selectable, but is never narrowed to or recommended.
+    [[ "${model,,}" == *generic-pcl_* ]] && score=0
     scores+=("$score")
     if (( score > best_score )); then
       best_score=$score
       recommended=$model
-      recommended_index=${#candidates[@]}
     fi
   done <<<"$models"
   (( ${#candidates[@]} > 0 )) || {
     printf 'CUPS did not advertise a model beginning with %s for profile %s. Choose another profile or inspect lpinfo -m on the server.\n' "$prefix" "$profile" >&2
     return 1
   }
-  input_required 'Exact CUPS model'
-  printf '%s\n' 'Choose the exact model advertised by CUPS. This is saved for this queue and verified again during commissioning.' >&2
-  if [[ -n "$recommended" ]]; then
-    printf '\n' >&2
-    recommendation "Recommended from detected printer identity: $recommended. Confirm it explicitly below."
-  else
-    printf '\n' >&2
-  fi
-  printf '%-4s %-46s %s\n' 'No.' 'Model' 'Description' >&2
-  for index in "${!candidates[@]}"; do
-    model=${candidates[$index]##*|}
-    description=${candidates[$index]%%|*}
-    description=${description#"$model"}
-    printf '%-4s %-46s %s%s\n' "$((index + 1))" "$model" "${description# }" \
-      "$([[ "$model" == "$recommended" ]] && printf '  [recommended]')" >&2
-  done
-  printf '%-4s %s\n' "$(( ${#candidates[@]} + 1 ))" 'Enter a listed model manually' >&2
-  choice_default=$(( ${#candidates[@]} + 1 ))
-  (( recommended_index > 0 )) && choice_default=$recommended_index
+  (( best_score > 0 )) || recommended=''
   while true; do
-    selection=$(ask 'Choose a number' "$choice_default")
-    [[ "$selection" =~ ^[0-9]+$ ]] || { printf '%s\n' 'Enter a listed number.' >&2; continue; }
-    (( selection >= 1 && selection <= ${#candidates[@]} + 1 )) && break
-    printf '%s\n' 'Enter a listed number.' >&2
+    displayed=()
+    if (( show_all == 0 )) && (( best_score > 0 )); then
+      for index in "${!candidates[@]}"; do
+        (( scores[index] > 0 )) && displayed+=("$index")
+      done
+    else
+      for index in "${!candidates[@]}"; do displayed+=("$index"); done
+    fi
+    input_required 'Exact CUPS model'
+    printf '%s\n' 'Choose the exact model advertised by CUPS. This is saved for this queue and verified again during commissioning.' >&2
+    if (( show_all == 0 )) && (( best_score > 0 )) && (( ${#displayed[@]} < ${#candidates[@]} )); then
+      printf '%s\n' 'Only models matching the detected printer identity are listed.' >&2
+    fi
+    if [[ -n "$recommended" ]]; then
+      printf '\n' >&2
+      recommendation "Recommended from detected printer identity: $recommended. Confirm it explicitly below."
+    else
+      printf '\n' >&2
+    fi
+    printf '%-4s %-46s %s\n' 'No.' 'Model' 'Description' >&2
+    position=0
+    for index in "${displayed[@]}"; do
+      position=$((position + 1))
+      model=${candidates[$index]##*|}
+      description=${candidates[$index]%%|*}
+      description=${description#"$model"}
+      printf '%-4s %-46s %s%s\n' "$position" "$model" "${description# }" \
+        "$([[ "$model" == "$recommended" ]] && printf '  [recommended]')" >&2
+    done
+    show_all_option=0
+    if (( show_all == 0 )) && (( best_score > 0 )) && (( ${#displayed[@]} < ${#candidates[@]} )); then
+      show_all_option=$((position + 1))
+      position=$((position + 1))
+      printf '%-4s %s\n' "$show_all_option" 'Show all models under this prefix' >&2
+    fi
+    manual_option=$((position + 1))
+    printf '%-4s %s\n' "$manual_option" 'Enter a listed model manually' >&2
+    choice_default=$manual_option
+    if [[ -n "$recommended" ]]; then
+      for position in "${!displayed[@]}"; do
+        if [[ "${candidates[${displayed[$position]}]##*|}" == "$recommended" ]]; then
+          choice_default=$((position + 1))
+          break
+        fi
+      done
+    fi
+    while true; do
+      selection=$(ask 'Choose a number' "$choice_default")
+      [[ "$selection" =~ ^[0-9]+$ ]] || { printf '%s\n' 'Enter a listed number.' >&2; continue; }
+      (( selection >= 1 && selection <= manual_option )) && break
+      printf '%s\n' 'Enter a listed number.' >&2
+    done
+    if (( show_all_option > 0 )) && (( selection == show_all_option )); then
+      show_all=1
+      continue
+    fi
+    if (( selection == manual_option )); then
+      selection=manual
+    else
+      selection=${candidates[${displayed[$((selection - 1))]}]}
+    fi
+    break
   done
-  if (( selection == ${#candidates[@]} + 1 )); then
-    selection=manual
-  else
-    selection=${candidates[$((selection - 1))]}
-  fi
   if [[ "$selection" == manual ]]; then
     while true; do
       model=$(ask 'Exact CUPS model from lpinfo -m' "${recommended:-${candidates[0]##*|}}")
