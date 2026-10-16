@@ -152,5 +152,17 @@ class CupsRoleTest(unittest.TestCase):
         )
 
 
+class PackageProfileGateTest(unittest.TestCase):
+    def test_both_paths_simulate_and_reject_removals(self):
+        role = (ROOT / "roles/package_profiles/tasks/main.yml").read_text(encoding="utf-8")
+        preparation = (ROOT / "playbooks/prepare-printer-profile.yml").read_text(encoding="utf-8")
+        for text in (role, preparation):
+            self.assertIn("apt-get", text)
+            self.assertIn("--no-remove", text)
+            self.assertIn("^Remv ", text)
+            self.assertNotIn("^Inst ", text.split("failed_when")[1])  # dependencies are allowed
+        self.assertLess(role.index("--no-remove"), role.index("Install packages from selected profiles"))
+
+
 if __name__ == "__main__":
     unittest.main()
