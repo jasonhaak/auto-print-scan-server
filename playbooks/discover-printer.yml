@@ -6,5 +6,7 @@
   vars_files:
     - ../vars/driver_profiles.yml
   roles:
+    - role: driver_catalog
+      tags: always
     - role: printer_discovery
       tags: printer_discovery
