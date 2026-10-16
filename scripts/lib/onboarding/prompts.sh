@@ -201,19 +201,34 @@ valid_usb_identity() {
   command -v "$checker" >/dev/null 2>&1 || [[ -x "$checker" ]] || return 1
   "$checker" "$root/scripts/lib/device_inventory.py" validate-usb-identity "$identity" >/dev/null 2>&1
 }
+catalog_identity_arguments() {
+  local -a arguments=()
+  [[ -n "${CATALOG_SUITE:-}" ]] && arguments+=(--catalog-suite "$CATALOG_SUITE")
+  [[ -n "${CATALOG_ARCHITECTURE:-}" ]] && arguments+=(--catalog-architecture "$CATALOG_ARCHITECTURE")
+  [[ -n "${CATALOG_REPOSITORY:-}" ]] && arguments+=(--catalog-repository "$CATALOG_REPOSITORY")
+  [[ -n "${CATALOG_ENABLE_GENERATED:-}" ]] && arguments+=(--enable-generated-catalog)
+  (( ${#arguments[@]} > 0 )) && printf '%s\n' "${arguments[@]}"
+}
 choose_package_profile() {
-  local default=$1 profile
-  local -a profiles=()
+  local default=$1 profile listing
+  local -a profiles=() identity=()
+  mapfile -t identity < <(catalog_identity_arguments)
+  if ! listing=$("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" "${identity[@]}" profiles); then
+    printf '%s\n' 'The package profile registry could not be read.' >&2
+    return 1
+  fi
   while IFS= read -r profile; do
     [[ -n "$profile" ]] && profiles+=("$profile")
-  done < <(sed -nE 's/^  ([A-Za-z0-9_.-]+):$/\1/p' "$root/vars/driver_profiles.yml")
+  done <<<"$listing"
   (( ${#profiles[@]} > 0 )) || { printf '%s\n' 'No package profiles are registered.' >&2; return 1; }
   [[ -n "$default" ]] || default=${profiles[0]}
   printf 'Available package profiles: %s\n' "${profiles[*]}" >&2
   ask_choice 'Explicit package profile' "$default" "${profiles[@]}"
 }
 package_profile_model_prefix() {
-  "$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" profile-model-prefix "$1"
+  local -a identity=()
+  mapfile -t identity < <(catalog_identity_arguments)
+  "$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" "${identity[@]}" profile-model-prefix "$1"
 }
 choose_cups_model() {
   local profile=$1 uri=$2 models=$3 prefix=$4 evidence=${5:-} candidate model description selection recommended='' identity normalized_description score best_score=0 index recommended_index=0 choice_default
