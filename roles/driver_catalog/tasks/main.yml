@@ -1,0 +1,53 @@
+---
+- name: Find the configured APT release files
+  ansible.builtin.find:
+    paths: /var/lib/apt/lists
+    patterns: "*_Release"
+  register: driver_catalog_release_files
+  changed_when: false
+  tags: always
+
+- name: Read the configured APT release files
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: driver_catalog_release_contents
+  loop: "{{ driver_catalog_release_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: false
+  tags: always
+
+- name: Derive the target catalog identity
+  ansible.builtin.set_fact:
+    driver_catalog_identity:
+      suite: "{{ ansible_facts.distribution_release }}"
+      package_architecture: >-
+        {{ {'armv6l': 'armhf', 'aarch64': 'arm64', 'x86_64': 'amd64'}.get(ansible_facts.architecture, 'unsupported') }}
+      repository_identity: >-
+        {{ driver_catalog_release_contents.results | default([])
+           | map(attribute='content') | map('b64decode')
+           | map('regex_findall', '(?m)^(?:Origin|Label|Suite|Codename):.*$')
+           | map('sort') | map('join', '|')
+           | reject('equalto', '') | unique | sort | join(';') }}
+  tags: always
+
+- name: Select the generated catalog for this target
+  ansible.builtin.command:
+    argv: >-
+      {{ ['python3', playbook_dir ~ '/../scripts/lib/driver_catalog.py', 'select',
+          '--suite', driver_catalog_identity.suite,
+          '--architecture', driver_catalog_identity.package_architecture,
+          '--repository', driver_catalog_identity.repository_identity]
+         + (['--enable-generated-catalog'] if driver_catalog_generated_enabled | bool else []) }}
+  register: driver_catalog_selection
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  tags: always
+
+- name: Merge the generated catalog into the package profiles
+  ansible.builtin.set_fact:
+    package_profiles: >-
+      {{ (driver_catalog_selection.stdout | from_json).package_profiles | combine(package_profiles) }}
+  when: (driver_catalog_selection.stdout | from_json).matched | bool
+  tags: always
