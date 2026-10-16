@@ -199,3 +199,12 @@ if (ONBOARD_PYTHON=false choose_package_profile '' <<< '' 2>&1); then
 fi
 # no CATALOG_* set must still work (empty argument list, not a blank argument)
 choose_package_profile '' <<< 'brlaser' >/dev/null
+models=$'foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Other.ppd Other\nfoomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd Brother HL-2270DW'
+choice=$(choose_cups_model generic_pcl 'ipp://printer/ipp/print' "$models" \
+  'foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/' 'MFG:Brother;MDL:HL-2270DW;' <<< '1')
+[[ "$choice" == 'foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd' ]] || {
+  echo "expected the identity-matched model first, got $choice" >&2; exit 1; }
+output=$(choose_cups_model generic_pcl 'ipp://printer/ipp/print' "$models" \
+  'foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/' 'MFG:Acme;MDL:Nothing;' <<< '1' 2>&1)
+[[ "$output" != *'[recommended]'* ]] || {
+  echo "unexpected recommendation for an unmatched identity" >&2; exit 1; }
