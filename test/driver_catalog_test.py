@@ -53,5 +53,49 @@ class ProfileNameTest(unittest.TestCase):
             "debian_splix_samsung")
 
 
+CAPTURE = {
+    "suite": "trixie",
+    "package_architecture": "armhf",
+    "repository_identity": "Origin: Raspbian|Label: Raspbian|Suite: oldstable|Codename: trixie",
+    "label": "raspberrypi",
+    "generated_on": "2026-10-17",
+    "generator_version": "1",
+    "packages": {"foomatic-db-compressed-ppds": "20230202-1"},
+    "provenance": {"index_sha256": "abc",
+                   "package_sha256": {"foomatic-db-compressed-ppds": "def"},
+                   "tool_versions": {"cups": "2.4.2", "python": "3.13"}},
+    "entries": [
+        {"uri": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd",
+         "device_id": "MFG:Brother;MDL:HL-2270DW;", "package": "foomatic-db-compressed-ppds"},
+        {"uri": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW-2.ppd",
+         "device_id": "MFG:Brother;MDL:HL-2270DW;", "package": "foomatic-db-compressed-ppds"},
+    ],
+}
+
+
+class BuildCatalogTest(unittest.TestCase):
+    def test_groups_by_package_and_prefix(self):
+        generator = load_generator()
+        catalog = generator.build_catalog(CAPTURE)
+        self.assertEqual(catalog["generated_package_profiles"]["debian_foomatic_db_compressed_ppds"], {
+            "description": "Models advertised by Debian package foomatic-db-compressed-ppds",
+            "packages": ["foomatic-db-compressed-ppds"],
+            "model_prefix": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/",
+            "family": "captured-cups-models",
+            "prefix_status": "verified",
+        })
+        self.assertEqual(catalog["model_index"],
+                         {"brother|hl-2270dw": ["debian_foomatic_db_compressed_ppds"]})
+        self.assertEqual(catalog["catalog_metadata"],
+                         {"excluded_packages": [], "shared_uris": []})
+
+    def test_uri_without_slash_becomes_its_own_prefix(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [{"uri": "family:model", "device_id": "MFG:A;MDL:B;", "package": "p"}]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(catalog["generated_package_profiles"]["debian_p"]["model_prefix"], "family:model")
+
+
 if __name__ == "__main__":
     unittest.main()

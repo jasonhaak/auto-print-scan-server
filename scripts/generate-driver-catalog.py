@@ -28,6 +28,41 @@ def profile_name(package: str, package_prefixes: list[str], prefix: str) -> str:
     return f"{base}_{tail}" if tail else base
 
 
+def entry_prefix(uri: str) -> str:
+    head, separator, _ = uri.rpartition("/")
+    return f"{head}{separator}" if separator else uri
+
+
+def build_catalog(capture: dict) -> dict:
+    by_package: dict[str, list[dict]] = {}
+    for entry in capture.get("entries", []) or []:
+        by_package.setdefault(entry["package"], []).append(entry)
+    profiles: dict[str, dict] = {}
+    model_index: dict[str, list[str]] = {}
+    for package, entries in by_package.items():
+        prefixes = sorted({entry_prefix(entry["uri"]) for entry in entries})
+        for prefix in prefixes:
+            name = profile_name(package, prefixes, prefix)
+            profiles[name] = {
+                "description": f"Models advertised by Debian package {package}",
+                "packages": [package],
+                "model_prefix": prefix,
+                "family": "captured-cups-models",
+                "prefix_status": "verified",
+            }
+            for entry in entries:
+                if entry_prefix(entry["uri"]) != prefix:
+                    continue
+                key = device_id_key(entry.get("device_id", ""))
+                if key is None:
+                    continue
+                model_index.setdefault(key, [])
+                if name not in model_index[key]:
+                    model_index[key].append(name)
+    return {"generated_package_profiles": profiles, "model_index": model_index,
+            "catalog_metadata": {"excluded_packages": [], "shared_uris": []}}
+
+
 def main() -> int:
     return 0
 
