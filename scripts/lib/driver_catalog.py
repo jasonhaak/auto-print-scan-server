@@ -90,3 +90,25 @@ def load_catalog(suite=None, package_architecture=None, repository_identity=None
     merged.update(curated)  # curated wins whole-entry
     return {"package_profiles": merged, "model_index": model_index, "metadata": metadata,
             "requested": requested, "matched": matched, "identity_matched": identity_matched}
+
+
+def profile_names(catalog: dict) -> list[str]:
+    return list(catalog["package_profiles"])
+
+
+def model_prefix(catalog: dict, name: str) -> str:
+    profile = catalog["package_profiles"].get(name)
+    if not isinstance(profile, dict):
+        raise CatalogError(f"unknown package profile {name!r}")
+    prefix = profile.get("model_prefix")
+    if not isinstance(prefix, str) or not prefix.strip():
+        raise CatalogError(f"package profile {name!r} has no model_prefix")
+    return prefix
+
+
+def resolve_identity(suite, architecture_fact, repository_identity) -> dict:
+    package_architecture = ARCHITECTURE_FACTS.get(architecture_fact)
+    if package_architecture is None:
+        raise CatalogError(f"unsupported architecture fact {architecture_fact!r}")
+    return {"suite": str(suite), "package_architecture": package_architecture,
+            "repository_identity": str(repository_identity)}

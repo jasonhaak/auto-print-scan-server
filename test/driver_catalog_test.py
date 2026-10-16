@@ -221,5 +221,22 @@ class LoadCatalogTest(unittest.TestCase):
         self.assertEqual(catalog["package_profiles"], {})
 
 
+class ResolverTest(unittest.TestCase):
+    def test_profile_names_and_prefix(self):
+        module = load_real_module()
+        catalog = {"package_profiles": {"a": {"model_prefix": "drv:///a.drv/"}}}
+        self.assertEqual(module.profile_names(catalog), ["a"])
+        self.assertEqual(module.model_prefix(catalog, "a"), "drv:///a.drv/")
+        with self.assertRaises(module.CatalogError):
+            module.model_prefix(catalog, "missing")
+
+    def test_resolve_identity_maps_facts_and_rejects_unsupported(self):
+        module = load_real_module()
+        self.assertEqual(module.resolve_identity("trixie", "armv6l", "R"),
+                         {"suite": "trixie", "package_architecture": "armhf", "repository_identity": "R"})
+        with self.assertRaises(module.CatalogError):
+            module.resolve_identity("trixie", "armv7l", "R")
+
+
 if __name__ == "__main__":
     unittest.main()
