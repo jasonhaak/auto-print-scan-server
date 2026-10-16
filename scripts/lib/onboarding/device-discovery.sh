@@ -2,7 +2,9 @@
 
 # Catalog identity for the package-profile resolver. Set from the target
 # environment when known; exported so every onboarding call site resolves
-# against the same catalog.
+# against the same catalog. The generated catalog is enabled now that the
+# availability gate and the literal-prefix check guard both install paths.
+export CATALOG_ENABLE_GENERATED=1
 resolve_catalog_identity() {
   [[ -n "${CATALOG_SUITE:-}" && -n "${CATALOG_ARCHITECTURE:-}" ]] && return 0
   local probe
