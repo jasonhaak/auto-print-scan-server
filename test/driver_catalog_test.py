@@ -175,5 +175,51 @@ class GeneratorCliTest(unittest.TestCase):
             self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["provenance"], CAPTURE["provenance"])
 
 
+class LoadCatalogTest(unittest.TestCase):
+    def _fixture(self, module, identity, repository_identity="R"):
+        root = Path(tempfile.mkdtemp())
+        (root / "vars/generated").mkdir(parents=True)
+        (root / "vars/driver_profiles.yml").write_text(
+            "package_profiles:\n  brlaser:\n    model_prefix: drv:///brlaser.drv/\n", encoding="utf-8")
+        (root / "vars/generated/driver_profiles_trixie_armhf_raspberrypi.yml").write_text(
+            "generated_package_profiles:\n"
+            "  brlaser:\n    model_prefix: generated\n"
+            "  debian_x:\n    model_prefix: drv:///x.drv/\n"
+            "model_index: {}\n"
+            f"catalog_metadata:\n  suite: trixie\n  package_architecture: armhf\n  repository_identity: {identity}\n",
+            encoding="utf-8")
+        module.CURATED_PROFILES_PATH = root / "vars/driver_profiles.yml"
+        module.GENERATED_DIR = root / "vars/generated"
+
+    def test_merge_curated_wins_and_reports_matched(self):
+        module = load_real_module()
+        self._fixture(module, "R")
+        catalog = module.load_catalog("trixie", "armhf", "R")
+        self.assertTrue(catalog["requested"])
+        self.assertTrue(catalog["matched"])
+        self.assertTrue(catalog["identity_matched"])
+        self.assertEqual(catalog["package_profiles"]["brlaser"]["model_prefix"], "drv:///brlaser.drv/")
+        self.assertIn("debian_x", catalog["package_profiles"])
+
+    def test_repository_drift_still_matches_but_not_identity(self):
+        module = load_real_module()
+        self._fixture(module, "different")
+        catalog = module.load_catalog("trixie", "armhf", "R")
+        self.assertTrue(catalog["matched"])
+        self.assertFalse(catalog["identity_matched"])
+
+    def test_missing_artifact_reports_not_matched(self):
+        module = load_real_module()
+        root = Path(tempfile.mkdtemp())
+        (root / "vars").mkdir(parents=True)
+        (root / "vars/driver_profiles.yml").write_text("package_profiles: {}\n", encoding="utf-8")
+        module.CURATED_PROFILES_PATH = root / "vars/driver_profiles.yml"
+        module.GENERATED_DIR = root / "vars/generated"
+        catalog = module.load_catalog("trixie", "armhf", "R")
+        self.assertTrue(catalog["requested"])
+        self.assertFalse(catalog["matched"])
+        self.assertEqual(catalog["package_profiles"], {})
+
+
 if __name__ == "__main__":
     unittest.main()
