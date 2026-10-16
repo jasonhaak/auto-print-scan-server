@@ -33,9 +33,11 @@ class PrinterDiscoveryRoleTest(unittest.TestCase):
 
     def test_profile_matching_guards_against_a_skipped_query_result(self):
         profile_task = next(
-            task for task in self.tasks if task["name"] == "Report matching repository package profiles"
+            task for task in self.tasks if task["name"] == "Report catalog matches for discovered printers"
         )
-        self.assertIn("not (item.0.skipped | default(false))", profile_task["when"])
+        when = profile_task["when"]
+        text = "\n".join(when) if isinstance(when, list) else when
+        self.assertIn("not (item.skipped | default(false))", text)
 
 
 class CatalogRoleInDiscoveryTest(unittest.TestCase):
@@ -46,6 +48,15 @@ class CatalogRoleInDiscoveryTest(unittest.TestCase):
             entry = roles[0] if roles else None
             first = entry if isinstance(entry, str) else (entry.get("role") if isinstance(entry, dict) else None)
             self.assertEqual(first, "driver_catalog", name)
+
+
+class DiscoveryMatcherTest(unittest.TestCase):
+    def test_discovery_uses_the_controller_side_matcher(self):
+        text = (ROOT / "roles/printer_discovery/tasks/main.yml").read_text(encoding="utf-8")
+        self.assertIn("delegate_to: localhost", text)
+        self.assertIn("become: false", text)
+        self.assertIn("profiles-for-evidence", text)
+        self.assertNotIn("item.1.value.make_model_pattern", text)
 
 
 if __name__ == "__main__":
