@@ -29,5 +29,29 @@ class DeviceIdTest(unittest.TestCase):
         self.assertIsNone(module.device_id_key("MFG:;MDL:HL-2270DW;"))
 
 
+def load_generator():
+    spec = importlib.util.spec_from_file_location(
+        "generate_driver_catalog", ROOT / "scripts/generate-driver-catalog.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ProfileNameTest(unittest.TestCase):
+    def test_profile_name_is_stable_and_derived_from_package(self):
+        generator = load_generator()
+        self.assertEqual(generator.slug("printer-driver-splix"), "printer_driver_splix")
+        self.assertEqual(
+            generator.profile_name("foomatic-db-compressed-ppds",
+                                   ["foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/"],
+                                   "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/"),
+            "debian_foomatic_db_compressed_ppds")
+        self.assertEqual(
+            generator.profile_name("printer-driver-splix",
+                                   ["drv:///splix-samsung.drv/", "drv:///splix-dell.drv/"],
+                                   "drv:///splix-samsung.drv/"),
+            "debian_splix_samsung")
+
+
 if __name__ == "__main__":
     unittest.main()
