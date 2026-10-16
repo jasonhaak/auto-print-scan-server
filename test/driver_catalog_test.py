@@ -261,5 +261,16 @@ class SelectCliTest(unittest.TestCase):
         self.assertIn("debian_fixture", json.loads(with_switch.stdout)["package_profiles"])
 
 
+class MatchEvidenceTest(unittest.TestCase):
+    def test_only_verified_generated_profiles_are_eligible(self):
+        module = load_real_module()
+        catalog = {"package_profiles": {"a": {"model_prefix": "x/", "prefix_status": "verified", "description": "A"},
+                                        "b": {"model_prefix": "y/"}},
+                   "model_index": {"brother|hl-2270dw": ["a", "b"]}}
+        evidence = "    printer-device-id (textWithoutLanguage) = MFG:Brother;MDL:HL-2270DW;\n"
+        self.assertEqual(module.match_evidence(catalog, evidence), [("a", "A")])
+        self.assertEqual(module.match_evidence(catalog, "no id"), [])
+
+
 if __name__ == "__main__":
     unittest.main()
