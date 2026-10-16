@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import importlib.util
+import json
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -152,6 +156,23 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(manifest["provenance"]["index_sha256"], "abc")
         self.assertEqual(manifest["provenance"]["package_sha256"]["foomatic-db-compressed-ppds"], "def")
         self.assertEqual(manifest["entries"][0]["uri"], CAPTURE["entries"][0]["uri"])
+
+
+class GeneratorCliTest(unittest.TestCase):
+    def test_cli_writes_artifact_and_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            capture_path = tmp / "capture.json"
+            capture_path.write_text(json.dumps(CAPTURE), encoding="utf-8")
+            output = tmp / "artifact.yml"
+            manifest = tmp / "manifest.json"
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/generate-driver-catalog.py"),
+                 "--capture", str(capture_path), "--output", str(output), "--manifest", str(manifest)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("generated_package_profiles", output.read_text(encoding="utf-8"))
+            self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["provenance"], CAPTURE["provenance"])
 
 
 if __name__ == "__main__":
