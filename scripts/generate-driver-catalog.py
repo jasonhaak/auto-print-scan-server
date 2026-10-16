@@ -33,14 +33,36 @@ def entry_prefix(uri: str) -> str:
     return f"{head}{separator}" if separator else uri
 
 
+VIRTUAL_PACKAGES = {"printer-driver-cups-pdf"}
+VIRTUAL_PREFIXES = {"cups-pdf:/"}
+GENERIC_PCL_PATTERN = re.compile(r"Generic-PCL_", re.IGNORECASE)
+
+
+def is_physical(entry: dict) -> bool:
+    return (entry.get("package") not in VIRTUAL_PACKAGES
+            and entry_prefix(entry["uri"]) not in VIRTUAL_PREFIXES)
+
+
+def shared_uris(entries: list[dict]) -> set[str]:
+    owners: dict[str, set[str]] = {}
+    for entry in entries:
+        owners.setdefault(entry["uri"], set()).add(entry["package"])
+    return {uri for uri, packages in owners.items() if len(packages) > 1}
+
+
 def build_catalog(capture: dict) -> dict:
+    entries = capture.get("entries", []) or []
+    shared = shared_uris(entries)
+    excluded = sorted({entry["package"] for entry in entries if not is_physical(entry)})
     by_package: dict[str, list[dict]] = {}
-    for entry in capture.get("entries", []) or []:
+    for entry in entries:
+        if not is_physical(entry):
+            continue
         by_package.setdefault(entry["package"], []).append(entry)
     profiles: dict[str, dict] = {}
     model_index: dict[str, list[str]] = {}
-    for package, entries in by_package.items():
-        prefixes = sorted({entry_prefix(entry["uri"]) for entry in entries})
+    for package, package_entries in by_package.items():
+        prefixes = sorted({entry_prefix(entry["uri"]) for entry in package_entries})
         for prefix in prefixes:
             name = profile_name(package, prefixes, prefix)
             profiles[name] = {
@@ -50,8 +72,10 @@ def build_catalog(capture: dict) -> dict:
                 "family": "captured-cups-models",
                 "prefix_status": "verified",
             }
-            for entry in entries:
+            for entry in package_entries:
                 if entry_prefix(entry["uri"]) != prefix:
+                    continue
+                if entry["uri"] in shared or GENERIC_PCL_PATTERN.search(entry["uri"]):
                     continue
                 key = device_id_key(entry.get("device_id", ""))
                 if key is None:
@@ -60,7 +84,7 @@ def build_catalog(capture: dict) -> dict:
                 if name not in model_index[key]:
                     model_index[key].append(name)
     return {"generated_package_profiles": profiles, "model_index": model_index,
-            "catalog_metadata": {"excluded_packages": [], "shared_uris": []}}
+            "catalog_metadata": {"excluded_packages": excluded, "shared_uris": sorted(shared)}}
 
 
 def main() -> int:
