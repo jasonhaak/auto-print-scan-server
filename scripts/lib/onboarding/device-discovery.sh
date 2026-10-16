@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Catalog identity for the package-profile resolver. Set from the target
+# environment when known; exported so every onboarding call site resolves
+# against the same catalog.
+export CATALOG_SUITE CATALOG_ARCHITECTURE CATALOG_REPOSITORY
+
 restore_systemd_unit_state() {
   local unit=$1 was_enabled=$2 was_active=$3
   if [[ "$was_active" != active ]]; then
@@ -276,6 +281,8 @@ tcp_port_is_open() {
 
 recommend_legacy_profile() {
   local uri=$1 identity_output='' profile name description
+  local -a identity=()
+  mapfile -t identity < <(catalog_identity_arguments)
   legacy_printer_identity_evidence=''
   case "$uri" in
     ipp://*|ipps://*) ;;
@@ -293,7 +300,8 @@ recommend_legacy_profile() {
   printf '%s\n' 'IPP identity evidence was received. Repository matches below are recommendations only; they do not prove support or select a profile.' >&2
   while IFS='|' read -r name description; do
     [[ -n "$name" ]] && recommendation "Repository profile $name: $description"
-  done < <("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" --inventory "$variables" --backup-directory "$backups" profiles-for-evidence "$identity_output")
+  done < <("$ONBOARD_PYTHON" "$root/scripts/lib/device_inventory.py" "${identity[@]}" \
+             --inventory "$variables" --backup-directory "$backups" profiles-for-evidence "$identity_output")
 }
 
 wait_for_cups_ready() {
