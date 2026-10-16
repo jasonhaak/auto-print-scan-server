@@ -38,5 +38,15 @@ class PrinterDiscoveryRoleTest(unittest.TestCase):
         self.assertIn("not (item.0.skipped | default(false))", profile_task["when"])
 
 
+class CatalogRoleInDiscoveryTest(unittest.TestCase):
+    def test_discovery_and_preparation_include_the_role(self):
+        for name in ("discover-printer.yml", "prepare-printer-profile.yml"):
+            play = yaml.safe_load((ROOT / "playbooks" / name).read_text(encoding="utf-8"))[0]
+            roles = play.get("roles", [])
+            entry = roles[0] if roles else None
+            first = entry if isinstance(entry, str) else (entry.get("role") if isinstance(entry, dict) else None)
+            self.assertEqual(first, "driver_catalog", name)
+
+
 if __name__ == "__main__":
     unittest.main()

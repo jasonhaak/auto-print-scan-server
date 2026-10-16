@@ -7,6 +7,16 @@
     - ../vars/driver_profiles.yml
   vars:
     selected_package_profiles: []
+  pre_tasks:
+    - name: Gather the target architecture and release
+      ansible.builtin.setup:
+        filter:
+          - ansible_architecture
+          - ansible_distribution_release
+          - ansible_distribution_major_version
+  roles:
+    - role: driver_catalog
+      tags: always
   tasks:
     - name: Validate selected legacy driver profiles
       ansible.builtin.assert:
