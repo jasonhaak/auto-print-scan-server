@@ -6,6 +6,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CURATED_PROFILES_PATH = REPO_ROOT / "vars/driver_profiles.yml"
 GENERATED_DIR = REPO_ROOT / "vars/generated"
@@ -40,3 +42,51 @@ def device_id_key(device_id: str) -> str | None:
     if not makes[0].strip() or not models[0].strip():
         return None
     return f"{normalize(makes[0])}|{normalize(models[0])}"
+
+
+def _load_yaml(path: Path) -> dict:
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise CatalogError(f"registry is unavailable: {error}") from error
+    return data if isinstance(data, dict) else {}
+
+
+def load_catalog(suite=None, package_architecture=None, repository_identity=None) -> dict:
+    curated = _load_yaml(CURATED_PROFILES_PATH).get("package_profiles")
+    curated = curated if isinstance(curated, dict) else {}
+    requested = bool(suite and package_architecture)
+    matched = False
+    identity_matched = False
+    generated: dict = {}
+    model_index: dict = {}
+    metadata: dict = {}
+    if requested and GENERATED_DIR.is_dir():
+        candidates = []
+        for path in sorted(GENERATED_DIR.glob("driver_profiles_*.yml")):
+            document = _load_yaml(path)
+            meta = document.get("catalog_metadata")
+            if not isinstance(meta, dict):
+                continue
+            if meta.get("suite") != suite or meta.get("package_architecture") != package_architecture:
+                continue
+            candidates.append((meta, document))
+        # prefer an exact repository-identity match
+        chosen = next((c for c in candidates if not repository_identity
+                       or c[0].get("repository_identity") == repository_identity),
+                      candidates[0] if candidates else None)
+        if chosen is not None:
+            metadata, document = chosen
+            profiles = document.get("generated_package_profiles")
+            if isinstance(profiles, dict):
+                generated = dict(profiles)
+            index = document.get("model_index")
+            if isinstance(index, dict):
+                model_index = dict(index)
+            matched = True
+            identity_matched = bool(not repository_identity
+                                    or metadata.get("repository_identity") == repository_identity)
+    merged = dict(generated)
+    merged.update(curated)  # curated wins whole-entry
+    return {"package_profiles": merged, "model_index": model_index, "metadata": metadata,
+            "requested": requested, "matched": matched, "identity_matched": identity_matched}
