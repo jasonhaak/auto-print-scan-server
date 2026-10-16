@@ -79,7 +79,11 @@ def matching_package_profiles(identity_evidence: str, catalog=None) -> list[tupl
         pattern = profile.get("make_model_pattern")
         if isinstance(pattern, str) and re.search(pattern, identity_evidence):
             matches.append((name, str(profile.get("description", "repository package profile"))))
-    return matches
+    if matches:
+        return matches
+    if not catalog.get("identity_matched", True):
+        return []
+    return driver_catalog.match_evidence(catalog, identity_evidence)
 
 
 def printer_uri_is_valid(connection: str, uri: str) -> bool:
