@@ -195,7 +195,7 @@ These variables are the declared state of the server. Onboarding writes them to 
 | `lpd` | Older network printer | Requires the remote queue name; the server does not provide LPD. |
 | `usb` | Locally connected printer | Requires either `ipp_usb` or `legacy_usb`. |
 
-For `driver_mode: package_profile`, the queue also requires a `package_profile` and an exact `cups_model`. Onboarding installs the selected profile, then offers only CUPS models currently advertised by the server. It never selects a model automatically.
+For `driver_mode: package_profile`, the queue also requires a `package_profile` and an exact `cups_model`. Onboarding installs the selected profile, then offers only CUPS models currently advertised by the server. It never selects a model automatically. The registry combines hand-maintained profiles with a generated catalog captured from the target's own distribution packages; a suggestion appears only on an exact `printer-device-id` make-and-model match, and the operator still selects the exact model.
 
 ### Device Topologies
 
