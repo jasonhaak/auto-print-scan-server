@@ -5,6 +5,8 @@
   vars_files:
     - ../vars/driver_profiles.yml
   roles:
+    - role: driver_catalog
+      tags: always
     - role: device_definition
       tags: device_definition
     - role: package_profiles
