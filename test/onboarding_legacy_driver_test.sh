@@ -18,6 +18,7 @@ step_check() {
 }
 choose_cups_model() { printf '%s' 'drv:///brlaser.drv/br7360.ppd'; }
 recommend_legacy_profile() { legacy_printer_identity_evidence='Brother MFC-7360N'; }
+resolve_catalog_identity() { :; }
 choose_package_profile() { printf '%s' "${1:-brlaser}"; }
 
 legacy_driver_inventory=/tmp/inventory

@@ -3,7 +3,27 @@
 # Catalog identity for the package-profile resolver. Set from the target
 # environment when known; exported so every onboarding call site resolves
 # against the same catalog.
-export CATALOG_SUITE CATALOG_ARCHITECTURE CATALOG_REPOSITORY
+resolve_catalog_identity() {
+  [[ -n "${CATALOG_SUITE:-}" && -n "${CATALOG_ARCHITECTURE:-}" ]] && return 0
+  local probe
+  probe='import glob, re, subprocess
+def lines(path):
+    return sorted(line.strip() for line in open(path, encoding="utf-8", errors="replace")
+                  if re.match(r"^(Origin|Label|Suite|Codename):", line.strip()))
+identities = [item for item in ("|".join(lines(path)) for path in glob.glob("/var/lib/apt/lists/*_Release")) if item]
+release = {}
+for line in open("/etc/os-release", encoding="utf-8"):
+    key, _, value = line.partition("=")
+    release[key] = value.strip().strip(chr(34))
+print(release.get("VERSION_CODENAME", ""))
+print(subprocess.run(["dpkg", "--print-architecture"], capture_output=True, text=True).stdout.strip())
+print(";".join(sorted(set(identities))))'
+  local -a identity=()
+  mapfile -t identity < <(remote "python3 -c $(printf '%q' "$probe")" 2>/dev/null) || true
+  if (( ${#identity[@]} == 3 )) && [[ -n "${identity[0]}" && -n "${identity[1]}" ]]; then
+    export CATALOG_SUITE=${identity[0]} CATALOG_ARCHITECTURE=${identity[1]} CATALOG_REPOSITORY=${identity[2]}
+  fi
+}
 
 restore_systemd_unit_state() {
   local unit=$1 was_enabled=$2 was_active=$3
@@ -280,6 +300,7 @@ tcp_port_is_open() {
 }
 
 recommend_legacy_profile() {
+  resolve_catalog_identity
   local uri=$1 identity_output='' profile name description
   local -a identity=()
   mapfile -t identity < <(catalog_identity_arguments)
