@@ -51,7 +51,10 @@ class CupsRoleTest(unittest.TestCase):
             profile_task["loop"],
             "{{ managed_printers | selectattr('driver_mode', 'equalto', 'package_profile') | list }}",
         )
-        self.assertIn("cups_available_models.stdout", profile_task["ansible.builtin.assert"]["that"])
+        self.assertTrue(
+            any("cups_available_models.stdout_lines" in condition
+                for condition in profile_task["ansible.builtin.assert"]["that"])
+        )
 
     def test_printer_assert_does_not_require_at_least_one_printer(self):
         tasks = yaml.safe_load((ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8"))
@@ -162,6 +165,15 @@ class PackageProfileGateTest(unittest.TestCase):
             self.assertIn("^Remv ", text)
             self.assertNotIn("^Inst ", text.split("failed_when")[1])  # dependencies are allowed
         self.assertLess(role.index("--no-remove"), role.index("Install packages from selected profiles"))
+
+
+class CupsModelPrefixTest(unittest.TestCase):
+    def test_cups_role_uses_a_literal_prefix_check(self):
+        text = (ROOT / "roles/cups/tasks/main.yml").read_text(encoding="utf-8")
+        self.assertIn("startswith", text)
+        self.assertIn("model_prefix", text)
+        self.assertLess(text.index("startswith"),
+                        text.index("Remove queues no longer managed by Ansible"))
 
 
 if __name__ == "__main__":
