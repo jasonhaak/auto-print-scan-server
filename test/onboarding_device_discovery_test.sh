@@ -1240,3 +1240,9 @@ scope_recovery_calls=$(<"$scope_recovery_counter_file")
 unset -f discover_devices discover_devices_original recovery_choice ask_choice remote remote_tty avahi_browse_scan choose_candidate technical_report step_check step_action step_stream
 
 rm -f "${TMPDIR:-/tmp}"/auto-print-scan-server-discovery.*.log
+
+unset CATALOG_SUITE CATALOG_ARCHITECTURE CATALOG_REPOSITORY
+remote() { printf 'trixie\narmhf\nOrigin: Raspbian|Label: Raspbian\n'; }
+resolve_catalog_identity
+[[ "$CATALOG_ARCHITECTURE" == armhf && "$CATALOG_SUITE" == trixie ]] || {
+  echo "catalog identity probe did not resolve" >&2; exit 1; }

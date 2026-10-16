@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 collect_legacy_printer_profile() {
+  resolve_catalog_identity
   local uri=$1 profile_default=${2:-}
   COLLECTED_PRINTER_IDENTITY_EVIDENCE=''
   recommend_legacy_profile "$uri"
