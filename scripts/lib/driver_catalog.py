@@ -118,6 +118,22 @@ def resolve_identity(suite, architecture_fact, repository_identity) -> dict:
             "repository_identity": str(repository_identity)}
 
 
+def match_evidence(catalog: dict, evidence: str) -> list[tuple[str, str]]:
+    device_id = parse_printer_device_id(evidence)
+    if device_id is None:
+        return []
+    key = device_id_key(device_id)
+    if key is None:
+        return []
+    matches = []
+    for name in catalog.get("model_index", {}).get(key, []):
+        profile = catalog["package_profiles"].get(name)
+        if not isinstance(profile, dict) or profile.get("prefix_status") != "verified":
+            continue
+        matches.append((name, str(profile.get("description", "generated package profile"))))
+    return matches
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
