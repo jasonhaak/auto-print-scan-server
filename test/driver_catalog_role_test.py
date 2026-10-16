@@ -17,7 +17,13 @@ class DriverCatalogRoleTest(unittest.TestCase):
         self.assertIn("--enable-generated-catalog", tasks)
         self.assertIn("combine(package_profiles)", tasks)
         defaults = yaml.safe_load((ROOT / "roles/driver_catalog/defaults/main.yml").read_text(encoding="utf-8"))
-        self.assertIs(defaults["driver_catalog_generated_enabled"], False)
+        self.assertIs(defaults["driver_catalog_generated_enabled"], True)
+
+
+class GeneratedEnabledTest(unittest.TestCase):
+    def test_generated_catalog_is_enabled_by_default(self):
+        defaults = yaml.safe_load((ROOT / "roles/driver_catalog/defaults/main.yml").read_text(encoding="utf-8"))
+        self.assertIs(defaults["driver_catalog_generated_enabled"], True)
 
 
 if __name__ == "__main__":
