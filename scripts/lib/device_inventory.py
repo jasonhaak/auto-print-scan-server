@@ -17,6 +17,8 @@ from urllib.parse import urlsplit
 
 import yaml
 
+import driver_catalog
+
 
 PRINTER_CONNECTIONS = {"ipp", "ipps", "socket", "lpd", "usb"}
 SCANNER_CONNECTIONS = {"ipp", "ipps", "network", "usb"}
@@ -38,7 +40,12 @@ class InventoryError(ValueError):
     pass
 
 
-def known_package_profiles() -> set[str]:
+def known_package_profiles(catalog=None) -> set[str]:
+    if catalog is not None:
+        profiles = catalog.get("package_profiles") if isinstance(catalog, dict) else None
+        if not isinstance(profiles, dict):
+            raise InventoryError("package profile registry must contain package_profiles")
+        return set(profiles)
     try:
         data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
@@ -49,7 +56,9 @@ def known_package_profiles() -> set[str]:
     return set(profiles)
 
 
-def package_profile_model_prefix(name: str) -> str:
+def package_profile_model_prefix(name: str, catalog=None) -> str:
+    if catalog is not None:
+        return driver_catalog.model_prefix(catalog, name)
     try:
         data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as error:
@@ -61,16 +70,10 @@ def package_profile_model_prefix(name: str) -> str:
     return require_text(profile.get("model_prefix"), f"package profile {name!r} model_prefix")
 
 
-def matching_package_profiles(identity_evidence: str) -> list[tuple[str, str]]:
-    try:
-        data = yaml.safe_load(PACKAGE_PROFILES_PATH.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as error:
-        raise InventoryError(f"package profile registry is unavailable: {error}") from error
-    profiles = data.get("package_profiles") if isinstance(data, dict) else None
-    if not isinstance(profiles, dict):
-        raise InventoryError("package profile registry must contain package_profiles")
+def matching_package_profiles(identity_evidence: str, catalog=None) -> list[tuple[str, str]]:
+    catalog = catalog or driver_catalog.load_catalog()
     matches = []
-    for name, profile in profiles.items():
+    for name, profile in catalog["package_profiles"].items():
         if not isinstance(profile, dict):
             continue
         pattern = profile.get("make_model_pattern")
@@ -399,8 +402,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--backup-directory", type=Path)
     parser.add_argument("--host-inventory", type=Path)
+    parser.add_argument("--catalog-suite")
+    parser.add_argument("--catalog-architecture")
+    parser.add_argument("--catalog-repository")
+    parser.add_argument("--enable-generated-catalog", action="store_true")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
+    commands.add_parser("profiles")
 
     validate_uri = commands.add_parser(
         "validate-uri", help="check a printer device URI against a connection type, without an inventory file"
@@ -476,11 +484,27 @@ def main() -> int:
         return 0 if printer_uri_is_valid(arguments.connection, arguments.uri) else 1
     if arguments.command == "validate-usb-identity":
         return 0 if usb_identity_is_valid(arguments.identity) else 1
+    catalog = driver_catalog.load_catalog(arguments.catalog_suite, arguments.catalog_architecture,
+                                          arguments.catalog_repository)
+    if not arguments.enable_generated_catalog:
+        catalog = {"package_profiles": driver_catalog.load_catalog()["package_profiles"],
+                   "model_index": {}, "metadata": {}, "requested": catalog["requested"],
+                   "matched": False, "identity_matched": False}
+    if arguments.command == "profiles":
+        for name in driver_catalog.profile_names(catalog):
+            print(name)
+        return 0
+    if arguments.command == "profiles-for-evidence":
+        if catalog["requested"] and not catalog["matched"]:
+            print("Generated catalog not available for this target; using curated profiles only.", file=sys.stderr)
+        for name, description in matching_package_profiles(arguments.identity_evidence, catalog):
+            print(f"{name}|{description}")
+        return 0
     if arguments.command == "profile-model-prefix":
         try:
-            print(package_profile_model_prefix(arguments.profile))
+            print(package_profile_model_prefix(arguments.profile, catalog))
             return 0
-        except InventoryError as error:
+        except (InventoryError, driver_catalog.CatalogError) as error:
             print(f"Error: {error}", file=sys.stderr)
             return 2
     if arguments.inventory is None or arguments.backup_directory is None:
@@ -500,10 +524,6 @@ def main() -> int:
             print(f"Wrote initial production inventory. Backups: {host_backup}, {variables_backup}")
             return 0
         data = load_inventory(arguments.inventory)
-        if arguments.command == "profiles-for-evidence":
-            for name, description in matching_package_profiles(arguments.identity_evidence):
-                print(f"{name}|{description}")
-            return 0
         if arguments.command == "list":
             command_list(data)
             return 0

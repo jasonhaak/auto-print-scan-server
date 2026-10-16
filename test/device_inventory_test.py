@@ -487,5 +487,24 @@ printf '  - name: %s\\n    connection: %s\\n    device_uri: %s\\n    driver_mode
         self.assertEqual(onboard_printer, manage_devices_printer)
 
 
+class CatalogCliTest(unittest.TestCase):
+    def test_profiles_and_evidence_run_without_inventory(self):
+        for command in (["profiles"], ["profiles-for-evidence", "socket port 9100 is open"]):
+            result = subprocess.run([sys.executable, str(HELPER), *command],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        listing = subprocess.run([sys.executable, str(HELPER), "profiles"],
+                                 capture_output=True, text=True).stdout.split()
+        self.assertIn("brlaser", listing)
+        self.assertIn("generic_pcl", listing)
+
+    def test_curated_evidence_still_matches(self):
+        result = subprocess.run(
+            [sys.executable, str(HELPER), "profiles-for-evidence", "printer-device-id = MFG:Brother;MDL:MFC-7360;"],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("brlaser", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
