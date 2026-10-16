@@ -179,9 +179,9 @@
       Scan storage has {{ scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim }} MB
       free, below the configured {{ scanservjs_min_free_space_mb }} MB threshold.
   when: >-
-    scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim | int
+    managed_scanners | length > 0
+    and scanservjs_free_space.stdout_lines[-1] | regex_replace('M', '') | trim | int
     < scanservjs_min_free_space_mb | int
-    and managed_scanners | length > 0
   tags: scanservjs
 
 - name: Enable ScanservJS and scan-file retention

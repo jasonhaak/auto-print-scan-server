@@ -43,6 +43,15 @@ class ScanservjsRoleTest(unittest.TestCase):
                     "managed_scanners | length > 0 and item.stat.exists",
                 )
 
+    def test_storage_warning_checks_for_scanners_before_skipped_df_result(self):
+        # `Check available scan storage during maintenance` is skipped when no scanner is
+        # managed, so its registered result has no stdout_lines. The guard must be evaluated
+        # first or the conditional itself fails on a printer-only deployment.
+        tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
+        task = next(item for item in tasks if item["name"] == "Warn when scan storage is low during maintenance")
+        self.assertTrue(task.get("when").startswith("managed_scanners | length > 0 and "))
+        self.assertIn("scanservjs_free_space.stdout_lines", task.get("when"))
+
     def test_disk_cache_replacement_uses_unambiguous_backreferences(self):
         tasks = yaml.safe_load((ROOT / "roles/scanservjs/tasks/main.yml").read_text(encoding="utf-8"))
         task = next(item for item in tasks if item["name"] == "Set the managed ImageMagick disk-cache limit")
