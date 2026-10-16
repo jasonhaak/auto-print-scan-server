@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -236,6 +237,28 @@ class ResolverTest(unittest.TestCase):
                          {"suite": "trixie", "package_architecture": "armhf", "repository_identity": "R"})
         with self.assertRaises(module.CatalogError):
             module.resolve_identity("trixie", "armv7l", "R")
+
+
+class SelectCliTest(unittest.TestCase):
+    def test_select_gates_generated_profiles(self):
+        root = Path(tempfile.mkdtemp())
+        generated = root / "generated"
+        generated.mkdir()
+        (generated / "driver_profiles_trixie_armhf_raspberrypi.yml").write_text(
+            "generated_package_profiles:\n  debian_fixture:\n    model_prefix: drv:///f.drv/\n"
+            "    prefix_status: verified\nmodel_index: {}\n"
+            "catalog_metadata:\n  suite: trixie\n  package_architecture: armhf\n  repository_identity: R\n",
+            encoding="utf-8")
+        base = [sys.executable, str(ROOT / "scripts/lib/driver_catalog.py"), "select",
+                "--suite", "trixie", "--architecture", "armhf", "--repository", "R"]
+        environment = {**os.environ, "DRIVER_CATALOG_GENERATED_DIR": str(generated)}
+        without = subprocess.run(base, capture_output=True, text=True, env=environment)
+        self.assertEqual(without.returncode, 0, without.stderr)
+        self.assertFalse(json.loads(without.stdout)["matched"])
+        self.assertNotIn("debian_fixture", json.loads(without.stdout)["package_profiles"])
+        with_switch = subprocess.run(base + ["--enable-generated-catalog"], capture_output=True, text=True, env=environment)
+        self.assertTrue(json.loads(with_switch.stdout)["matched"])
+        self.assertIn("debian_fixture", json.loads(with_switch.stdout)["package_profiles"])
 
 
 if __name__ == "__main__":
