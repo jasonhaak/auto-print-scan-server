@@ -97,5 +97,43 @@ class BuildCatalogTest(unittest.TestCase):
         self.assertEqual(catalog["generated_package_profiles"]["debian_p"]["model_prefix"], "family:model")
 
 
+class ExclusionTest(unittest.TestCase):
+    def test_virtual_backends_are_excluded(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = CAPTURE["entries"] + [
+            {"uri": "cups-pdf:/", "device_id": "MFG:Generic;MDL:CUPS-PDF Printer;",
+             "package": "printer-driver-cups-pdf"}]
+        catalog = generator.build_catalog(capture)
+        self.assertNotIn("debian_cups_pdf", catalog["generated_package_profiles"])
+        self.assertEqual(catalog["catalog_metadata"]["excluded_packages"], ["printer-driver-cups-pdf"])
+
+    def test_generic_pcl_models_stay_manual(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = CAPTURE["entries"] + [
+            {"uri": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Generic-PCL_6_PCL_XL_Printer.ppd",
+             "device_id": "MFG:Generic;MDL:PCL 6/PCL XL Printer;", "package": "foomatic-db-compressed-ppds"}]
+        catalog = generator.build_catalog(capture)
+        self.assertIn("debian_foomatic_db_compressed_ppds", catalog["generated_package_profiles"])
+        self.assertNotIn("generic|pcl 6/pcl xl printer", catalog["model_index"])
+
+    def test_every_shared_uri_for_a_key_is_dropped(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = CAPTURE["entries"] + [
+            {"uri": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd",
+             "device_id": "MFG:Brother;MDL:HL-2270DW;", "package": "printer-driver-other"},
+            {"uri": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW-2.ppd",
+             "device_id": "MFG:Brother;MDL:HL-2270DW;", "package": "printer-driver-other"},
+        ]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(catalog["model_index"], {})
+        self.assertEqual(catalog["catalog_metadata"]["shared_uris"], [
+            "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW-2.ppd",
+            "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd",
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()
