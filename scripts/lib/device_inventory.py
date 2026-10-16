@@ -96,7 +96,7 @@ def usb_identity_is_valid(identity: str) -> bool:
     return bool(USB_IDENTITY_PATTERN.fullmatch(identity))
 
 
-def load_inventory(path: Path) -> dict[str, Any]:
+def load_inventory(path: Path, catalog=None) -> dict[str, Any]:
     if not path.is_file():
         raise InventoryError(f"inventory file does not exist: {path}")
     try:
@@ -108,7 +108,7 @@ def load_inventory(path: Path) -> dict[str, Any]:
     data.setdefault("managed_printers", [])
     data.setdefault("managed_scanners", [])
     data.setdefault("direct_ethernet_links", [])
-    validate_inventory(data)
+    validate_inventory(data, catalog)
     return data
 
 
@@ -118,7 +118,7 @@ def require_text(value: Any, label: str) -> str:
     return value
 
 
-def validate_printer(printer: Any) -> None:
+def validate_printer(printer: Any, catalog=None) -> None:
     if not isinstance(printer, dict):
         raise InventoryError("every managed printer must be a mapping")
     name = require_text(printer.get("name"), "printer name")
@@ -140,7 +140,7 @@ def validate_printer(printer: Any) -> None:
         raise InventoryError(f"printer {name!r} has unsupported driver mode {driver_mode!r}")
     if driver_mode == "package_profile":
         profile = require_text(printer.get("package_profile"), f"printer {name!r} package profile")
-        if profile not in known_package_profiles():
+        if profile not in known_package_profiles(catalog):
             raise InventoryError(f"printer {name!r} has unknown package profile {profile!r}")
         require_text(printer.get("cups_model"), f"printer {name!r} CUPS model")
 
@@ -208,7 +208,7 @@ def validate_direct_link(link: Any) -> None:
         raise InventoryError(f"direct Ethernet link {interface!r} requires two host addresses in the same IPv4 /30")
 
 
-def validate_inventory(data: dict[str, Any]) -> None:
+def validate_inventory(data: dict[str, Any], catalog=None) -> None:
     printers = data.get("managed_printers")
     scanners = data.get("managed_scanners")
     if not isinstance(printers, list) or not isinstance(scanners, list):
@@ -216,7 +216,7 @@ def validate_inventory(data: dict[str, Any]) -> None:
     if not printers and not scanners:
         raise InventoryError("inventory must contain at least one managed printer or managed scanner")
     for printer in printers:
-        validate_printer(printer)
+        validate_printer(printer, catalog)
     for scanner in scanners:
         validate_scanner(scanner)
     printer_names = [printer["name"] for printer in printers]
@@ -277,8 +277,8 @@ def find_device(data: dict[str, Any], kind: str, identity: str) -> dict[str, Any
     raise InventoryError(f"managed {kind} not found: {identity}")
 
 
-def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any]) -> Path:
-    validate_inventory(data)
+def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any], catalog=None) -> Path:
+    validate_inventory(data, catalog)
     backup_directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup = backup_directory / f"{path.name}.{stamp}"
@@ -312,12 +312,13 @@ def validate_yaml_document(path: Path, label: str) -> None:
 
 
 def write_initial_inventory(
-    host_target: Path, variables_target: Path, host_document: Path, variables_document: Path, backup_directory: Path
+    host_target: Path, variables_target: Path, host_document: Path, variables_document: Path, backup_directory: Path,
+    catalog=None,
 ) -> tuple[Path, Path]:
     if host_target == variables_target:
         raise InventoryError("host and device-variable inventory targets must be different")
     validate_yaml_document(host_document, "host inventory document")
-    variables = load_inventory(variables_document)
+    variables = load_inventory(variables_document, catalog)
     rendered = {
         host_target: host_document.read_text(encoding="utf-8"),
         variables_target: "---\n# Maintained by scripts/onboard and scripts/manage-devices. Do not store passwords here.\n"
@@ -520,10 +521,11 @@ def main() -> int:
                 arguments.host_document,
                 arguments.variables_document,
                 arguments.backup_directory,
+                catalog,
             )
             print(f"Wrote initial production inventory. Backups: {host_backup}, {variables_backup}")
             return 0
-        data = load_inventory(arguments.inventory)
+        data = load_inventory(arguments.inventory, catalog)
         if arguments.command == "list":
             command_list(data)
             return 0
@@ -617,7 +619,7 @@ def main() -> int:
             action = "deleted"
             label = arguments.identity
 
-        backup = backup_and_write(arguments.inventory, arguments.backup_directory, data)
+        backup = backup_and_write(arguments.inventory, arguments.backup_directory, data, catalog)
         print(f"{action.capitalize()} {label}. Backup: {backup}")
         return 0
     except InventoryError as error:
