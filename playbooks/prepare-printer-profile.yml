@@ -31,6 +31,23 @@
         name: [cups, cups-filters]
         state: present
 
+    - name: Refresh package metadata before simulating
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+
+    - name: Simulate installing each selected package profile
+      ansible.builtin.command:
+        argv: "{{ ['apt-get', '-s', 'install', '--no-remove'] + package_profiles[item].packages }}"
+      register: package_profile_simulation
+      changed_when: false
+      failed_when: >-
+        package_profile_simulation.rc != 0 or
+        (package_profile_simulation.stdout_lines | select('match', '^Remv ') | list | length > 0)
+      loop: "{{ selected_package_profiles }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Install selected legacy driver packages
       ansible.builtin.apt:
         name: "{{ package_profiles[item].packages }}"
