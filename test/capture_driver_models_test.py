@@ -20,9 +20,10 @@ class DrvParseTest(unittest.TestCase):
         capture = load_capture()
         text = ('Manufacturer "Brother"\n'
                 '  ModelName "DCP-1510 series"\n'
+                '  PCFileName "dcp1510.ppd"\n'
                 '  Attribute "1284DeviceID" "" "MFG:Brother;MDL:DCP-1510 series;CLS:PRINTER;"\n')
         self.assertEqual(capture.parse_drv(text, "drv:///brlaser.drv/"),
-                         [{"uri": "drv:///brlaser.drv/DCP-1510 series",
+                         [{"uri": "drv:///brlaser.drv/dcp1510.ppd",
                            "device_id": "MFG:Brother;MDL:DCP-1510 series;CLS:PRINTER;",
                            "package": ""}])
 
