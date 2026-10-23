@@ -175,6 +175,21 @@ class GeneratorCliTest(unittest.TestCase):
             self.assertIn("generated_package_profiles", output.read_text(encoding="utf-8"))
             self.assertEqual(json.loads(manifest.read_text(encoding="utf-8"))["provenance"], CAPTURE["provenance"])
 
+    def test_cli_creates_nested_output_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            capture_path = tmp / "capture.json"
+            capture_path.write_text(json.dumps(CAPTURE), encoding="utf-8")
+            output = tmp / "nested/generated/artifact.yml"
+            manifest = tmp / "nested/manifests/manifest.json"
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/generate-driver-catalog.py"),
+                 "--capture", str(capture_path), "--output", str(output), "--manifest", str(manifest)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(output.is_file())
+            self.assertTrue(manifest.is_file())
+
 
 class LoadCatalogTest(unittest.TestCase):
     def _fixture(self, module, identity, repository_identity="R"):

@@ -134,6 +134,8 @@ def main() -> int:
     arguments = parser.parse_args()
     capture = json.loads(arguments.capture.read_text(encoding="utf-8"))
     catalog = build_catalog(capture)
+    arguments.output.parent.mkdir(parents=True, exist_ok=True)
+    arguments.manifest.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(render_artifact(catalog, capture), encoding="utf-8")
     arguments.manifest.write_text(
         json.dumps(write_manifest(capture, catalog), indent=2, sort_keys=True) + "\n", encoding="utf-8")
