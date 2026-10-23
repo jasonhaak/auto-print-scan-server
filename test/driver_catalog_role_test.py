@@ -14,6 +14,7 @@ class DriverCatalogRoleTest(unittest.TestCase):
         self.assertIn("become: false", tasks)
         self.assertNotIn("run_once", tasks)
         self.assertIn("distribution_release", tasks)
+        self.assertIn("*Release", tasks)
         self.assertIn("--enable-generated-catalog", tasks)
         self.assertIn("combine(package_profiles)", tasks)
         defaults = yaml.safe_load((ROOT / "roles/driver_catalog/defaults/main.yml").read_text(encoding="utf-8"))

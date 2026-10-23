@@ -57,7 +57,21 @@ class ProfileNameTest(unittest.TestCase):
             generator.profile_name("printer-driver-splix",
                                    ["drv:///splix-samsung.drv/", "drv:///splix-dell.drv/"],
                                    "drv:///splix-samsung.drv/"),
-            "debian_splix_samsung")
+            "debian_splix_samsung_drv")
+
+    def test_instance_indexes_share_one_prefix(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [
+            {"uri": "postscript-hp:0/ppd/hplip/HP/a.ppd", "device_id": "MFG:HP;MDL:A;",
+             "package": "printer-driver-postscript-hp"},
+            {"uri": "postscript-hp:1/ppd/hplip/HP/b.ppd", "device_id": "MFG:HP;MDL:B;",
+             "package": "printer-driver-postscript-hp"},
+        ]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(list(catalog["generated_package_profiles"]), ["debian_postscript_hp"])
+        self.assertEqual(catalog["generated_package_profiles"]["debian_postscript_hp"]["model_prefix"],
+                         "postscript-hp:")
 
 
 CAPTURE = {
@@ -87,7 +101,7 @@ class BuildCatalogTest(unittest.TestCase):
         self.assertEqual(catalog["generated_package_profiles"]["debian_foomatic_db_compressed_ppds"], {
             "description": "Models advertised by Debian package foomatic-db-compressed-ppds",
             "packages": ["foomatic-db-compressed-ppds"],
-            "model_prefix": "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/",
+            "model_prefix": "foomatic-db-compressed-ppds:",
             "family": "captured-cups-models",
             "prefix_status": "verified",
         })
@@ -102,6 +116,20 @@ class BuildCatalogTest(unittest.TestCase):
         capture["entries"] = [{"uri": "family:model", "device_id": "MFG:A;MDL:B;", "package": "p"}]
         catalog = generator.build_catalog(capture)
         self.assertEqual(catalog["generated_package_profiles"]["debian_p"]["model_prefix"], "family:model")
+
+    def test_gutenprint_uris_share_one_prefix(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [
+            {"uri": "gutenprint.5.3://bjc-30/expert", "device_id": "MFG:Canon;MDL:BJC-30;",
+             "package": "printer-driver-gutenprint"},
+            {"uri": "gutenprint.5.3://bjc-50/expert", "device_id": "MFG:Canon;MDL:BJC-50;",
+             "package": "printer-driver-gutenprint"},
+        ]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(list(catalog["generated_package_profiles"]), ["debian_gutenprint"])
+        self.assertEqual(catalog["generated_package_profiles"]["debian_gutenprint"]["model_prefix"],
+                         "gutenprint.5.3://")
 
 
 class ExclusionTest(unittest.TestCase):
@@ -140,6 +168,15 @@ class ExclusionTest(unittest.TestCase):
             "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW-2.ppd",
             "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2270DW.ppd",
         ])
+
+    def test_sample_driver_is_excluded(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [{"uri": "drv:///sample.drv/deskjet.ppd",
+                               "device_id": "MFG:HP;MDL:DeskJet;", "package": "cups-common"}]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(catalog["generated_package_profiles"], {})
+        self.assertEqual(catalog["catalog_metadata"]["excluded_packages"], ["cups-common"])
 
 
 class RenderTest(unittest.TestCase):

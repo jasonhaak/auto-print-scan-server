@@ -1,12 +1,15 @@
 ---
 extends: default
 
+# Generated catalog artifacts are machine-written and validated by
+# test/driver_catalog_test.py; their long provenance lines would trip line-length.
 ignore: |
   .ansible/
   .onboard-backups/
   .venv/
   collections/
   inventories/production/
+  vars/generated/
 
 rules:
   braces:

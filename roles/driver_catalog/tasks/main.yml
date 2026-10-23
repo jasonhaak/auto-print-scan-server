@@ -2,7 +2,7 @@
 - name: Find the configured APT release files
   ansible.builtin.find:
     paths: /var/lib/apt/lists
-    patterns: "*_Release"
+    patterns: "*Release"
   register: driver_catalog_release_files
   changed_when: false
   tags: always
