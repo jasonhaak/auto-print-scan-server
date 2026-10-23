@@ -341,6 +341,7 @@ configure_link() {
 
 open_inventory_ssh_session() {
   if [[ -n "$ssh_socket" ]] && remote true >/dev/null 2>&1; then
+    resolve_catalog_identity || true
     return
   fi
   host=$(host_inventory_value ansible_host)
