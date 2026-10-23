@@ -7,7 +7,6 @@ catalog_metadata:
   label: raspberrypi
   package_architecture: armhf
   package_versions:
-    cups-common: 2.4.10-3+rpt2+deb13u2
     cups-filters: 1.28.17-6+rpt1+deb13u1
     foomatic-db-compressed-ppds: 20230202-1
     printer-driver-brlaser: 6.2.7-1
@@ -28,24 +27,23 @@ catalog_metadata:
   provenance:
     index_sha256: 75ef55347868ad1640c227fecdc1d6f33e6d468e9213f7c0f273e5e999487e27
     package_sha256:
-      cups-common: ''
-      cups-filters: ''
-      foomatic-db-compressed-ppds: ''
-      printer-driver-brlaser: ''
-      printer-driver-c2esp: ''
-      printer-driver-dymo: ''
-      printer-driver-escpr: ''
-      printer-driver-foo2zjs-common: ''
-      printer-driver-fujixerox: ''
-      printer-driver-hpcups: ''
-      printer-driver-indexbraille: ''
-      printer-driver-m2300w: ''
-      printer-driver-oki: ''
-      printer-driver-postscript-hp: ''
-      printer-driver-ptouch: ''
-      printer-driver-pxljr: ''
-      printer-driver-sag-gdi: ''
-      printer-driver-splix: ''
+      cups-filters: b63ea5b319993ee23cecddeb1c1fe87e06f0d3719dcb12f12ce86171cfcb39b0
+      foomatic-db-compressed-ppds: 8bb60b53e9008b51d715ed2e2edad803613697e2b63ca38def73436da049c79e
+      printer-driver-brlaser: de2c43aa7107f09979f5f48b19a1b150bae57da2f73b38d5dd20d514f64bddea
+      printer-driver-c2esp: 3ad8c88fb2d30d5f9cacaefd304c59e23081d40a6a4ea2917c713dc9a14ac0fc
+      printer-driver-dymo: f8351dfe7d8e2265d04e292f267856784ec0a4a55e1747cd9450e662883a91d7
+      printer-driver-escpr: a7793864cf12f38a2807adae461383732e685eb159fc1f49ba149e4a616a6b89
+      printer-driver-foo2zjs-common: a47efebbc4fec397fb2a0a097e2b12bad6f557994dcfa8a18505cbc1d340cde4
+      printer-driver-fujixerox: b03b0c5f0410f7b337a44ce1265ce2e8256b5ab348765e1c27d29170e61e78e2
+      printer-driver-hpcups: d20836271763234e03726be2ccb4ffaa753e9c57d6f11105f285bdb4c5549a8c
+      printer-driver-indexbraille: 4865ee5dc9f9a2c7928c36805b21139858958c97d5a9ce36f7ecfd3d5df9a3ce
+      printer-driver-m2300w: e91509b11f8c77071f945cfaa5ebfa96157c01430180b851d5b217e16119780a
+      printer-driver-oki: 247785565ad17ccd1144e4966fd154072cb879e4c9e87d6a62b3c88f942b771b
+      printer-driver-postscript-hp: 35d13f7f34da2996db473a7e7db754ff93165cf5ddef1f560c1ed148f120689c
+      printer-driver-ptouch: e0cbb8328aaaaf4f62f365d21cc75d5b3c3ca86ec2d3371c481135eb7b3d9391
+      printer-driver-pxljr: ebd04caf6204c6d0b0043087947ce9e603f5951edc8b0342b4194cbea819d009
+      printer-driver-sag-gdi: c86fa1618306b5b2d7d2bbf0e294822f47581ad0417ed4375a43cc732f15e0e3
+      printer-driver-splix: 63316b0c51e712fca1dbb444712d8ab55b7dc5237b7fa5d2d247bd40f1f5b75d
     tool_versions:
       cups: 2.4.10-3+rpt2+deb13u2
       cups-filters: 1.28.17-6+rpt1+deb13u1
