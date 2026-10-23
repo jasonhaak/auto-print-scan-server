@@ -642,6 +642,10 @@ class ScriptCatalogWiringTest(unittest.TestCase):
             text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
             self.assertIn("catalog_identity_arguments", text, name)
 
+    def test_manage_devices_resolves_the_identity_before_strict_commands(self):
+        text = (ROOT / "scripts/manage-devices").read_text(encoding="utf-8")
+        self.assertIn("open_inventory_ssh_session >/dev/null", text)
+
     def test_onboarding_probe_matches_inrelease_files(self):
         text = (ROOT / "scripts/lib/onboarding/device-discovery.sh").read_text(encoding="utf-8")
         self.assertIn('*Release', text)

@@ -413,6 +413,14 @@ offer_apply() {
 python=$(inventory_python)
 ONBOARD_PYTHON=$python
 device_inventory() {
+  local argument
+  for argument in "$@"; do
+    case "$argument" in
+      validate|upsert-printer|upsert-scanner|upsert-link)
+        open_inventory_ssh_session >/dev/null || true
+        break ;;
+    esac
+  done
   local -a identity=()
   mapfile -t identity < <(catalog_identity_arguments)
   "$python" "$helper" "${identity[@]}" "$@"
