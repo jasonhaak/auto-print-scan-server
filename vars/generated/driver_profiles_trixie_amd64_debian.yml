@@ -52,6 +52,7 @@ catalog_metadata:
   repository_identity: 'Codename: trixie-security|Label: Debian-Security|Origin: Debian|Suite: stable-security;Codename: trixie-updates|Label: Debian|Origin: Debian|Suite: stable-updates;Codename: trixie|Label: Debian|Origin: Debian|Suite: stable'
   shared_uris: []
   suite: trixie
+  unattributed_uris: []
 generated_package_profiles:
   debian_brlaser:
     description: Models advertised by Debian package printer-driver-brlaser

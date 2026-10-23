@@ -37300,5 +37300,6 @@
   },
   "repository_identity": "Codename: trixie|Label: Raspberry Pi Foundation|Origin: Raspberry Pi Foundation|Suite: stable;Codename: trixie|Label: Raspbian|Origin: Raspbian|Suite: stable",
   "shared_uris": [],
-  "suite": "trixie"
+  "suite": "trixie",
+  "unattributed_uris": []
 }

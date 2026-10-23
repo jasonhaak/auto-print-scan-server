@@ -68,6 +68,8 @@ def shared_uris(entries: list[dict]) -> set[str]:
 
 def build_catalog(capture: dict) -> dict:
     entries = capture.get("entries", []) or []
+    unattributed = sorted({entry["uri"] for entry in entries if not entry.get("package")})
+    entries = [entry for entry in entries if entry.get("package")]
     shared = shared_uris(entries)
     excluded = sorted({entry["package"] for entry in entries if not is_physical(entry)})
     by_package: dict[str, list[dict]] = {}
@@ -102,7 +104,8 @@ def build_catalog(capture: dict) -> dict:
                 if name not in model_index[key]:
                     model_index[key].append(name)
     return {"generated_package_profiles": profiles, "model_index": model_index,
-            "catalog_metadata": {"excluded_packages": excluded, "shared_uris": sorted(shared)}}
+            "catalog_metadata": {"excluded_packages": excluded, "shared_uris": sorted(shared),
+                                 "unattributed_uris": unattributed}}
 
 
 def render_artifact(catalog: dict, capture: dict) -> str:
@@ -149,6 +152,7 @@ def write_manifest(capture: dict, catalog: dict) -> dict:
         "provenance": provenance,
         "excluded_packages": metadata.get("excluded_packages", []),
         "shared_uris": metadata.get("shared_uris", []),
+        "unattributed_uris": metadata.get("unattributed_uris", []),
         "entries": [
             {"uri": entry["uri"], "device_id": entry.get("device_id", ""), "package": entry["package"]}
             for entry in capture.get("entries", []) if is_physical(entry)

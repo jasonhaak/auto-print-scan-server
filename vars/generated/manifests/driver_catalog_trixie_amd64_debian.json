@@ -55250,5 +55250,6 @@
   },
   "repository_identity": "Codename: trixie-security|Label: Debian-Security|Origin: Debian|Suite: stable-security;Codename: trixie-updates|Label: Debian|Origin: Debian|Suite: stable-updates;Codename: trixie|Label: Debian|Origin: Debian|Suite: stable",
   "shared_uris": [],
-  "suite": "trixie"
+  "suite": "trixie",
+  "unattributed_uris": []
 }

@@ -108,7 +108,7 @@ class BuildCatalogTest(unittest.TestCase):
         self.assertEqual(catalog["model_index"],
                          {"brother|hl-2270dw": ["debian_foomatic_db_compressed_ppds"]})
         self.assertEqual(catalog["catalog_metadata"],
-                         {"excluded_packages": [], "shared_uris": []})
+                         {"excluded_packages": [], "shared_uris": [], "unattributed_uris": []})
 
     def test_uri_without_slash_becomes_its_own_prefix(self):
         generator = load_generator()
@@ -187,6 +187,14 @@ class ExclusionTest(unittest.TestCase):
         ]
         with self.assertRaises(ValueError):
             generator.build_catalog(capture)
+
+    def test_unattributed_entries_are_excluded(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [{"uri": "foo:1/x.ppd", "device_id": "MFG:A;MDL:B;", "package": ""}]
+        catalog = generator.build_catalog(capture)
+        self.assertEqual(catalog["generated_package_profiles"], {})
+        self.assertEqual(catalog["catalog_metadata"]["unattributed_uris"], ["foo:1/x.ppd"])
 
 
 class RenderTest(unittest.TestCase):
