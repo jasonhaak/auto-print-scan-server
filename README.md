@@ -197,6 +197,33 @@ These variables are the declared state of the server. Onboarding writes them to 
 
 For `driver_mode: package_profile`, the queue also requires a `package_profile` and an exact `cups_model`. Onboarding installs the selected profile, then offers only CUPS models currently advertised by the server. It never selects a model automatically. The registry combines hand-maintained profiles with a generated catalog captured from the target's own distribution packages; a suggestion appears only on an exact `printer-device-id` make-and-model match, and the operator still selects the exact model.
 
+### Maintaining the driver catalog
+
+`vars/generated/driver_profiles_*.yml` and their manifests are generated from the packages a target can install. Do not edit them by hand. Regenerate them on a build image for each target identity. CUPS must be running during the capture because it reads `lpinfo -m`.
+
+Normal development and the test suite do not need this step. Regeneration needs Docker; for `armhf` and `arm64` the host must also register the ARM emulators (`qemu-user-static` and `binfmt-support`).
+
+Capture and generate one target (Debian `amd64` shown):
+
+```bash
+mkdir -p /tmp/catalog-capture
+docker run --rm --platform linux/amd64 \
+  -v "$PWD":/work -v /tmp/catalog-capture:/out -w /work debian:trixie-slim bash -lc '
+    apt-get update
+    apt-get install -y --install-recommends cups cups-filters foomatic-db-compressed-ppds printer-driver-all python3
+    mkdir -p /run/cups && /usr/sbin/cupsd && sleep 2
+    python3 scripts/lib/capture-driver-models.py --source lpinfo --label debian --output /out/capture.json
+  '
+python scripts/generate-driver-catalog.py \
+  --capture /tmp/catalog-capture/capture.json \
+  --output vars/generated/driver_profiles_trixie_amd64_debian.yml \
+  --manifest vars/generated/manifests/driver_catalog_trixie_amd64_debian.json
+```
+
+For `armhf`, use `--platform linux/arm/v7` and replace the Debian sources with `deb [trusted=yes] http://archive.raspbian.org/raspbian trixie main contrib non-free`. For `arm64`, use `--platform linux/arm64` and add `deb [trusted=yes] http://archive.raspberrypi.com/debian/ trixie main` next to the Debian sources. `printer-driver-gutenprint` exists only on `arm64` and `amd64`, so the `armhf` catalog has no Gutenprint profile.
+
+Commit the artifact and its manifest together. The manifest records the package versions, the APT release identity, the captured model URIs and the index and package hashes.
+
 ### Device Topologies
 
 | Topology | Use when | Notes |
