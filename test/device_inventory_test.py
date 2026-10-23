@@ -536,6 +536,42 @@ class CatalogValidationTest(unittest.TestCase):
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_read_only_and_delete_tolerate_an_unavailable_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inventory = Path(tmp) / "vars.yml"
+            inventory.write_text(
+                "managed_printers:\n- name: p\n  connection: socket\n  device_uri: socket://printer:9100\n"
+                "  driver_mode: package_profile\n  package_profile: debian_absent\n  cups_model: m\n  shared: true\n"
+                "- name: seed\n  connection: ipp\n  device_uri: ipp://seed.local/ipp/print\n"
+                "  driver_mode: driverless\n  shared: true\n"
+                "managed_scanners: []\ndirect_ethernet_links: []\n",
+                encoding="utf-8")
+            commands = (["validate"], ["list"], ["names", "printer"],
+                        ["show", "printer", "p"], ["delete", "printer", "p"])
+            results = {}
+            for command in commands:
+                results[command[0]] = subprocess.run(
+                    [sys.executable, str(HELPER), "--inventory", str(inventory),
+                     "--backup-directory", tmp, *command],
+                    capture_output=True, text=True)
+            self.assertNotEqual(results["validate"].returncode, 0)
+            for name in ("list", "names", "show", "delete"):
+                self.assertEqual(results[name].returncode, 0, (name, results[name].stderr))
+
+    def test_corrupt_generated_catalog_reports_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "generated"
+            generated.mkdir()
+            (generated / "driver_profiles_trixie_armhf_x.yml").write_text("BAD: [unclosed\n", encoding="utf-8")
+            environment = {**os.environ, "DRIVER_CATALOG_GENERATED_DIR": str(generated)}
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--catalog-suite", "trixie", "--catalog-architecture", "armhf",
+                 "--catalog-repository", "R", "profiles"],
+                capture_output=True, text=True, env=environment)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Error:", result.stderr)
+            self.assertNotIn("Traceback", result.stderr)
+
 
 class CuratedSuppressionTest(unittest.TestCase):
     def test_curated_match_suppresses_generated(self):

@@ -100,7 +100,7 @@ def usb_identity_is_valid(identity: str) -> bool:
     return bool(USB_IDENTITY_PATTERN.fullmatch(identity))
 
 
-def load_inventory(path: Path, catalog=None) -> dict[str, Any]:
+def load_inventory(path: Path, catalog=None, strict: bool = True) -> dict[str, Any]:
     if not path.is_file():
         raise InventoryError(f"inventory file does not exist: {path}")
     try:
@@ -112,7 +112,7 @@ def load_inventory(path: Path, catalog=None) -> dict[str, Any]:
     data.setdefault("managed_printers", [])
     data.setdefault("managed_scanners", [])
     data.setdefault("direct_ethernet_links", [])
-    validate_inventory(data, catalog)
+    validate_inventory(data, catalog, strict)
     return data
 
 
@@ -122,7 +122,7 @@ def require_text(value: Any, label: str) -> str:
     return value
 
 
-def validate_printer(printer: Any, catalog=None) -> None:
+def validate_printer(printer: Any, catalog=None, strict: bool = True) -> None:
     if not isinstance(printer, dict):
         raise InventoryError("every managed printer must be a mapping")
     name = require_text(printer.get("name"), "printer name")
@@ -145,7 +145,10 @@ def validate_printer(printer: Any, catalog=None) -> None:
     if driver_mode == "package_profile":
         profile = require_text(printer.get("package_profile"), f"printer {name!r} package profile")
         if profile not in known_package_profiles(catalog):
-            raise InventoryError(f"printer {name!r} has unknown package profile {profile!r}")
+            if strict:
+                raise InventoryError(f"printer {name!r} has unknown package profile {profile!r}")
+            print(f"Warning: printer {name!r} references package profile {profile!r} that is not available "
+                  f"for this target; skipping that check for this read-only operation.", file=sys.stderr)
         require_text(printer.get("cups_model"), f"printer {name!r} CUPS model")
 
     shared = printer.get("shared", True)
@@ -212,7 +215,7 @@ def validate_direct_link(link: Any) -> None:
         raise InventoryError(f"direct Ethernet link {interface!r} requires two host addresses in the same IPv4 /30")
 
 
-def validate_inventory(data: dict[str, Any], catalog=None) -> None:
+def validate_inventory(data: dict[str, Any], catalog=None, strict: bool = True) -> None:
     printers = data.get("managed_printers")
     scanners = data.get("managed_scanners")
     if not isinstance(printers, list) or not isinstance(scanners, list):
@@ -220,7 +223,7 @@ def validate_inventory(data: dict[str, Any], catalog=None) -> None:
     if not printers and not scanners:
         raise InventoryError("inventory must contain at least one managed printer or managed scanner")
     for printer in printers:
-        validate_printer(printer, catalog)
+        validate_printer(printer, catalog, strict)
     for scanner in scanners:
         validate_scanner(scanner)
     printer_names = [printer["name"] for printer in printers]
@@ -281,8 +284,9 @@ def find_device(data: dict[str, Any], kind: str, identity: str) -> dict[str, Any
     raise InventoryError(f"managed {kind} not found: {identity}")
 
 
-def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any], catalog=None) -> Path:
-    validate_inventory(data, catalog)
+def backup_and_write(path: Path, backup_directory: Path, data: dict[str, Any], catalog=None,
+                     strict: bool = True) -> Path:
+    validate_inventory(data, catalog, strict)
     backup_directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     backup = backup_directory / f"{path.name}.{stamp}"
@@ -489,13 +493,20 @@ def main() -> int:
         return 0 if printer_uri_is_valid(arguments.connection, arguments.uri) else 1
     if arguments.command == "validate-usb-identity":
         return 0 if usb_identity_is_valid(arguments.identity) else 1
-    catalog = driver_catalog.load_catalog(arguments.catalog_suite, arguments.catalog_architecture,
-                                          arguments.catalog_repository)
+    try:
+        catalog = driver_catalog.load_catalog(arguments.catalog_suite, arguments.catalog_architecture,
+                                              arguments.catalog_repository)
+    except driver_catalog.CatalogError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
     if not arguments.enable_generated_catalog:
         catalog = {"package_profiles": driver_catalog.load_catalog()["package_profiles"],
                    "model_index": {}, "metadata": {}, "requested": catalog["requested"],
                    "matched": False, "identity_matched": False}
     if arguments.command == "profiles":
+        if catalog["requested"] and catalog["matched"] and not catalog["identity_matched"]:
+            print("Note: the generated catalog does not match this target's repository identity; "
+                  "generated profiles are listed but not suggested.", file=sys.stderr)
         for name in driver_catalog.profile_names(catalog):
             print(name)
         return 0
@@ -503,8 +514,8 @@ def main() -> int:
         if catalog["requested"] and not catalog["matched"]:
             print("Generated catalog not available for this target; using curated profiles only.", file=sys.stderr)
         elif catalog["requested"] and not catalog["identity_matched"]:
-            print("Generated catalog does not match the target's repository identity; using curated profiles only.",
-                  file=sys.stderr)
+            print("Generated suggestions are disabled because the catalog does not match the target's "
+                  "repository identity; generated profiles remain selectable manually.", file=sys.stderr)
         for name, description in matching_package_profiles(arguments.identity_evidence, catalog):
             print(f"{name}|{description}")
         return 0
@@ -532,7 +543,8 @@ def main() -> int:
             )
             print(f"Wrote initial production inventory. Backups: {host_backup}, {variables_backup}")
             return 0
-        data = load_inventory(arguments.inventory, catalog)
+        lenient = arguments.command in {"list", "names", "field", "show", "delete"}
+        data = load_inventory(arguments.inventory, catalog, strict=not lenient)
         if arguments.command == "list":
             command_list(data)
             return 0
@@ -626,7 +638,8 @@ def main() -> int:
             action = "deleted"
             label = arguments.identity
 
-        backup = backup_and_write(arguments.inventory, arguments.backup_directory, data, catalog)
+        backup = backup_and_write(arguments.inventory, arguments.backup_directory, data, catalog,
+                                  strict=not lenient)
         print(f"{action.capitalize()} {label}. Backup: {backup}")
         return 0
     except InventoryError as error:

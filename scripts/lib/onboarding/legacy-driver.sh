@@ -10,7 +10,10 @@ prepare_and_choose_cups_model() {
       subsection 'Prepare Legacy Printer Driver'
       printf 'Profile %s installs its generic Debian driver package, starts CUPS, then reads its advertised models. It does not write production inventory or create a print queue.\n' "$profile" >&2
       yes_default 'Install this driver package and inspect its CUPS models?' || return 1
-      local -a arguments=(-i "$legacy_driver_inventory" "$root/playbooks/prepare-printer-profile.yml" -e "{\"selected_package_profiles\":[\"$profile\"],\"catalog_identity\":{\"suite\":\"${CATALOG_SUITE:-}\",\"package_architecture\":\"${CATALOG_ARCHITECTURE:-}\",\"repository_identity\":\"${CATALOG_REPOSITORY:-}\"}}")
+      local extra_vars
+      extra_vars=$("${ONBOARD_PYTHON:-python3}" -c 'import json, sys; print(json.dumps({"selected_package_profiles": [sys.argv[1]], "catalog_identity": {"suite": sys.argv[2], "package_architecture": sys.argv[3], "repository_identity": sys.argv[4]}}, separators=(",", ":")))' \
+        "$profile" "${CATALOG_SUITE:-}" "${CATALOG_ARCHITECTURE:-}" "${CATALOG_REPOSITORY:-}")
+      local -a arguments=(-i "$legacy_driver_inventory" "$root/playbooks/prepare-printer-profile.yml" -e "$extra_vars")
       if ! remote 'sudo -n true' >/dev/null 2>&1; then
         printf '%s\n' 'Ansible needs the server sudo password to prepare this driver package.' >&2
         arguments+=(--ask-become-pass)
