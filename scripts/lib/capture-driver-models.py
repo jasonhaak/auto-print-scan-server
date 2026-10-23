@@ -19,6 +19,7 @@ GUTENPRINT_SEARCH_ROOTS = ("/usr/share/ppd/gutenprint", "/usr/share/cups/model/g
 DRV_SEARCH_GLOB = "/usr/share/cups/drv/*.drv"
 
 DRV_MODEL = re.compile(r'^\s*ModelName\s+"([^"]+)"')
+DRV_PC_FILE = re.compile(r'^\s*PCFileName\s+"([^"]+)"')
 DRV_DEVICE_ID = re.compile(r'^\s*Attribute\s+"1284DeviceID"\s+"[^"]*"\s+"([^"]*)"')
 PPD_DEVICE_ID = re.compile(r'^\*1284DeviceID:\s*"([^"]*)"', re.MULTILINE)
 GUTENPRINT_MANUFACTURER = re.compile(r'^\*Manufacturer:\s*"([^"]*)"', re.MULTILINE)
@@ -79,23 +80,29 @@ def tool_versions() -> dict:
 
 
 def parse_drv(text: str, prefix: str) -> list[dict]:
-    """One entry per ModelName block carrying an 1284DeviceID attribute."""
+    """One entry per ModelName block carrying PCFileName and an 1284DeviceID attribute."""
     entries = []
     model = None
+    pc_file = None
     device_id = None
     for line in (text or "").splitlines():
         name = DRV_MODEL.match(line)
         if name:
-            if model is not None and device_id:
-                entries.append({"uri": f"{prefix}{model}", "device_id": device_id, "package": ""})
+            if model is not None and pc_file and device_id:
+                entries.append({"uri": f"{prefix}{pc_file}", "device_id": device_id, "package": ""})
             model = name.group(1)
+            pc_file = None
             device_id = None
+            continue
+        file_name = DRV_PC_FILE.match(line)
+        if file_name and model is not None:
+            pc_file = file_name.group(1)
             continue
         device = DRV_DEVICE_ID.match(line)
         if device and model is not None and device_id is None:
             device_id = device.group(1)
-    if model is not None and device_id:
-        entries.append({"uri": f"{prefix}{model}", "device_id": device_id, "package": ""})
+    if model is not None and pc_file and device_id:
+        entries.append({"uri": f"{prefix}{pc_file}", "device_id": device_id, "package": ""})
     return entries
 
 
