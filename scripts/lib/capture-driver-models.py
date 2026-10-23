@@ -22,6 +22,11 @@ DRV_DEVICE_ID = re.compile(r'^\s*Attribute\s+"1284DeviceID"\s+"[^"]*"\s+"([^"]*)
 PPD_DEVICE_ID = re.compile(r'^\*1284DeviceID:\s*"([^"]*)"', re.MULTILINE)
 GUTENPRINT_MANUFACTURER = re.compile(r'^\*Manufacturer:\s*"([^"]*)"', re.MULTILINE)
 GUTENPRINT_MODEL = re.compile(r'^\*ModelName:\s*"([^"]*)"', re.MULTILINE)
+PROGRAM_ENTRY = re.compile(r'"([^"]+)"\s+\S+\s+"[^"]*"\s+"[^"]*"\s+"([^"]*)"')
+
+CUPS_DRIVERD = "/usr/lib/cups/daemon/cups-driverd"
+IGNORED_URIS = {"everywhere", "raw"}
+IGNORED_NAMESPACES = ("driverless:", "driverless-fax:")
 
 
 def run(*argv: str) -> str:
@@ -33,9 +38,13 @@ def run_checked(*argv: str) -> str:
     return subprocess.run(argv, capture_output=True, text=True, check=True).stdout
 
 
-def repository_identity() -> str:
+APT_RELEASE_GLOBS = ("/var/lib/apt/lists/*_Release", "/var/lib/apt/lists/*_InRelease")
+
+
+def repository_identity(patterns: tuple[str, ...] = APT_RELEASE_GLOBS) -> str:
     identities = set()
-    for path in glob.glob("/var/lib/apt/lists/*_Release"):
+    paths = sorted({path for pattern in patterns for path in glob.glob(pattern)})
+    for path in paths:
         lines = sorted(
             line.strip() for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
             if re.match(r"^(Origin|Label|Suite|Codename):", line.strip()))
@@ -112,6 +121,93 @@ def advertised_models() -> set[str]:
     return {line.split(" ", 1)[0] for line in run_checked("lpinfo", "-m").splitlines() if line.strip()}
 
 
+def run_stdout(*argv: str) -> str:
+    return subprocess.run(argv, capture_output=True, text=True).stdout
+
+
+def is_elf(path: Path) -> bool:
+    try:
+        return path.read_bytes()[:4] == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def program_list(path: Path) -> str:
+    if is_elf(path):
+        return run_checked(str(path), "list")
+    return run_checked("python3", str(path), "list")
+
+
+def dpkg_package(path: str) -> str:
+    process = subprocess.run(["dpkg", "-S", path], capture_output=True, text=True)
+    if process.returncode != 0:
+        return ""
+    return process.stdout.split(":", 1)[0].strip()
+
+
+def package_for_uri(uri: str, cache: dict[str, str]) -> str:
+    if uri.startswith("drv:///"):
+        file_name = uri[len("drv:///"):].split("/", 1)[0]
+        key = f"drv:///{file_name}"
+        if key not in cache:
+            cache[key] = dpkg_package(f"/usr/share/cups/drv/{file_name}")
+        return cache[key]
+    if uri.startswith("lsb/usr/"):
+        key = "lsb/usr"
+        if key not in cache:
+            name = Path(uri[len("lsb/usr/"):]).name
+            matches: list[str] = []
+            for root in ("/usr/share/cups/model", "/usr/share/ppd"):
+                matches.extend(glob.glob(f"{root}/**/{name}", recursive=True))
+            cache[key] = dpkg_package(matches[0]) if matches else ""
+        return cache[key]
+    program = uri.split(":", 1)[0]
+    key = f"program:{program}"
+    if key not in cache:
+        cache[key] = dpkg_package(f"/usr/lib/cups/driver/{program}")
+    return cache[key]
+
+
+def ppd_device_id(uri: str) -> str:
+    match = PPD_DEVICE_ID.search(run_stdout(CUPS_DRIVERD, "cat", uri))
+    return match.group(1) if match else ""
+
+
+def capture_programs(advertised: set[str]) -> list[dict]:
+    entries = []
+    for path in sorted(Path("/usr/lib/cups/driver").glob("*")):
+        if not path.is_file() or path.name.startswith("driverless"):
+            continue
+        try:
+            listed = program_list(path)
+        except subprocess.CalledProcessError:
+            continue
+        for line in listed.splitlines():
+            match = PROGRAM_ENTRY.match(line)
+            if not match or match.group(1) not in advertised:
+                continue
+            entries.append({"uri": match.group(1), "device_id": match.group(2), "package": ""})
+    return entries
+
+
+def capture_lpinfo() -> list[dict]:
+    """Capture every advertised model: programs via list, the rest via cups-driverd."""
+    advertised = advertised_models() - IGNORED_URIS
+    cache: dict[str, str] = {}
+    entries: list[dict] = []
+    covered: set[str] = set()
+    for entry in capture_programs(advertised):
+        entry["package"] = package_for_uri(entry["uri"], cache)
+        entries.append(entry)
+        covered.add(entry["uri"])
+    for uri in sorted(advertised - covered):
+        if uri.startswith(IGNORED_NAMESPACES):
+            continue
+        entries.append({"uri": uri, "device_id": ppd_device_id(uri),
+                        "package": package_for_uri(uri, cache)})
+    return entries
+
+
 def read_text_maybe_gz(path: Path) -> str:
     if path.suffix == ".gz":
         with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
@@ -175,12 +271,12 @@ def capture_gutenprint(family: str, advertised: set[str]) -> list[dict]:
     return entries
 
 
-def capture_envelope(entries: list[dict], packages: dict) -> dict:
+def capture_envelope(entries: list[dict], packages: dict, label: str = "raspberrypi") -> dict:
     return {
         "suite": "trixie",
         "package_architecture": run_checked("dpkg", "--print-architecture").strip(),
         "repository_identity": repository_identity(),
-        "label": "raspberrypi",
+        "label": label,
         "generated_on": "2026-10-17",
         "generator_version": "1",
         "packages": packages,
@@ -226,8 +322,10 @@ def merge_captures(parts: list[dict]) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", choices=["program", "drv", "ppd", "gutenprint"], default="program")
+    parser.add_argument("--source", choices=["program", "drv", "ppd", "gutenprint", "lpinfo"],
+                        default="program")
     parser.add_argument("--family")
+    parser.add_argument("--label", default="raspberrypi")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--merge", nargs="*", default=None)
     arguments = parser.parse_args()
@@ -243,20 +341,28 @@ def main() -> int:
         arguments.output.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"Merged {len(parts)} captures into {arguments.output}")
         return 0
-    if not arguments.family:
-        parser.error("--family is required unless --merge is given")
-    advertised = advertised_models()
-    if arguments.source == "program":
-        entries = capture_program(arguments.family, advertised)
-    elif arguments.source == "drv":
-        entries = capture_drv(arguments.family, advertised)
-    elif arguments.source == "ppd":
-        entries = capture_ppds(arguments.family, advertised, PPD_SEARCH_ROOTS)
+    if arguments.source == "lpinfo":
+        entries = capture_lpinfo()
+        packages = {
+            name: run_checked("dpkg-query", "-W", "-f=${Version}", name).strip()
+            for name in sorted({entry["package"] for entry in entries if entry["package"]})
+        }
     else:
-        entries = capture_gutenprint(arguments.family, advertised)
-    packages = {arguments.family: run_checked("dpkg-query", "-W", "-f=${Version}", arguments.family).strip()}
+        if not arguments.family:
+            parser.error("--family is required unless --merge or --source lpinfo is given")
+        advertised = advertised_models()
+        if arguments.source == "program":
+            entries = capture_program(arguments.family, advertised)
+        elif arguments.source == "drv":
+            entries = capture_drv(arguments.family, advertised)
+        elif arguments.source == "ppd":
+            entries = capture_ppds(arguments.family, advertised, PPD_SEARCH_ROOTS)
+        else:
+            entries = capture_gutenprint(arguments.family, advertised)
+        packages = {arguments.family: run_checked("dpkg-query", "-W", "-f=${Version}", arguments.family).strip()}
     arguments.output.write_text(
-        json.dumps(capture_envelope(entries, packages), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        json.dumps(capture_envelope(entries, packages, arguments.label), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8")
     print(f"Captured {len(entries)} entries to {arguments.output}")
     return 0
 

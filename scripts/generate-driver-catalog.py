@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -30,24 +31,32 @@ def profile_name(package: str, package_prefixes: list[str], prefix: str) -> str:
     base = "debian_" + slug(package).removeprefix("printer_driver_")
     if len(package_prefixes) <= 1:
         return base
-    tail = slug(prefix.rstrip("/").rsplit("/", 1)[-1].removesuffix(".drv"))
-    tail = tail.removeprefix(slug(package).removeprefix("printer_driver_")).strip("_")
-    return f"{base}_{tail}" if tail else base
+    common = os.path.commonprefix(package_prefixes)
+    tail = slug(prefix[len(common):])
+    return f"{base}_{tail}" if tail else f"{base}_{slug(prefix)}"
+
+
+INSTANCE_PREFIX = re.compile(r"^([A-Za-z0-9_.+-]+):\d+/")
 
 
 def entry_prefix(uri: str) -> str:
+    if uri.startswith("gutenprint.5.3://"):
+        return "gutenprint.5.3://"
+    instance = INSTANCE_PREFIX.match(uri)
+    if instance:
+        return instance.group(1) + ":"
     head, separator, _ = uri.rpartition("/")
     return f"{head}{separator}" if separator else uri
 
 
 VIRTUAL_PACKAGES = {"printer-driver-cups-pdf"}
-VIRTUAL_PREFIXES = {"cups-pdf:/"}
+EXCLUDED_PREFIXES = {"cups-pdf:/", "drv:///sample.drv/"}
 GENERIC_PCL_PATTERN = re.compile(r"Generic-PCL_", re.IGNORECASE)
 
 
 def is_physical(entry: dict) -> bool:
     return (entry.get("package") not in VIRTUAL_PACKAGES
-            and entry_prefix(entry["uri"]) not in VIRTUAL_PREFIXES)
+            and entry_prefix(entry["uri"]) not in EXCLUDED_PREFIXES)
 
 
 def shared_uris(entries: list[dict]) -> set[str]:
