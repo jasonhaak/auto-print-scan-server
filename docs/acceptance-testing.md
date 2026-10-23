@@ -59,7 +59,7 @@ hardware acceptance is recorded.
 
 ## Driver catalog hardware acceptance
 
-Repository checks cover the generator, matcher, gates and curated compatibility. The boxes below stay open until a device prints; no catalog hardware has been measured yet.
+Repository checks cover the generator, matcher, gates and curated compatibility. A box stays open until a device on that target prints.
 
 - [ ] Pi Zero W (`armv6l`/`armhf`, Raspberry Pi OS Lite 32-bit): commission with a representative generated-profile printer, confirm the exact `printer-device-id` suggestion and the operator-selected `lpinfo -m` model, then print one CUPS test page. (pending)
 - [x] 64-bit Pi (`arm64`, Raspberry Pi OS Lite 64-bit): commissioned with the generated `debian_brlaser` profile for a Brother monochrome laser printer whose `printer-device-id` matched exactly. The catalog suggested `drv:///brlaser.drv/br7360.ppd` and the operator selected it. The `apt-get -s install --no-remove` gate and the CUPS model check passed, a CUPS test page was submitted successfully, and the AirScan scanner test produced a PDF. (2026-10-24)
