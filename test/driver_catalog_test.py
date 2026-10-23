@@ -151,6 +151,11 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(document["catalog_metadata"]["repository_identity"], CAPTURE["repository_identity"])
         self.assertEqual(document["catalog_metadata"]["provenance"], CAPTURE["provenance"])
 
+    def test_rendered_artifact_indents_sequences(self):
+        generator = load_generator()
+        text = generator.render_artifact(generator.build_catalog(CAPTURE), CAPTURE)
+        self.assertIn("\n    - ", text)
+
     def test_manifest_records_required_provenance(self):
         generator = load_generator()
         manifest = generator.write_manifest(CAPTURE, generator.build_catalog(CAPTURE))
