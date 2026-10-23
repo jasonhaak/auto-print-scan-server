@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 PPD_SEARCH_ROOTS = ("/usr/share/ppd", "/usr/share/cups/model")
@@ -153,7 +154,7 @@ def package_for_uri(uri: str, cache: dict[str, str]) -> str:
             cache[key] = dpkg_package(f"/usr/share/cups/drv/{file_name}")
         return cache[key]
     if uri.startswith("lsb/usr/"):
-        key = "lsb/usr"
+        key = uri
         if key not in cache:
             name = Path(uri[len("lsb/usr/"):]).name
             matches: list[str] = []
@@ -217,7 +218,7 @@ def read_text_maybe_gz(path: Path) -> str:
 
 def capture_program(family: str, advertised: set[str]) -> list[dict]:
     program = Path("/usr/lib/cups/driver") / family
-    listed = run_checked("python3", str(program), "list")
+    listed = program_list(program)
     entries = []
     for line in listed.splitlines():
         match = re.match(r'"([^"]+)"\s+\S+\s+"[^"]*"\s+"[^"]*"\s+"([^"]*)"', line)
@@ -277,7 +278,7 @@ def capture_envelope(entries: list[dict], packages: dict, label: str = "raspberr
         "package_architecture": run_checked("dpkg", "--print-architecture").strip(),
         "repository_identity": repository_identity(),
         "label": label,
-        "generated_on": "2026-10-17",
+        "generated_on": date.today().isoformat(),
         "generator_version": "1",
         "packages": packages,
         "provenance": {

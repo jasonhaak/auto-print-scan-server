@@ -178,6 +178,16 @@ class ExclusionTest(unittest.TestCase):
         self.assertEqual(catalog["generated_package_profiles"], {})
         self.assertEqual(catalog["catalog_metadata"]["excluded_packages"], ["cups-common"])
 
+    def test_profile_name_collision_raises(self):
+        generator = load_generator()
+        capture = dict(CAPTURE)
+        capture["entries"] = [
+            {"uri": "a:1/x.ppd", "device_id": "MFG:A;MDL:A;", "package": "printer-driver-foo-bar"},
+            {"uri": "b:1/x.ppd", "device_id": "MFG:B;MDL:B;", "package": "printer-driver-foo_bar"},
+        ]
+        with self.assertRaises(ValueError):
+            generator.build_catalog(capture)
+
 
 class RenderTest(unittest.TestCase):
     def test_artifact_round_trips_with_provenance(self):
@@ -277,6 +287,13 @@ class LoadCatalogTest(unittest.TestCase):
         self.assertTrue(catalog["requested"])
         self.assertFalse(catalog["matched"])
         self.assertEqual(catalog["package_profiles"], {})
+
+    def test_empty_repository_identity_is_not_a_match(self):
+        module = load_real_module()
+        self._fixture(module, "R")
+        catalog = module.load_catalog("trixie", "armhf", "")
+        self.assertTrue(catalog["matched"])
+        self.assertFalse(catalog["identity_matched"])
 
 
 class ResolverTest(unittest.TestCase):
