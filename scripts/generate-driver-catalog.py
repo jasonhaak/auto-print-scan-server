@@ -81,6 +81,8 @@ def build_catalog(capture: dict) -> dict:
         prefixes = sorted({entry_prefix(entry["uri"]) for entry in package_entries})
         for prefix in prefixes:
             name = profile_name(package, prefixes, prefix)
+            if name in profiles and profiles[name]["model_prefix"] != prefix:
+                raise ValueError(f"profile name collision for {name!r}")
             profiles[name] = {
                 "description": f"Models advertised by Debian package {package}",
                 "packages": [package],
