@@ -502,6 +502,9 @@ def main() -> int:
     if arguments.command == "profiles-for-evidence":
         if catalog["requested"] and not catalog["matched"]:
             print("Generated catalog not available for this target; using curated profiles only.", file=sys.stderr)
+        elif catalog["requested"] and not catalog["identity_matched"]:
+            print("Generated catalog does not match the target's repository identity; using curated profiles only.",
+                  file=sys.stderr)
         for name, description in matching_package_profiles(arguments.identity_evidence, catalog):
             print(f"{name}|{description}")
         return 0

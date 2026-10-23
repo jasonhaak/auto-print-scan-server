@@ -31,7 +31,7 @@
 - name: Report catalog matches for discovered printers
   ansible.builtin.command:
     argv: >-
-      {{ ['python3', playbook_dir ~ '/../scripts/lib/device_inventory.py',
+      {{ [ansible_playbook_python, playbook_dir ~ '/../scripts/lib/device_inventory.py',
           '--catalog-suite', driver_catalog_identity.suite,
           '--catalog-architecture', driver_catalog_identity.package_architecture,
           '--catalog-repository', driver_catalog_identity.repository_identity]

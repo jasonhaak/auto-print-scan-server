@@ -578,6 +578,38 @@ class CuratedSuppressionTest(unittest.TestCase):
                 capture_output=True, text=True, env=environment)
             self.assertIn("debian_fixture", result.stdout)
 
+    def test_repository_drift_warns_and_uses_curated_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            generated = Path(tmp) / "generated"
+            generated.mkdir()
+            (generated / "driver_profiles_trixie_armhf_raspberrypi.yml").write_text(
+                "generated_package_profiles:\n"
+                "  debian_fixture:\n    model_prefix: drv:///fixture.drv/\n    prefix_status: verified\n"
+                "    description: fixture\n"
+                "model_index:\n  \"acme|z900\": [debian_fixture]\n"
+                "catalog_metadata:\n  suite: trixie\n  package_architecture: armhf\n  repository_identity: OTHER\n",
+                encoding="utf-8")
+            environment = {**os.environ, "DRIVER_CATALOG_GENERATED_DIR": str(generated)}
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--catalog-suite", "trixie", "--catalog-architecture", "armhf",
+                 "--catalog-repository", "R", "--enable-generated-catalog", "profiles-for-evidence",
+                 "printer-device-id = MFG:Acme;MDL:Z900;"],
+                capture_output=True, text=True, env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("does not match", result.stderr)
+            self.assertNotIn("debian_fixture", result.stdout)
+
+
+class ScriptCatalogWiringTest(unittest.TestCase):
+    def test_onboard_and_manage_devices_forward_the_catalog_identity(self):
+        for name in ("onboard", "manage-devices"):
+            text = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+            self.assertIn("catalog_identity_arguments", text, name)
+
+    def test_onboarding_probe_matches_inrelease_files(self):
+        text = (ROOT / "scripts/lib/onboarding/device-discovery.sh").read_text(encoding="utf-8")
+        self.assertIn('*Release', text)
+
 
 if __name__ == "__main__":
     unittest.main()

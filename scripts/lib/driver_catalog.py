@@ -88,8 +88,7 @@ def load_catalog(suite=None, package_architecture=None, repository_identity=None
             if isinstance(index, dict):
                 model_index = dict(index)
             matched = True
-            identity_matched = bool(not repository_identity
-                                    or metadata.get("repository_identity") == repository_identity)
+            identity_matched = bool(repository_identity) and metadata.get("repository_identity") == repository_identity
     merged = dict(generated)
     merged.update(curated)  # curated wins whole-entry
     return {"package_profiles": merged, "model_index": model_index, "metadata": metadata,

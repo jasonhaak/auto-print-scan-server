@@ -88,7 +88,7 @@ host_inventory_value() {
 }
 
 field() {
-  "$python" "$helper" --inventory "$variables" --backup-directory "$backups" \
+  device_inventory --inventory "$variables" --backup-directory "$backups" \
     field "$1" "$2" "$3"
 }
 
@@ -96,14 +96,14 @@ select_device() {
   local kind=$1 requested=${2:-} name choice
   local -a candidates=()
   if [[ -n "$requested" ]]; then
-    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" \
+    device_inventory --inventory "$variables" --backup-directory "$backups" \
       show "$kind" "$requested" >/dev/null
     printf '%s' "$requested"
     return
   fi
   while IFS= read -r name; do
     [[ -n "$name" ]] && candidates+=("$name|$name")
-  done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names "$kind")
+  done < <(device_inventory --inventory "$variables" --backup-directory "$backups" names "$kind")
   (( ${#candidates[@]} > 0 )) || { printf 'No managed %ss exist.\n' "$kind" >&2; exit 1; }
   candidate_count=0
   [[ "$interactive_mode" == true ]] || printf '\n' >&2
@@ -141,7 +141,7 @@ configure_printer() {
       [[ -n "$link_interface" ]] || continue
       link_device_ipv4=$(field link "$link_interface" device_ipv4)
       printf 'Available direct Ethernet link: %s reaches device address %s. Use ipp, ipps, socket or lpd with that address.\n' "$link_interface" "$link_device_ipv4"
-    done < <("$python" "$helper" --inventory "$variables" --backup-directory "$backups" names link)
+    done < <(device_inventory --inventory "$variables" --backup-directory "$backups" names link)
   fi
   input_required 'Printer connection'
   if [[ -n "$original" ]]; then
@@ -207,7 +207,7 @@ configure_printer() {
 
   printer_connection_confirmation "$name" "$connection" "$uri" "$driver" "$usb_mode" "$usb_identity"
 
-  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-printer)
+  command=(device_inventory --inventory "$variables" --backup-directory "$backups" upsert-printer)
   [[ -n "$original" ]] && command+=(--original-name "$original")
   command+=(--name "$name" --connection "$connection" --device-uri "$uri" --driver-mode "$driver" --shared "$shared")
   [[ -n "$profile" ]] && command+=(--package-profile "$profile")
@@ -274,13 +274,13 @@ configure_scanner() {
     "Backend install|$backend_install" "USB mode|${usb_mode:-not applicable}" \
     "USB ID|${usb_identity:-not applicable}"
 
-  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-scanner)
+  command=(device_inventory --inventory "$variables" --backup-directory "$backups" upsert-scanner)
   [[ -n "$original" ]] && command+=(--original-device-name "$original")
   command+=(--device-name "$name" --connection "$connection" --backend "$backend" --backend-install "$backend_install")
   [[ -n "$usb_mode" ]] && command+=(--usb-mode "$usb_mode")
   [[ -n "$usb_identity" ]] && command+=(--usb-identity "$usb_identity")
   [[ "$display_name" != "$name" ]] && command+=(--display-name "$display_name")
-  if [[ -z "$original" ]] && ! "$python" "$helper" --inventory "$variables" --backup-directory "$backups" names scanner | grep -q .; then
+  if [[ -z "$original" ]] && ! device_inventory --inventory "$variables" --backup-directory "$backups" names scanner | grep -q .; then
     while true; do
       retention=$(ask 'Scan retention days (1-900)' '90')
       [[ "$retention" =~ ^[0-9]+$ ]] && (( retention >= 1 && retention <= 900 )) && break
@@ -332,7 +332,7 @@ configure_link() {
   done
   confirmation_block "Direct Ethernet link: $interface" \
     "Server CIDR|$server_cidr" "Device IPv4|$device_ipv4"
-  command=("$python" "$helper" --inventory "$variables" --backup-directory "$backups" upsert-link)
+  command=(device_inventory --inventory "$variables" --backup-directory "$backups" upsert-link)
   [[ -n "$original" ]] && command+=(--original-interface "$original")
   command+=(--interface "$interface" --server-ipv4-cidr "$server_cidr" --device-ipv4 "$device_ipv4")
   step_action command_output 'Save the direct Ethernet link definition' 'device_inventory.py upsert-link' "${command[@]}"
@@ -351,6 +351,7 @@ open_inventory_ssh_session() {
   }
   printf 'Connecting to %s@%s. SSH may request the server password.\n' "$admin" "$host"
   step_check_live 'Open the server SSH session' "ssh control connection to $admin@$host" ssh_session_open || return 1
+  resolve_catalog_identity || true
 }
 
 discover_for_add() {
@@ -376,7 +377,7 @@ apply_inventory() {
     ansible_playbook=ansible-playbook
   fi
   step_check command_output 'Validate managed definitions before applying' 'device_inventory.py validate' \
-    "$python" "$helper" --inventory "$variables" --backup-directory "$backups" validate || return 1
+    device_inventory --inventory "$variables" --backup-directory "$backups" validate || return 1
   while true; do
     if open_inventory_ssh_session; then
       ansible_arguments=(-i "$inventory" "$root/playbooks/site.yml" -e "print_server_commissioning=$commissioning")
@@ -411,6 +412,11 @@ offer_apply() {
 
 python=$(inventory_python)
 ONBOARD_PYTHON=$python
+device_inventory() {
+  local -a identity=()
+  mapfile -t identity < <(catalog_identity_arguments)
+  "$python" "$helper" "${identity[@]}" "$@"
+}
 [[ -f "$variables" ]] || { printf '%s\n' 'Production inventory is missing. Run ./scripts/onboard first.' >&2; exit 1; }
 technical_transcript_start "$root" manage-devices
 trap cleanup EXIT
@@ -428,7 +434,7 @@ while true; do
   if [[ -z "$action" ]]; then
     while true; do
       group_header 'Current managed definitions'
-      "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+      device_inventory --inventory "$variables" --backup-directory "$backups" list
       printf '  %-8s %s\n' \
         'list' 'Show the current definitions again.' \
         'add' 'Add a new printer, scanner or direct Ethernet link.' \
@@ -448,7 +454,7 @@ while true; do
     -h|--help) usage; exit 0 ;;
     list)
       technical_capture command_output 'List managed definitions' 'device_inventory.py list' \
-        "$python" "$helper" --inventory "$variables" --backup-directory "$backups" list
+        device_inventory --inventory "$variables" --backup-directory "$backups" list
       ;;
     apply)
       yes_default 'Apply the saved inventory to the server now?' || exit 0
@@ -487,10 +493,10 @@ while true; do
         exit 1
       fi
       subsection "Deleting $kind: $identity"
-      "$python" "$helper" --inventory "$variables" --backup-directory "$backups" show "$kind" "$identity"
+      device_inventory --inventory "$variables" --backup-directory "$backups" show "$kind" "$identity"
       yes "Delete this managed $kind from inventory?" || exit 0
       step_action command_output "Delete the managed $kind definition" "device_inventory.py delete $kind" \
-        "$python" "$helper" --inventory "$variables" --backup-directory "$backups" delete "$kind" "$identity"
+        device_inventory --inventory "$variables" --backup-directory "$backups" delete "$kind" "$identity"
       offer_apply false
       ;;
     *) usage >&2; exit 2 ;;
