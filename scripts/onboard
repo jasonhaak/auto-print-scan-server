@@ -424,8 +424,11 @@ printf '%s\n' '---' 'all:' '  children:' '    print_servers:' '      hosts:' '  
   fi
   printf '%s\n' 'enable_remote_sane: false' 'enable_unattended_upgrades: false'
 } >"$vars_tmp"
+resolve_catalog_identity || true
+catalog_arguments=()
+mapfile -t catalog_arguments < <(catalog_identity_arguments)
 step_action inventory_write_output 'Write confirmed production inventory' 'device_inventory.py write-initial' \
-  "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" --inventory "$variables" \
+  "$root/.venv/bin/python" "$root/scripts/lib/device_inventory.py" "${catalog_arguments[@]}" --inventory "$variables" \
   --host-inventory "$inventory" --backup-directory "$backups" write-initial \
   --host-document "$host_tmp" --variables-document "$vars_tmp"
 rm -f "$host_tmp" "$vars_tmp"

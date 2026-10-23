@@ -12,7 +12,7 @@ resolve_catalog_identity() {
 def lines(path):
     return sorted(line.strip() for line in open(path, encoding="utf-8", errors="replace")
                   if re.match(r"^(Origin|Label|Suite|Codename):", line.strip()))
-identities = [item for item in ("|".join(lines(path)) for path in glob.glob("/var/lib/apt/lists/*_Release")) if item]
+identities = [item for item in ("|".join(lines(path)) for path in glob.glob("/var/lib/apt/lists/*Release")) if item]
 release = {}
 for line in open("/etc/os-release", encoding="utf-8"):
     key, _, value = line.partition("=")

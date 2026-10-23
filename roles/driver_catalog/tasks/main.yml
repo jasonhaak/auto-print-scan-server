@@ -34,7 +34,7 @@
 - name: Select the generated catalog for this target
   ansible.builtin.command:
     argv: >-
-      {{ ['python3', playbook_dir ~ '/../scripts/lib/driver_catalog.py', 'select',
+      {{ [ansible_playbook_python, playbook_dir ~ '/../scripts/lib/driver_catalog.py', 'select',
           '--suite', driver_catalog_identity.suite,
           '--architecture', driver_catalog_identity.package_architecture,
           '--repository', driver_catalog_identity.repository_identity]
