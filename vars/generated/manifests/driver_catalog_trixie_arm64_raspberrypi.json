@@ -55202,7 +55202,6 @@
   "generator_version": "1",
   "package_architecture": "arm64",
   "packages": {
-    "cups-common": "2.4.10-3+rpt2+deb13u2",
     "cups-filters": "1.28.17-6+rpt1+deb13u1",
     "foomatic-db-compressed-ppds": "20230202-1",
     "printer-driver-brlaser": "6.2.7-1",
@@ -55224,7 +55223,6 @@
   "provenance": {
     "index_sha256": "ac7e5966732f8e15f933e8c48a55a7f99c034d9347a22fb91ecaaf41aa7c2f18",
     "package_sha256": {
-      "cups-common": "",
       "cups-filters": "baa930b45c158dd44af6639f954e0e908d8685d830344ed8b2aea9737d99c0e3",
       "foomatic-db-compressed-ppds": "8bb60b53e9008b51d715ed2e2edad803613697e2b63ca38def73436da049c79e",
       "printer-driver-brlaser": "f562a56115ebe3bd780ba47395cdf6ca2c2969256eae61fe7bfb6f19193ddab9",

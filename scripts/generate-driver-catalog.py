@@ -107,6 +107,11 @@ def build_catalog(capture: dict) -> dict:
 
 def render_artifact(catalog: dict, capture: dict) -> str:
     metadata = dict(catalog.get("catalog_metadata", {}))
+    used = {name for profile in catalog["generated_package_profiles"].values()
+            for name in profile.get("packages", [])}
+    provenance = dict(capture.get("provenance", {}))
+    provenance["package_sha256"] = {name: digest for name, digest in provenance.get("package_sha256", {}).items()
+                                    if name in used}
     metadata.update({
         "suite": capture["suite"],
         "package_architecture": capture["package_architecture"],
@@ -114,8 +119,9 @@ def render_artifact(catalog: dict, capture: dict) -> str:
         "label": capture.get("label", ""),
         "generated_on": capture.get("generated_on", ""),
         "generator_version": capture.get("generator_version", ""),
-        "package_versions": capture.get("packages", {}),
-        "provenance": capture.get("provenance", {}),
+        "package_versions": {name: version for name, version in capture.get("packages", {}).items()
+                             if name in used},
+        "provenance": provenance,
     })
     document = {
         "generated_package_profiles": catalog["generated_package_profiles"],
@@ -129,13 +135,18 @@ def render_artifact(catalog: dict, capture: dict) -> str:
 
 def write_manifest(capture: dict, catalog: dict) -> dict:
     metadata = catalog.get("catalog_metadata", {})
+    used = {name for profile in catalog["generated_package_profiles"].values()
+            for name in profile.get("packages", [])}
+    provenance = dict(capture.get("provenance", {}))
+    provenance["package_sha256"] = {name: digest for name, digest in provenance.get("package_sha256", {}).items()
+                                    if name in used}
     return {
         "suite": capture["suite"],
         "package_architecture": capture["package_architecture"],
         "repository_identity": capture["repository_identity"],
         "generator_version": capture.get("generator_version", ""),
-        "packages": capture.get("packages", {}),
-        "provenance": capture.get("provenance", {}),
+        "packages": {name: version for name, version in capture.get("packages", {}).items() if name in used},
+        "provenance": provenance,
         "excluded_packages": metadata.get("excluded_packages", []),
         "shared_uris": metadata.get("shared_uris", []),
         "entries": [

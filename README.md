@@ -211,6 +211,8 @@ docker run --rm --platform linux/amd64 \
   -v "$PWD":/work -v /tmp/catalog-capture:/out -w /work debian:trixie-slim bash -lc '
     apt-get update
     apt-get install -y --install-recommends cups cups-filters foomatic-db-compressed-ppds printer-driver-all python3
+    pkgs=$(dpkg-query -W -f='${binary:Package}\n' | grep -E '^(printer-driver-|foomatic-db-compressed-ppds|cups-filters)' | sort -u)
+    (cd /var/cache/apt/archives && apt-get download $pkgs)
     mkdir -p /run/cups && /usr/sbin/cupsd && sleep 2
     python3 scripts/lib/capture-driver-models.py --source lpinfo --label debian --output /out/capture.json
   '
