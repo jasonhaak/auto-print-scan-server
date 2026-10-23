@@ -657,11 +657,11 @@ unset -f yes create_scanner_test_pdf
 source "$root/scripts/lib/onboarding/prompts.sh"
 
 printer_candidate_output=$(printer_candidate_details \
-  'USB printer (usb://Brother/MFC-7360N?serial=E69717C5N288928)|usb|usb://Brother/MFC-7360N?serial=E69717C5N288928|legacy_usb' \
+  'USB printer (usb://Brother/MFC-7360N?serial=EXAMPLE123)|usb|usb://Brother/MFC-7360N?serial=EXAMPLE123|legacy_usb' \
   'Network printer (ipp://192.0.2.20/ipp/print)|ipp|ipp://192.0.2.20/ipp/print|' 2>&1)
 [[ "$printer_candidate_output" == *'Candidate 1'* ]]
-[[ "$printer_candidate_output" == *'USB printer (usb://Brother/MFC-7360N?serial=E69717C5N288928)'* ]]
-[[ "$printer_candidate_output" == *'usb://Brother/MFC-7360N?serial=E69717C5N288928'* ]]
+[[ "$printer_candidate_output" == *'USB printer (usb://Brother/MFC-7360N?serial=EXAMPLE123)'* ]]
+[[ "$printer_candidate_output" == *'usb://Brother/MFC-7360N?serial=EXAMPLE123'* ]]
 [[ "$printer_candidate_output" == *'legacy_usb'* ]]
 [[ "$printer_candidate_output" == *'Candidate 2'* ]]
 
